@@ -865,6 +865,160 @@ function formatLocalTime(isoStr) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   QR / BARCODE SCANNER
+   Uses ZXing-js (loaded via CDN in index.html).
+   Falls back gracefully if camera unavailable or permission denied.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const scanner = (() => {
+  let codeReader  = null;   // ZXing reader instance
+  let stream      = null;   // MediaStream (so we can stop it)
+  let active      = false;
+
+  const overlay    = document.getElementById('scannerOverlay');
+  const video      = document.getElementById('scannerVideo');
+  const statusEl   = document.getElementById('scannerStatus');
+  const torchBtn   = document.getElementById('btnScanTorch');
+  const closeBtn   = document.getElementById('btnScanClose');
+  const openBtn    = document.getElementById('btnScan');
+
+  function setStatus(msg, type = '') {
+    statusEl.textContent = msg;
+    statusEl.className   = 'scanner-status' + (type ? ' ' + type : '');
+  }
+
+  async function open() {
+    // Check browser support
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      toast('Camera not supported in this browser.', 'error');
+      return;
+    }
+
+    // ZXing may not have loaded (e.g. offline) – check gracefully
+    if (typeof ZXing === 'undefined') {
+      toast('Barcode library not loaded. Check your connection.', 'error');
+      return;
+    }
+
+    overlay.hidden = false;
+    active = true;
+    setStatus('Requesting camera access…');
+
+    try {
+      // Prefer back/environment camera on Android tablets
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width:      { ideal: 1280 },
+          height:     { ideal: 720 },
+        },
+        audio: false,
+      });
+
+      video.srcObject = stream;
+      await video.play();
+
+      setStatus('Scanning — point at a barcode or QR code');
+
+      // Show torch button if the track supports it
+      tryEnableTorch();
+
+      // Start ZXing decode loop
+      codeReader = new ZXing.BrowserMultiFormatReader();
+      codeReader.decodeFromStream(stream, video, (result, err) => {
+        if (!active) return;
+        if (result) {
+          const text = result.getText().trim();
+          // Validate against item number rules before accepting
+          if (/^[A-Za-z0-9\-_]{1,40}$/.test(text)) {
+            onScanSuccess(text);
+          } else {
+            setStatus(`Read "${text}" — not a valid item number format. Try again.`, 'error');
+          }
+        }
+        // ZXing fires errors continuously when no code found — ignore NotFoundException
+      });
+
+    } catch (err) {
+      if (err.name === 'NotAllowedError') {
+        setStatus('Camera permission denied. Please allow camera access in your browser settings.', 'error');
+      } else if (err.name === 'NotFoundError') {
+        setStatus('No camera found on this device.', 'error');
+      } else {
+        setStatus('Camera error: ' + err.message, 'error');
+      }
+    }
+  }
+
+  function onScanSuccess(text) {
+    setStatus('✓ Scanned: ' + text, 'success');
+    // Fill the item number input
+    const input = document.getElementById('itemNumberInput');
+    input.value = text;
+    hideSuggestions();
+    // Brief pause so user can see the success state, then close
+    setTimeout(() => {
+      close();
+      input.focus();
+      toast('Item number scanned: ' + text, 'success');
+    }, 800);
+  }
+
+  function close() {
+    active = false;
+    overlay.hidden = true;
+
+    // Stop ZXing
+    if (codeReader) {
+      try { codeReader.reset(); } catch (_) {}
+      codeReader = null;
+    }
+
+    // Stop camera stream tracks
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop());
+      stream = null;
+    }
+
+    video.srcObject = null;
+    torchBtn.hidden = true;
+    setStatus('Initialising camera…');
+  }
+
+  // Torch (flashlight) support — Android Chrome only
+  function tryEnableTorch() {
+    if (!stream) return;
+    const track = stream.getVideoTracks()[0];
+    if (!track) return;
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    if (caps.torch) {
+      torchBtn.hidden = false;
+      let torchOn = false;
+      torchBtn.addEventListener('click', async () => {
+        torchOn = !torchOn;
+        try {
+          await track.applyConstraints({ advanced: [{ torch: torchOn }] });
+          torchBtn.textContent = torchOn ? '🔦 Torch On' : '🔦 Torch';
+        } catch (_) {}
+      });
+    }
+  }
+
+  // Wire up buttons
+  openBtn.addEventListener('click', open);
+  closeBtn.addEventListener('click', close);
+
+  // Close on backdrop click
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+  // Close on Escape key
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !overlay.hidden) close();
+  });
+
+  return { open, close };
+})();
+
+/* ═══════════════════════════════════════════════════════════════════════════
    BOOT
    ═══════════════════════════════════════════════════════════════════════════ */
 init();

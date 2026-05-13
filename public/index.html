@@ -76,12 +76,29 @@
         <div class="form-group">
           <label for="itemNumberInput">Item Number</label>
           <div class="autocomplete-wrap">
-            <input id="itemNumberInput" type="text"
-                   autocomplete="off" autocapitalize="characters"
-                   spellcheck="false" maxlength="40"
-                   placeholder="e.g. PHL-1001"
-                   aria-autocomplete="list"
-                   aria-controls="itemSuggestions" />
+            <div class="input-with-action">
+              <input id="itemNumberInput" type="text"
+                     autocomplete="off" autocapitalize="characters"
+                     spellcheck="false" maxlength="40"
+                     placeholder="e.g. PHL-1001"
+                     aria-autocomplete="list"
+                     aria-controls="itemSuggestions" />
+              <button id="btnScan" class="btn-scan" type="button"
+                      aria-label="Scan QR code or barcode">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M3 7V5a2 2 0 0 1 2-2h2"/>
+                  <path d="M17 3h2a2 2 0 0 1 2 2v2"/>
+                  <path d="M21 17v2a2 2 0 0 1-2 2h-2"/>
+                  <path d="M7 21H5a2 2 0 0 1-2-2v-2"/>
+                  <rect x="7" y="7" width="3" height="3"/>
+                  <rect x="14" y="7" width="3" height="3"/>
+                  <rect x="7" y="14" width="3" height="3"/>
+                  <rect x="14" y="14" width="3" height="3"/>
+                </svg>
+                Scan
+              </button>
+            </div>
             <ul id="itemSuggestions" class="suggestions" role="listbox" hidden></ul>
           </div>
         </div>
@@ -223,6 +240,40 @@
 <!-- ═══ TOAST ═════════════════════════════════════════════════════════════ -->
 <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
+<!-- ═══ QR / BARCODE SCANNER OVERLAY ════════════════════════════════════ -->
+<div id="scannerOverlay" class="scanner-overlay" hidden role="dialog"
+     aria-modal="true" aria-label="Barcode scanner">
+  <div class="scanner-box">
+    <div class="scanner-header">
+      <span class="scanner-title">Point camera at barcode or QR code</span>
+      <button id="btnScanClose" class="icon-btn" aria-label="Close scanner">✕</button>
+    </div>
+    <div class="scanner-viewport">
+      <video id="scannerVideo" playsinline muted autoplay
+             aria-label="Camera feed"></video>
+      <div class="scanner-reticle" aria-hidden="true">
+        <div class="reticle-corner tl"></div>
+        <div class="reticle-corner tr"></div>
+        <div class="reticle-corner bl"></div>
+        <div class="reticle-corner br"></div>
+        <div class="reticle-line"></div>
+      </div>
+    </div>
+    <div id="scannerStatus" class="scanner-status" aria-live="polite">
+      Initialising camera…
+    </div>
+    <div class="scanner-actions">
+      <button id="btnScanTorch" class="btn btn-ghost" hidden aria-label="Toggle torch">
+        🔦 Torch
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ZXing barcode library (MIT licence, loaded from cdnjs) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/zxing-js/0.21.3/zxing.min.js"
+        integrity="sha512-yYqJGqdPMsFfzBOB+5iGhEOWHHCPyFkMoHXXf3fBMKGZpNwGkbViFBnpDHq3MBpNlE5UE6D7OXNnpHGCaT+A=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="app.js"></script>
 </body>
 </html>

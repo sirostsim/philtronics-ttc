@@ -654,7 +654,144 @@ tbody tr:hover td { background: var(--bg3); }
   margin-top: 2px;
 }
 
-/* ─── Scrollbar ─────────────────────────────────────────────────────────── */
+
+/* ─── QR / Barcode Scanner ──────────────────────────────────────────────── */
+.input-with-action {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.input-with-action input {
+  flex: 1;
+  min-width: 0;
+}
+.btn-scan {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 16px;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 600;
+  font-family: var(--font-body);
+  white-space: nowrap;
+  transition: background var(--transition), border-color var(--transition);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.btn-scan svg {
+  width: 20px; height: 20px;
+  flex-shrink: 0;
+}
+.btn-scan:hover { background: var(--bg2); border-color: var(--accent); }
+.btn-scan:active { transform: scale(.97); }
+
+/* Scanner overlay */
+.scanner-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.92);
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.scanner-overlay[hidden] { display: none; }
+
+.scanner-box {
+  width: 100%;
+  max-width: 480px;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-lg);
+}
+.scanner-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.scanner-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text2);
+}
+.scanner-viewport {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background: #000;
+  overflow: hidden;
+}
+#scannerVideo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Reticle (aiming guide) */
+.scanner-reticle {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.reticle-corner {
+  position: absolute;
+  width: 28px; height: 28px;
+  border-color: var(--accent);
+  border-style: solid;
+  border-width: 0;
+}
+.reticle-corner.tl { top: 20%; left: 15%; border-top-width: 3px; border-left-width: 3px; border-radius: 2px 0 0 0; }
+.reticle-corner.tr { top: 20%; right: 15%; border-top-width: 3px; border-right-width: 3px; border-radius: 0 2px 0 0; }
+.reticle-corner.bl { bottom: 20%; left: 15%; border-bottom-width: 3px; border-left-width: 3px; border-radius: 0 0 0 2px; }
+.reticle-corner.br { bottom: 20%; right: 15%; border-bottom-width: 3px; border-right-width: 3px; border-radius: 0 0 2px 0; }
+
+.reticle-line {
+  position: absolute;
+  left: 16%; right: 16%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: scanLine 2s ease-in-out infinite;
+}
+@keyframes scanLine {
+  0%   { top: 22%; opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { top: 78%; opacity: 0; }
+}
+
+.scanner-status {
+  text-align: center;
+  padding: 12px 16px;
+  font-size: 14px;
+  color: var(--text2);
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.scanner-status.success { color: var(--green); font-weight: 600; }
+.scanner-status.error   { color: var(--red); }
+
+.scanner-actions {
+  padding: 0 16px 14px;
+  display: flex;
+  justify-content: center;
+}
+
 ::-webkit-scrollbar       { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
