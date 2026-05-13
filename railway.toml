@@ -1,0 +1,19 @@
+# railway.toml – Railway deployment configuration
+# Docs: https://docs.railway.app/reference/config-as-code
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "sh -c 'node seed.js && node server.js'"
+healthcheckPath = "/api/me"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+
+[[mounts]]
+# Persistent volume for SQLite database
+# Create a volume in Railway dashboard named "philtronics-data"
+# and mount it at /data
+mountPath = "/data"

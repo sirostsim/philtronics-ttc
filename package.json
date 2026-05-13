@@ -1,0 +1,12 @@
+{
+  "name": "philtronics-timecomplete-root",
+  "version": "1.0.0",
+  "description": "Root package – delegates to server/",
+  "scripts": {
+    "start":   "cd server && node seed.js && node server.js",
+    "install": "cd server && npm install"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

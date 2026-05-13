@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1117" />
+  <title>Philtronics – Time to Complete</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Barlow:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<!-- ═══ TOP BAR ═════════════════════════════════════════════════════════ -->
+<header id="topbar" class="topbar hidden" role="banner">
+  <div class="topbar-brand">
+    <span class="brand-mark">⬡</span>
+    <span class="brand-name">PHILTRONICS</span>
+    <span class="brand-sub">TIME TO COMPLETE</span>
+  </div>
+  <div class="topbar-center" id="activeTimerBanner" role="status" aria-live="polite"></div>
+  <div class="topbar-right">
+    <span id="userLabel" class="user-label"></span>
+    <button id="btnNav" class="icon-btn" aria-label="Navigation menu" aria-expanded="false">☰</button>
+  </div>
+</header>
+
+<!-- ═══ NAV DRAWER ══════════════════════════════════════════════════════ -->
+<nav id="navDrawer" class="nav-drawer" role="navigation" aria-label="Main navigation" hidden>
+  <ul class="nav-list" id="navList"></ul>
+  <div class="nav-footer">
+    <button id="btnLogout" class="nav-logout-btn">Sign Out</button>
+  </div>
+</nav>
+<div id="navOverlay" class="nav-overlay hidden"></div>
+
+<!-- ═══ MAIN CONTENT AREA ═══════════════════════════════════════════════ -->
+<main id="app" role="main">
+
+  <!-- ── LOGIN ─────────────────────────────────────────────────────────── -->
+  <section id="pageLogin" class="page page-login" aria-label="Login">
+    <div class="login-card">
+      <div class="login-logo">
+        <span class="brand-mark-large">⬡</span>
+        <h1 class="login-title">PHILTRONICS</h1>
+        <p class="login-subtitle">Time to Complete System</p>
+      </div>
+      <form id="loginForm" novalidate>
+        <div class="form-group">
+          <label for="loginUsername">Username</label>
+          <input id="loginUsername" type="text" autocomplete="username"
+                 autocapitalize="none" spellcheck="false"
+                 placeholder="Enter your username" required />
+        </div>
+        <div class="form-group">
+          <label for="loginPassword">Password</label>
+          <input id="loginPassword" type="password" autocomplete="current-password"
+                 placeholder="Enter your password" required />
+        </div>
+        <div id="loginError" class="error-msg" role="alert" aria-live="assertive"></div>
+        <button type="submit" id="btnLogin" class="btn btn-primary btn-full btn-xl">
+          Sign In
+        </button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ── OPERATOR TIMER ─────────────────────────────────────────────────── -->
+  <section id="pageTimer" class="page" aria-label="Timer" hidden>
+    <div class="page-content">
+
+      <!-- Start Job Panel -->
+      <div id="panelStart" class="timer-panel">
+        <h2 class="panel-title">Start Job</h2>
+        <div class="form-group">
+          <label for="itemNumberInput">Item Number</label>
+          <div class="autocomplete-wrap">
+            <input id="itemNumberInput" type="text"
+                   autocomplete="off" autocapitalize="characters"
+                   spellcheck="false" maxlength="40"
+                   placeholder="e.g. PHL-1001"
+                   aria-autocomplete="list"
+                   aria-controls="itemSuggestions" />
+            <ul id="itemSuggestions" class="suggestions" role="listbox" hidden></ul>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="startNotes">Notes <span class="opt">(optional)</span></label>
+          <input id="startNotes" type="text" maxlength="500" placeholder="Any notes for this job" />
+        </div>
+        <div id="startError" class="error-msg" role="alert" aria-live="assertive"></div>
+        <button id="btnStart" class="btn btn-start btn-full btn-xl" aria-label="Start timer">
+          ▶ START
+        </button>
+      </div>
+
+      <!-- Active Job Panel -->
+      <div id="panelActive" class="timer-panel panel-active" hidden>
+        <div class="active-header">
+          <span class="active-dot" aria-hidden="true"></span>
+          <span>ACTIVE JOB</span>
+        </div>
+        <div class="active-item" id="activeItemDisplay" aria-label="Item number"></div>
+        <div class="stopwatch" id="stopwatch" role="timer" aria-label="Elapsed time" aria-live="off">
+          00:00:00
+        </div>
+        <div class="active-meta" id="activeMeta"></div>
+        <div id="stopError" class="error-msg" role="alert" aria-live="assertive"></div>
+        <div class="active-actions">
+          <button id="btnStop" class="btn btn-stop btn-xl" aria-label="Stop timer">
+            ■ STOP
+          </button>
+          <button id="btnCancelTimer" class="btn btn-cancel-sm" aria-label="Cancel timer">
+            Cancel
+          </button>
+        </div>
+      </div>
+
+      <!-- Today's entries -->
+      <div class="recent-section">
+        <h3 class="section-title">Today's Jobs</h3>
+        <div id="todayList" class="entry-list" role="list" aria-label="Today's completed jobs"></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── HISTORY ────────────────────────────────────────────────────────── -->
+  <section id="pageHistory" class="page" aria-label="History" hidden>
+    <div class="page-content">
+      <h2 class="page-heading">History</h2>
+
+      <div class="filter-bar" role="search">
+        <div class="filter-row">
+          <div class="form-group filter-group">
+            <label for="histFrom">From</label>
+            <input id="histFrom" type="date" />
+          </div>
+          <div class="form-group filter-group">
+            <label for="histTo">To</label>
+            <input id="histTo" type="date" />
+          </div>
+        </div>
+        <div class="filter-row" id="histSuperFilters" hidden>
+          <div class="form-group filter-group">
+            <label for="histOperator">Operator ID</label>
+            <input id="histOperator" type="text" placeholder="All operators" />
+          </div>
+          <div class="form-group filter-group">
+            <label for="histItem">Item Number</label>
+            <input id="histItem" type="text" placeholder="All items" />
+          </div>
+        </div>
+        <button id="btnHistSearch" class="btn btn-primary">Search</button>
+      </div>
+
+      <div id="historyList" class="entry-list" role="list" aria-label="Timer history"></div>
+    </div>
+  </section>
+
+  <!-- ── MANAGER DASHBOARD ─────────────────────────────────────────────── -->
+  <section id="pageDashboard" class="page" aria-label="Manager Dashboard" hidden>
+    <div class="page-content">
+      <h2 class="page-heading">Dashboard</h2>
+
+      <div class="stat-cards" id="statCards" role="region" aria-label="Summary statistics"></div>
+
+      <div class="filter-bar">
+        <div class="filter-row">
+          <div class="form-group filter-group">
+            <label for="dashFrom">From</label>
+            <input id="dashFrom" type="date" />
+          </div>
+          <div class="form-group filter-group">
+            <label for="dashTo">To</label>
+            <input id="dashTo" type="date" />
+          </div>
+          <div class="form-group filter-group">
+            <label for="dashItem">Item Number</label>
+            <input id="dashItem" type="text" placeholder="All items" />
+          </div>
+          <div class="form-group filter-group">
+            <label for="dashOperator">Operator ID</label>
+            <input id="dashOperator" type="text" placeholder="All operators" />
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button id="btnDashSearch" class="btn btn-primary">Search</button>
+          <button id="btnExportCSV" class="btn btn-export">⬇ Export CSV</button>
+        </div>
+      </div>
+
+      <div id="dashTable" class="dash-table-wrap" role="region" aria-label="Performance by item"></div>
+    </div>
+  </section>
+
+  <!-- ── ADMIN USER MANAGEMENT ──────────────────────────────────────────── -->
+  <section id="pageAdmin" class="page" aria-label="User Management" hidden>
+    <div class="page-content">
+      <div class="page-heading-row">
+        <h2 class="page-heading">User Management</h2>
+        <button id="btnNewUser" class="btn btn-primary">+ New User</button>
+      </div>
+      <div id="userList" class="user-list" role="list" aria-label="User accounts"></div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ═══ MODAL ════════════════════════════════════════════════════════════ -->
+<div id="modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modalTitle" hidden>
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 id="modalTitle" class="modal-title"></h3>
+      <button id="btnModalClose" class="icon-btn" aria-label="Close dialog">✕</button>
+    </div>
+    <div id="modalBody" class="modal-body"></div>
+    <div id="modalFooter" class="modal-footer"></div>
+  </div>
+</div>
+
+<!-- ═══ TOAST ═════════════════════════════════════════════════════════════ -->
+<div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
