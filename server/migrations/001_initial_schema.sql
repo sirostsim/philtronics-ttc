@@ -1,37 +1,40 @@
--- 001_initial_schema.sql
--- Initial database schema for Philtronics Time-to-Complete system
+-- 001_initial_schema.sql – PostgreSQL version
+-- Philtronics Time-to-Complete initial schema
 
 -- ─── USERS ───────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS users (
-  id            TEXT    PRIMARY KEY,               -- UUID
-  username      TEXT    NOT NULL UNIQUE COLLATE NOCASE,
-  password_hash TEXT    NOT NULL,
-  full_name     TEXT    NOT NULL,
-  role          TEXT    NOT NULL CHECK (role IN ('operator','supervisor','manager','administrator')),
-  is_active     INTEGER NOT NULL DEFAULT 1,        -- 0 = disabled
-  created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
-  updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+  id            TEXT        PRIMARY KEY,
+  username      TEXT        NOT NULL UNIQUE,
+  password_hash TEXT        NOT NULL,
+  full_name     TEXT        NOT NULL,
+  role          TEXT        NOT NULL CHECK (role IN ('operator','supervisor','manager','administrator')),
+  is_active     BOOLEAN     NOT NULL DEFAULT TRUE,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Case-insensitive unique index on username
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_lower ON users (LOWER(username));
 
 -- ─── TIMERS ──────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS timers (
-  id               TEXT    PRIMARY KEY,            -- UUID
-  item_number      TEXT    NOT NULL,
-  operator_id      TEXT    NOT NULL REFERENCES users(id),
-  operator_name    TEXT    NOT NULL,               -- denormalised for export stability
-  started_at       TEXT    NOT NULL,               -- UTC ISO8601
-  completed_at     TEXT,                           -- UTC ISO8601; NULL = active
-  duration_seconds INTEGER CHECK (duration_seconds IS NULL OR duration_seconds >= 0),
-  status           TEXT    NOT NULL DEFAULT 'active'
-                           CHECK (status IN ('active','completed','cancelled')),
+  id               TEXT        PRIMARY KEY,
+  item_number      TEXT        NOT NULL,
+  operator_id      TEXT        NOT NULL REFERENCES users(id),
+  operator_name    TEXT        NOT NULL,
+  started_at       TIMESTAMPTZ NOT NULL,
+  completed_at     TIMESTAMPTZ,
+  duration_seconds INTEGER     CHECK (duration_seconds IS NULL OR duration_seconds >= 0),
+  status           TEXT        NOT NULL DEFAULT 'active'
+                               CHECK (status IN ('active','completed','cancelled')),
   notes            TEXT,
-  created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
-  created_by       TEXT    NOT NULL REFERENCES users(id),
-  updated_at       TEXT    NOT NULL DEFAULT (datetime('now')),
-  updated_by       TEXT    REFERENCES users(id)
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_by       TEXT        NOT NULL REFERENCES users(id),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_by       TEXT        REFERENCES users(id)
 );
 
--- Only one active timer per operator (partial index acts as unique constraint)
+-- Partial unique index: one active timer per operator
 CREATE UNIQUE INDEX IF NOT EXISTS idx_timers_one_active_per_operator
   ON timers (operator_id)
   WHERE status = 'active';
@@ -44,24 +47,31 @@ CREATE INDEX IF NOT EXISTS idx_timers_status      ON timers (status);
 
 -- ─── AUDIT LOG ───────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS audit_log (
-  id          TEXT PRIMARY KEY,                    -- UUID
-  timer_id    TEXT REFERENCES timers(id),
-  action      TEXT NOT NULL,                       -- cancel | adjust | login_fail | etc.
-  performed_by TEXT NOT NULL REFERENCES users(id),
-  reason      TEXT,
-  details     TEXT,                                -- JSON blob of changed fields
-  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  id           TEXT        PRIMARY KEY,
+  timer_id     TEXT        REFERENCES timers(id),
+  action       TEXT        NOT NULL,
+  performed_by TEXT        NOT NULL REFERENCES users(id),
+  reason       TEXT,
+  details      JSONB,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_audit_timer    ON audit_log (timer_id);
-CREATE INDEX IF NOT EXISTS idx_audit_actor    ON audit_log (performed_by);
-CREATE INDEX IF NOT EXISTS idx_audit_created  ON audit_log (created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_timer   ON audit_log (timer_id);
+CREATE INDEX IF NOT EXISTS idx_audit_actor   ON audit_log (performed_by);
+CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log (created_at);
 
--- ─── ITEM MASTER (optional autocomplete) ─────────────────────────────────────
+-- ─── ITEM MASTER ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS item_master (
-  id          TEXT PRIMARY KEY,
-  item_number TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  id          TEXT        PRIMARY KEY,
+  item_number TEXT        NOT NULL UNIQUE,
   description TEXT,
-  is_active   INTEGER NOT NULL DEFAULT 1,
-  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  is_active   BOOLEAN     NOT NULL DEFAULT TRUE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ─── MIGRATION TRACKING ──────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS migrations (
+  id         SERIAL PRIMARY KEY,
+  filename   TEXT   NOT NULL UNIQUE,
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

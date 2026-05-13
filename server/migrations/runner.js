@@ -1,47 +1,58 @@
 /**
- * migrations/runner.js
- * Simple file-based migration runner.
- * Migrations are plain SQL files named NNN_description.sql
- * Already-applied migrations are tracked in the `migrations` table.
+ * migrations/runner.js – PostgreSQL async migration runner
  */
 
 'use strict';
 
-const db   = require('../db');
+require('dotenv').config();
+const { pool } = require('../db');
 const fs   = require('fs');
 const path = require('path');
 
-// Ensure migrations tracking table exists
-db.exec(`
-  CREATE TABLE IF NOT EXISTS migrations (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    filename   TEXT NOT NULL UNIQUE,
-    applied_at TEXT NOT NULL DEFAULT (datetime('now'))
-  );
-`);
-
-const migrationsDir = path.join(__dirname);
-
-const files = fs.readdirSync(migrationsDir)
-  .filter(f => f.endsWith('.sql'))
-  .sort();
-
-for (const file of files) {
-  const applied = db.prepare('SELECT 1 FROM migrations WHERE filename = ?').get(file);
-  if (applied) {
-    console.log(`  [skip]  ${file}`);
-    continue;
-  }
-
-  const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
+async function runMigrations() {
+  const client = await pool.connect();
   try {
-    db.exec(sql);
-    db.prepare('INSERT INTO migrations (filename) VALUES (?)').run(file);
-    console.log(`  [apply] ${file}`);
-  } catch (err) {
-    console.error(`  [ERROR] ${file}: ${err.message}`);
-    process.exit(1);
+    // Ensure migrations table exists first
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS migrations (
+        id         SERIAL PRIMARY KEY,
+        filename   TEXT   NOT NULL UNIQUE,
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    const files = fs.readdirSync(__dirname)
+      .filter(f => f.endsWith('.sql'))
+      .sort();
+
+    for (const file of files) {
+      const { rows } = await client.query(
+        'SELECT 1 FROM migrations WHERE filename = $1', [file]
+      );
+      if (rows.length > 0) {
+        console.log(`  [skip]  ${file}`);
+        continue;
+      }
+
+      const sql = fs.readFileSync(path.join(__dirname, file), 'utf8');
+      await client.query(sql);
+      await client.query(
+        'INSERT INTO migrations (filename) VALUES ($1)', [file]
+      );
+      console.log(`  [apply] ${file}`);
+    }
+
+    console.log('Migrations complete.');
+  } finally {
+    client.release();
   }
 }
 
-console.log('Migrations complete.');
+module.exports = runMigrations;
+
+// Allow running directly: node migrations/runner.js
+if (require.main === module) {
+  runMigrations()
+    .then(() => process.exit(0))
+    .catch(err => { console.error(err.message); process.exit(1); });
+}
