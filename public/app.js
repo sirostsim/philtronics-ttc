@@ -349,7 +349,7 @@ document.getElementById('btnStart').addEventListener('click', async () => {
     document.getElementById('itemNumberInput').value = '';
     document.getElementById('startNotes').value = '';
     hideSuggestions();
-    await showActivePanel();
+    showActivePanel();
     startStopwatch();
     refreshActiveTimerBanner();
     loadTodayEntries();
@@ -612,9 +612,72 @@ async function loadAdminPage() {
   try {
     const users = await GET('/users');
     renderUserList(users);
+    renderAdminTools();
   } catch (err) {
     document.getElementById('userList').textContent = err.message;
   }
+}
+
+function renderAdminTools() {
+  // Remove existing tools panel if present (avoid duplicates on re-load)
+  const existing = document.getElementById('adminToolsPanel');
+  if (existing) existing.remove();
+
+  const panel = el('div', {
+    id: 'adminToolsPanel',
+    style: 'background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:20px;'
+  });
+
+  panel.appendChild(el('div', {
+    style: 'font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:12px;',
+    textContent: 'Tools'
+  }));
+
+  // Description
+  panel.appendChild(el('p', {
+    style: 'font-size:14px;color:var(--text2);margin-bottom:14px;',
+    textContent: 'If an operator has a stuck "active" timer they cannot stop, use the button below to cancel all active timers across all operators.'
+  }));
+
+  const resultDiv = el('div', {
+    style: 'font-size:14px;margin-top:10px;min-height:20px;',
+    role: 'status'
+  });
+
+  const cancelBtn = el('button', {
+    className: 'btn btn-danger',
+    textContent: '⚠ Cancel All Stuck Timers',
+    onclick: async () => {
+      if (!confirm('This will cancel ALL currently active timers for all operators. Are you sure?')) return;
+      cancelBtn.disabled = true;
+      cancelBtn.textContent = 'Cancelling…';
+      resultDiv.textContent = '';
+      try {
+        const result = await POST('/users/admin/cancel-stuck-timers', {
+          reason: 'Cancelled by administrator via emergency tool'
+        });
+        resultDiv.style.color = 'var(--green)';
+        resultDiv.textContent = '✓ ' + result.message;
+        // Clear local timer state in case this admin also had one
+        state.activeTimerId   = null;
+        state.activeStartedAt = null;
+        refreshActiveTimerBanner();
+      } catch (err) {
+        resultDiv.style.color = 'var(--red)';
+        resultDiv.textContent = '✗ ' + err.message;
+      } finally {
+        cancelBtn.disabled = false;
+        cancelBtn.textContent = '⚠ Cancel All Stuck Timers';
+      }
+    }
+  });
+
+  panel.appendChild(cancelBtn);
+  panel.appendChild(resultDiv);
+
+  // Insert before the user list
+  const userList = document.getElementById('userList');
+  userList.parentNode.insertBefore(panel, userList);
 }
 
 document.getElementById('btnNewUser').addEventListener('click', () => {
@@ -920,13 +983,13 @@ function formatLocalTime(isoStr) {
    Falls back gracefully with a clear message on unsupported browsers.
    ═══════════════════════════════════════════════════════════════════════════ */
 const scanner = (() => {
-  let stream       = null;
+  let stream       = null;   // MediaStream
   let active       = false;
-  let scanInterval = null;
-  let detector     = null;
+  let scanInterval = null;   // polling interval for BarcodeDetector
+  let detector     = null;   // BarcodeDetector instance
   let torchEnabled = false;
   let targetInput  = null;   // the input element to fill on success
-  let targetMode   = 'item'; // 'item' | 'notes'
+  let targetMode   = 'item'; // 'item' | 'notes' — controls validation + toast wording
 
   const overlay  = document.getElementById('scannerOverlay');
   const video    = document.getElementById('scannerVideo');
@@ -939,15 +1002,18 @@ const scanner = (() => {
     statusEl.className   = 'scanner-status' + (type ? ' ' + type : '');
   }
 
+  // open(inputEl, mode) — mode is 'item' or 'notes'
   async function open(inputEl, mode) {
     targetInput = inputEl;
     targetMode  = mode || 'item';
 
+    // ── Check camera API support ──────────────────────────────────────────
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       toast('Camera API not available. Use Chrome on Android.', 'error');
       return;
     }
 
+    // ── Check BarcodeDetector support ─────────────────────────────────────
     if (!('BarcodeDetector' in window)) {
       overlay.hidden = false;
       setStatus(
@@ -1001,6 +1067,7 @@ const scanner = (() => {
     }
   }
 
+  // Poll BarcodeDetector against the live video frame every 300 ms
   function startScanLoop() {
     scanInterval = setInterval(async () => {
       if (!active || !detector || video.readyState < 2) return;
@@ -1010,6 +1077,7 @@ const scanner = (() => {
           const text = barcodes[0].rawValue.trim();
 
           if (targetMode === 'item') {
+            // Item number: strict alphanumeric + hyphen/underscore, max 40
             if (/^[A-Za-z0-9\-_]{1,40}$/.test(text)) {
               onScanSuccess(text);
             } else {
@@ -1019,13 +1087,15 @@ const scanner = (() => {
               }, 2000);
             }
           } else {
-            // Notes: accept any non-empty scan result up to 500 chars
+            // Notes: accept any non-empty scan result (max 500 chars)
             if (text.length > 0) {
               onScanSuccess(text.slice(0, 500));
             }
           }
         }
-      } catch (_) {}
+      } catch (_) {
+        // Detection errors on individual frames are normal — ignore
+      }
     }, 300);
   }
 
@@ -1036,6 +1106,7 @@ const scanner = (() => {
     setStatus('✓ Scanned: ' + text, 'success');
 
     if (targetInput) {
+      // For notes: append to existing value if there is one, otherwise set
       if (targetMode === 'notes' && targetInput.value.trim()) {
         targetInput.value = targetInput.value.trimEnd() + ' ' + text;
       } else {
@@ -1072,6 +1143,7 @@ const scanner = (() => {
     setStatus('Initialising camera…');
   }
 
+  // Torch / flashlight — supported on most Android devices in Chrome
   function tryEnableTorch() {
     if (!stream) return;
     const track = stream.getVideoTracks()[0];
@@ -1090,10 +1162,12 @@ const scanner = (() => {
   }
 
   // ── Wire up buttons ───────────────────────────────────────────────────────
+  // Item number scan button
   document.getElementById('btnScan').addEventListener('click', () => {
     open(document.getElementById('itemNumberInput'), 'item');
   });
 
+  // Notes scan button
   document.getElementById('btnScanNotes').addEventListener('click', () => {
     open(document.getElementById('startNotes'), 'notes');
   });

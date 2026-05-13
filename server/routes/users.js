@@ -108,4 +108,39 @@ router.post('/:id/reset-password', validate(schemas.resetPassword), async (req, 
   }
 });
 
+
+// POST /api/users/admin/cancel-stuck-timers
+// Emergency: cancels ALL active timers. Administrator only.
+// Used when a timer is stuck and cannot be stopped through the normal UI.
+router.post('/admin/cancel-stuck-timers', async (req, res) => {
+  try {
+    const { v4: uuidv4 } = require('uuid');
+    const reason = (req.body && req.body.reason) || 'Cancelled by administrator via emergency tool';
+
+    const active = await query('SELECT * FROM timers WHERE status = $1', ['active']);
+
+    if (active.length === 0) {
+      return res.json({ ok: true, cancelled: 0, message: 'No active timers found.' });
+    }
+
+    for (const timer of active) {
+      await query(
+        'UPDATE timers SET status = $1, updated_at = NOW(), updated_by = $2 WHERE id = $3',
+        ['cancelled', req.user.id, timer.id]
+      );
+      await query(
+        'INSERT INTO audit_log (id, timer_id, action, performed_by, reason, details) VALUES ($1,$2,$3,$4,$5,$6)',
+        [uuidv4(), timer.id, 'cancel', req.user.id, reason,
+         JSON.stringify({ source: 'emergency_cancel', operator_id: timer.operator_id })]
+      );
+    }
+
+    res.json({ ok: true, cancelled: active.length,
+      message: active.length + ' stuck timer(s) cancelled successfully.' });
+  } catch (err) {
+    console.error('Cancel stuck timers error:', err.message);
+    res.status(500).json({ error: 'Could not cancel timers.' });
+  }
+});
+
 module.exports = router;
