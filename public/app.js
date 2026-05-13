@@ -894,7 +894,7 @@ const scanner = (() => {
     }
 
     // ZXing may not have loaded (e.g. offline) – check gracefully
-    if (typeof ZXing === 'undefined') {
+    if (typeof ZXing === 'undefined' || typeof ZXing.BrowserMultiFormatReader === 'undefined') {
       toast('Barcode library not loaded. Check your connection.', 'error');
       return;
     }
@@ -923,7 +923,9 @@ const scanner = (() => {
       tryEnableTorch();
 
       // Start ZXing decode loop
-      codeReader = new ZXing.BrowserMultiFormatReader();
+      codeReader = new ZXing.BrowserMultiFormatReader(null, {
+  delayBetweenScanAttempts: 300,
+});
       codeReader.decodeFromStream(stream, video, (result, err) => {
         if (!active) return;
         if (result) {
