@@ -866,20 +866,23 @@ function formatLocalTime(isoStr) {
 
 /* ═══════════════════════════════════════════════════════════════════════════
    QR / BARCODE SCANNER
-   Uses ZXing-js (loaded via CDN in index.html).
-   Falls back gracefully if camera unavailable or permission denied.
+   Uses the browser-native BarcodeDetector API — built into Android Chrome
+   83+ and Chrome desktop. No external libraries required.
+   Falls back gracefully with a clear message on unsupported browsers.
    ═══════════════════════════════════════════════════════════════════════════ */
 const scanner = (() => {
-  let codeReader  = null;   // ZXing reader instance
-  let stream      = null;   // MediaStream (so we can stop it)
-  let active      = false;
+  let stream       = null;   // MediaStream
+  let active       = false;
+  let scanInterval = null;   // polling interval for BarcodeDetector
+  let detector     = null;   // BarcodeDetector instance
+  let torchEnabled = false;
 
-  const overlay    = document.getElementById('scannerOverlay');
-  const video      = document.getElementById('scannerVideo');
-  const statusEl   = document.getElementById('scannerStatus');
-  const torchBtn   = document.getElementById('btnScanTorch');
-  const closeBtn   = document.getElementById('btnScanClose');
-  const openBtn    = document.getElementById('btnScan');
+  const overlay  = document.getElementById('scannerOverlay');
+  const video    = document.getElementById('scannerVideo');
+  const statusEl = document.getElementById('scannerStatus');
+  const torchBtn = document.getElementById('btnScanTorch');
+  const closeBtn = document.getElementById('btnScanClose');
+  const openBtn  = document.getElementById('btnScan');
 
   function setStatus(msg, type = '') {
     statusEl.textContent = msg;
@@ -887,15 +890,23 @@ const scanner = (() => {
   }
 
   async function open() {
-    // Check browser support
+    // ── Check camera API support ──────────────────────────────────────────
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      toast('Camera not supported in this browser.', 'error');
+      toast('Camera API not available. Use Chrome on Android.', 'error');
       return;
     }
 
-    // ZXing may not have loaded (e.g. offline) – check gracefully
-    if (typeof ZXing === 'undefined' || typeof ZXing.BrowserMultiFormatReader === 'undefined') {
-      toast('Barcode library not loaded. Check your connection.', 'error');
+    // ── Check BarcodeDetector support ─────────────────────────────────────
+    // BarcodeDetector is built into Chrome on Android and Chrome desktop.
+    // It requires HTTPS (Railway provides this automatically).
+    if (!('BarcodeDetector' in window)) {
+      // Show a helpful message rather than a generic error
+      overlay.hidden = false;
+      setStatus(
+        'Barcode scanning requires Chrome on Android or Chrome 83+ on desktop. ' +
+        'Your current browser does not support it.',
+        'error'
+      );
       return;
     }
 
@@ -904,7 +915,16 @@ const scanner = (() => {
     setStatus('Requesting camera access…');
 
     try {
-      // Prefer back/environment camera on Android tablets
+      // Create detector supporting common barcode formats
+      detector = new BarcodeDetector({
+        formats: [
+          'qr_code', 'code_128', 'code_39', 'code_93',
+          'ean_13', 'ean_8', 'upc_a', 'upc_e',
+          'data_matrix', 'pdf417',
+        ],
+      });
+
+      // Prefer rear/environment camera on tablets and phones
       stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: 'environment' },
@@ -918,31 +938,15 @@ const scanner = (() => {
       await video.play();
 
       setStatus('Scanning — point at a barcode or QR code');
-
-      // Show torch button if the track supports it
       tryEnableTorch();
-
-      // Start ZXing decode loop
-      codeReader = new ZXing.BrowserMultiFormatReader(null, {
-  delayBetweenScanAttempts: 300,
-});
-      codeReader.decodeFromStream(stream, video, (result, err) => {
-        if (!active) return;
-        if (result) {
-          const text = result.getText().trim();
-          // Validate against item number rules before accepting
-          if (/^[A-Za-z0-9\-_]{1,40}$/.test(text)) {
-            onScanSuccess(text);
-          } else {
-            setStatus(`Read "${text}" — not a valid item number format. Try again.`, 'error');
-          }
-        }
-        // ZXing fires errors continuously when no code found — ignore NotFoundException
-      });
+      startScanLoop();
 
     } catch (err) {
       if (err.name === 'NotAllowedError') {
-        setStatus('Camera permission denied. Please allow camera access in your browser settings.', 'error');
+        setStatus(
+          'Camera permission denied. Tap the camera icon in your browser address bar to allow access.',
+          'error'
+        );
       } else if (err.name === 'NotFoundError') {
         setStatus('No camera found on this device.', 'error');
       } else {
@@ -951,42 +955,69 @@ const scanner = (() => {
     }
   }
 
+  // Poll BarcodeDetector against the live video frame every 300 ms
+  function startScanLoop() {
+    scanInterval = setInterval(async () => {
+      if (!active || !detector || video.readyState < 2) return;
+      try {
+        const barcodes = await detector.detect(video);
+        if (barcodes && barcodes.length > 0) {
+          const text = barcodes[0].rawValue.trim();
+          if (/^[A-Za-z0-9\-_]{1,40}$/.test(text)) {
+            onScanSuccess(text);
+          } else {
+            setStatus(`Read "${text}" — not a valid item number. Try again.`, 'error');
+            // Reset status after 2 s so user can try again
+            setTimeout(() => {
+              if (active) setStatus('Scanning — point at a barcode or QR code');
+            }, 2000);
+          }
+        }
+      } catch (_) {
+        // Detection errors on individual frames are normal — ignore
+      }
+    }, 300);
+  }
+
   function onScanSuccess(text) {
+    // Stop scanning immediately to avoid double-reads
+    clearInterval(scanInterval);
+    scanInterval = null;
+
     setStatus('✓ Scanned: ' + text, 'success');
-    // Fill the item number input
+
     const input = document.getElementById('itemNumberInput');
     input.value = text;
     hideSuggestions();
-    // Brief pause so user can see the success state, then close
+
     setTimeout(() => {
       close();
       input.focus();
       toast('Item number scanned: ' + text, 'success');
-    }, 800);
+    }, 700);
   }
 
   function close() {
     active = false;
     overlay.hidden = true;
 
-    // Stop ZXing
-    if (codeReader) {
-      try { codeReader.reset(); } catch (_) {}
-      codeReader = null;
-    }
+    clearInterval(scanInterval);
+    scanInterval = null;
 
-    // Stop camera stream tracks
     if (stream) {
       stream.getTracks().forEach(t => t.stop());
       stream = null;
     }
 
     video.srcObject = null;
+    detector        = null;
+    torchEnabled    = false;
     torchBtn.hidden = true;
+    torchBtn.textContent = '🔦 Torch';
     setStatus('Initialising camera…');
   }
 
-  // Torch (flashlight) support — Android Chrome only
+  // Torch / flashlight — supported on most Android devices in Chrome
   function tryEnableTorch() {
     if (!stream) return;
     const track = stream.getVideoTracks()[0];
@@ -994,25 +1025,20 @@ const scanner = (() => {
     const caps = track.getCapabilities ? track.getCapabilities() : {};
     if (caps.torch) {
       torchBtn.hidden = false;
-      let torchOn = false;
-      torchBtn.addEventListener('click', async () => {
-        torchOn = !torchOn;
+      torchBtn.onclick = async () => {
+        torchEnabled = !torchEnabled;
         try {
-          await track.applyConstraints({ advanced: [{ torch: torchOn }] });
-          torchBtn.textContent = torchOn ? '🔦 Torch On' : '🔦 Torch';
+          await track.applyConstraints({ advanced: [{ torch: torchEnabled }] });
+          torchBtn.textContent = torchEnabled ? '🔦 Torch On' : '🔦 Torch';
         } catch (_) {}
-      });
+      };
     }
   }
 
-  // Wire up buttons
+  // ── Wire up UI events ─────────────────────────────────────────────────────
   openBtn.addEventListener('click', open);
   closeBtn.addEventListener('click', close);
-
-  // Close on backdrop click
   overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
-
-  // Close on Escape key
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && !overlay.hidden) close();
   });
