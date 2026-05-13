@@ -1,0 +1,1431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Philtronics Time to Complete – User Manual</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+/* ── Tokens ───────────────────────────────────────────────────────────── */
+:root{
+  --bg:#f7f8fc; --bg2:#ffffff; --bg3:#f0f2f8;
+  --border:#dde1ef; --border2:#c5cbe0;
+  --text:#1a1d2e; --text2:#4a5068; --text3:#8890a8;
+  --accent:#e8a500; --accent2:#f0b429;
+  --green:#16a34a; --red:#dc2626; --blue:#2563eb;
+  --app-bg:#0f1117; --app-bg2:#171b26; --app-bg3:#1e2333;
+  --app-border:#2a2f42; --app-text:#e8eaf2; --app-text2:#9aa0b8;
+  --app-accent:#f0b429; --app-green:#22c55e; --app-red:#ef4444;
+  --radius:8px; --radius-lg:14px;
+  --font:'Barlow',sans-serif; --mono:'DM Mono',monospace;
+  --shadow:0 2px 16px rgba(0,0,0,.08);
+  --shadow-lg:0 8px 40px rgba(0,0,0,.13);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  background:var(--bg);color:var(--text);
+  font-family:var(--font);font-size:16px;line-height:1.7;
+}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+img{max-width:100%}
+
+/* ── Layout ───────────────────────────────────────────────────────────── */
+.wrapper{display:flex;min-height:100vh}
+
+/* Sidebar */
+.sidebar{
+  width:260px;flex-shrink:0;
+  background:var(--bg2);
+  border-right:1px solid var(--border);
+  position:sticky;top:0;height:100vh;
+  overflow-y:auto;padding:0 0 40px;
+}
+.sidebar-logo{
+  padding:24px 20px 16px;
+  border-bottom:1px solid var(--border);
+  margin-bottom:8px;
+}
+.sidebar-brand{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.sidebar-hex{font-size:22px;color:var(--accent)}
+.sidebar-name{font-size:14px;font-weight:800;letter-spacing:.1em;color:var(--text)}
+.sidebar-sub{font-size:11px;color:var(--text3);letter-spacing:.06em}
+
+.sidebar nav ul{list-style:none}
+.sidebar nav ul li a{
+  display:block;padding:9px 20px;
+  font-size:14px;font-weight:500;color:var(--text2);
+  border-left:3px solid transparent;
+  transition:all .15s;
+}
+.sidebar nav ul li a:hover{
+  background:var(--bg3);color:var(--text);
+  text-decoration:none;border-left-color:var(--accent2);
+}
+.sidebar nav ul li a.active{
+  background:var(--bg3);color:var(--accent);
+  border-left-color:var(--accent);font-weight:600;
+}
+.nav-section{
+  font-size:10px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--text3);
+  padding:16px 20px 4px;
+}
+
+/* Main content */
+.content{flex:1;max-width:860px;padding:48px 48px 100px;min-width:0}
+
+/* ── Typography ───────────────────────────────────────────────────────── */
+h1{font-size:36px;font-weight:800;letter-spacing:-.01em;margin-bottom:12px;line-height:1.2}
+h2{font-size:26px;font-weight:700;margin:56px 0 16px;padding-top:8px;
+   border-top:2px solid var(--border);color:var(--text)}
+h3{font-size:19px;font-weight:700;margin:32px 0 10px;color:var(--text)}
+h4{font-size:15px;font-weight:700;margin:20px 0 8px;text-transform:uppercase;
+   letter-spacing:.08em;color:var(--text2)}
+p{margin-bottom:16px;color:var(--text2)}
+p:last-child{margin-bottom:0}
+strong{color:var(--text);font-weight:600}
+
+.lead{font-size:18px;color:var(--text2);line-height:1.6;margin-bottom:24px}
+
+/* ── Cover ────────────────────────────────────────────────────────────── */
+.cover{
+  background:linear-gradient(135deg,#0f1117 0%,#1a1f30 100%);
+  border-radius:var(--radius-lg);
+  padding:48px 40px;margin-bottom:48px;
+  position:relative;overflow:hidden;
+}
+.cover::before{
+  content:'⬡';
+  position:absolute;right:-20px;top:-30px;
+  font-size:200px;color:rgba(240,180,41,.06);
+  line-height:1;pointer-events:none;
+}
+.cover-hex{font-size:40px;color:var(--accent2);margin-bottom:12px;display:block}
+.cover h1{color:#e8eaf2;font-size:32px}
+.cover .lead{color:#9aa0b8}
+.cover-badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px}
+.cover-badge{
+  background:rgba(240,180,41,.15);border:1px solid rgba(240,180,41,.3);
+  color:var(--accent2);font-size:12px;font-weight:600;
+  padding:4px 12px;border-radius:20px;letter-spacing:.06em;
+}
+
+/* ── Callouts ─────────────────────────────────────────────────────────── */
+.callout{
+  border-radius:var(--radius);padding:16px 20px;margin:20px 0;
+  display:flex;gap:14px;align-items:flex-start;
+}
+.callout-icon{font-size:20px;flex-shrink:0;margin-top:1px}
+.callout-body{flex:1}
+.callout-body strong{display:block;margin-bottom:4px;font-size:14px}
+.callout-body p{font-size:14px;margin:0;color:inherit}
+.callout.tip   {background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af}
+.callout.warn  {background:#fffbeb;border:1px solid #fde68a;color:#92400e}
+.callout.info  {background:#f0fdf4;border:1px solid #bbf7d0;color:#166534}
+.callout.danger{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
+
+/* ── Steps ────────────────────────────────────────────────────────────── */
+.steps{margin:20px 0;counter-reset:step}
+.step{
+  display:flex;gap:20px;margin-bottom:24px;
+  align-items:flex-start;
+}
+.step-num{
+  width:36px;height:36px;border-radius:50%;
+  background:var(--accent);color:#0f1117;
+  font-weight:800;font-size:16px;
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;margin-top:2px;
+}
+.step-body{flex:1}
+.step-body strong{display:block;font-size:16px;margin-bottom:4px;color:var(--text)}
+.step-body p{font-size:14px;margin:0}
+
+/* ── Roles table ──────────────────────────────────────────────────────── */
+.roles-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+  gap:12px;margin:20px 0;
+}
+.role-card{
+  background:var(--bg2);border:1px solid var(--border);
+  border-radius:var(--radius);padding:16px;
+}
+.role-icon{font-size:28px;margin-bottom:8px}
+.role-name{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
+.role-name.operator    {color:#3b82f6}
+.role-name.supervisor  {color:var(--accent)}
+.role-name.manager     {color:#9333ea}
+.role-name.administrator{color:var(--red)}
+.role-perms{list-style:none;font-size:13px;color:var(--text2)}
+.role-perms li{padding:3px 0;display:flex;gap:6px;align-items:flex-start}
+.role-perms li::before{content:'✓';color:var(--green);font-weight:700;flex-shrink:0}
+
+/* ── Mockup screens ───────────────────────────────────────────────────── */
+.mockup-wrap{
+  margin:24px 0;
+  background:var(--bg3);
+  border:1px solid var(--border);
+  border-radius:var(--radius-lg);
+  padding:20px;
+}
+.mockup-caption{
+  font-size:13px;color:var(--text3);
+  text-align:center;margin-top:12px;
+  font-style:italic;
+}
+
+/* Tablet frame */
+.tablet-frame{
+  background:#1a1d26;
+  border-radius:16px;
+  padding:8px;
+  max-width:480px;
+  margin:0 auto;
+  box-shadow:0 8px 32px rgba(0,0,0,.25),inset 0 0 0 1px #2a2f42;
+}
+.tablet-screen{
+  background:var(--app-bg);
+  border-radius:10px;
+  overflow:hidden;
+  font-family:var(--font);
+}
+
+/* App topbar */
+.app-topbar{
+  background:var(--app-bg2);
+  border-bottom:2px solid var(--app-accent);
+  display:flex;align-items:center;
+  padding:0 14px;height:48px;gap:10px;
+}
+.app-brand{display:flex;align-items:center;gap:6px}
+.app-hex{font-size:18px;color:var(--app-accent)}
+.app-name{font-size:12px;font-weight:800;letter-spacing:.1em;color:var(--app-text)}
+.app-spacer{flex:1}
+.app-user{font-size:11px;color:var(--app-text2)}
+.app-menu{font-size:18px;color:var(--app-text2);margin-left:8px}
+
+/* App content area */
+.app-body{padding:16px}
+
+/* Login mockup */
+.mock-login{
+  background:var(--app-bg);
+  padding:32px 24px;
+  display:flex;flex-direction:column;align-items:center;
+  font-family:var(--font);
+}
+.mock-login-card{
+  background:var(--app-bg2);
+  border:1px solid var(--app-border);
+  border-radius:12px;
+  padding:28px 24px;
+  width:100%;max-width:320px;
+}
+.mock-hex-lg{font-size:36px;color:var(--app-accent);text-align:center;display:block}
+.mock-title{font-size:18px;font-weight:800;letter-spacing:.12em;color:var(--app-text);text-align:center;margin:6px 0 2px}
+.mock-sub{font-size:11px;color:var(--app-text2);text-align:center;margin-bottom:20px;letter-spacing:.06em}
+.mock-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--app-text2);margin-bottom:5px}
+.mock-input{
+  background:var(--app-bg3);border:1px solid var(--app-border);
+  border-radius:6px;color:var(--app-text);
+  font-size:15px;padding:11px 13px;width:100%;margin-bottom:14px;
+  font-family:var(--font);
+}
+.mock-input.filled{border-color:#3a4158;color:var(--app-text)}
+.mock-input.focused{border-color:var(--app-accent);box-shadow:0 0 0 3px rgba(240,180,41,.18)}
+.mock-btn-primary{
+  background:var(--app-accent);color:#0f1117;
+  border:none;border-radius:6px;
+  font-size:16px;font-weight:700;letter-spacing:.08em;
+  padding:14px;width:100%;cursor:pointer;
+  font-family:var(--font);
+}
+.mock-btn-start{
+  background:var(--app-green);color:#0f1117;
+  border:none;border-radius:10px;
+  font-size:20px;font-weight:800;letter-spacing:.1em;
+  padding:16px;width:100%;cursor:pointer;
+  font-family:var(--font);margin-top:8px;
+}
+.mock-btn-stop{
+  background:var(--app-red);color:#fff;
+  border:none;border-radius:10px;
+  font-size:20px;font-weight:800;letter-spacing:.1em;
+  padding:16px;flex:1;cursor:pointer;
+  font-family:var(--font);
+}
+.mock-btn-cancel{
+  background:transparent;color:var(--app-text2);
+  border:1px solid #3a4158;border-radius:6px;
+  font-size:13px;font-weight:600;
+  padding:16px 14px;cursor:pointer;
+  font-family:var(--font);
+}
+
+/* Timer panel */
+.mock-panel{
+  background:var(--app-bg2);border:1px solid var(--app-border);
+  border-radius:10px;padding:18px;margin-bottom:14px;
+}
+.mock-panel.active-panel{
+  border-color:var(--app-green);
+  box-shadow:0 0 0 1px var(--app-green),0 0 16px rgba(34,197,94,.1);
+}
+.mock-panel-title{
+  font-size:11px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--app-text2);margin-bottom:14px;
+}
+.mock-active-hdr{
+  display:flex;align-items:center;gap:8px;
+  font-size:11px;font-weight:700;letter-spacing:.1em;
+  color:var(--app-green);margin-bottom:10px;text-transform:uppercase;
+}
+.mock-dot{
+  width:8px;height:8px;background:var(--app-green);
+  border-radius:50%;flex-shrink:0;
+}
+.mock-item-num{
+  font-family:var(--mono);font-size:22px;font-weight:500;
+  color:var(--app-accent);margin-bottom:10px;
+}
+.mock-stopwatch{
+  font-family:var(--mono);font-size:52px;font-weight:400;
+  color:var(--app-text);letter-spacing:.04em;
+  line-height:1;margin-bottom:8px;
+}
+.mock-meta{font-size:12px;color:var(--app-text2);margin-bottom:14px}
+.mock-actions{display:flex;gap:10px}
+.mock-input-wrap{position:relative;margin-bottom:14px}
+.mock-input-with-btn{display:flex;gap:8px}
+.mock-input-with-btn .mock-input{margin-bottom:0;flex:1}
+.mock-scan-btn{
+  background:var(--app-bg3);border:1px solid #3a4158;
+  border-radius:6px;color:var(--app-accent);
+  font-size:13px;font-weight:600;padding:0 14px;
+  white-space:nowrap;font-family:var(--font);cursor:pointer;
+  display:flex;align-items:center;gap:5px;
+}
+
+/* Recent entries */
+.mock-entry{
+  background:var(--app-bg2);border:1px solid var(--app-border);
+  border-radius:6px;padding:11px 13px;
+  display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:6px;
+}
+.mock-entry-item{font-family:var(--mono);font-size:13px;color:var(--app-accent)}
+.mock-entry-time{font-size:11px;color:var(--app-text2);margin-top:2px}
+.mock-entry-dur{font-family:var(--mono);font-size:13px;color:var(--app-text);text-align:right}
+.mock-badge{
+  font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  padding:2px 7px;border-radius:3px;display:inline-block;margin-top:2px;
+}
+.mock-badge.completed{background:#16532d;color:#22c55e;border:1px solid #22c55e}
+.mock-badge.active{background:rgba(34,197,94,.1);color:#22c55e;border:1px solid #22c55e}
+.mock-section-title{
+  font-size:11px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:#5a6078;margin-bottom:10px;
+}
+
+/* Scanner overlay mockup */
+.mock-scanner-overlay{
+  background:rgba(0,0,0,.92);padding:16px;
+  display:flex;align-items:center;justify-content:center;
+}
+.mock-scanner-box{
+  background:var(--app-bg2);border:1px solid #3a4158;
+  border-radius:10px;overflow:hidden;width:100%;max-width:320px;
+}
+.mock-scanner-hdr{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:11px 14px;border-bottom:1px solid var(--app-border);
+}
+.mock-scanner-title{font-size:12px;font-weight:600;color:var(--app-text2)}
+.mock-scanner-viewport{
+  background:#000;aspect-ratio:1/1;position:relative;
+  display:flex;align-items:center;justify-content:center;overflow:hidden;
+}
+.mock-camera-bg{
+  width:100%;height:100%;
+  background:linear-gradient(135deg,#0a0e14,#1a2030);
+  display:flex;align-items:center;justify-content:center;
+  position:relative;
+}
+.mock-qr-code{
+  width:80px;height:80px;
+  background:white;padding:6px;border-radius:3px;
+  display:grid;grid-template-columns:repeat(7,1fr);gap:1px;
+}
+.mock-qr-cell{background:#000;border-radius:1px}
+.mock-qr-cell.w{background:white}
+.mock-reticle{
+  position:absolute;inset:0;
+  pointer-events:none;
+}
+.mock-corner{
+  position:absolute;width:24px;height:24px;
+  border-color:var(--app-accent);border-style:solid;border-width:0;
+}
+.mock-corner.tl{top:18%;left:14%;border-top-width:3px;border-left-width:3px;border-radius:2px 0 0 0}
+.mock-corner.tr{top:18%;right:14%;border-top-width:3px;border-right-width:3px;border-radius:0 2px 0 0}
+.mock-corner.bl{bottom:18%;left:14%;border-bottom-width:3px;border-left-width:3px;border-radius:0 0 0 2px}
+.mock-corner.br{bottom:18%;right:14%;border-bottom-width:3px;border-right-width:3px;border-radius:0 0 2px 0}
+.mock-scan-line{
+  position:absolute;left:15%;right:15%;height:2px;top:45%;
+  background:linear-gradient(90deg,transparent,var(--app-accent),transparent);
+}
+.mock-scanner-status{
+  text-align:center;padding:10px 14px;font-size:12px;color:var(--app-text2);
+}
+.mock-scanner-status.success{color:var(--app-green);font-weight:600}
+
+/* History / dashboard mockups */
+.mock-filter{
+  background:var(--app-bg2);border:1px solid var(--app-border);
+  border-radius:10px;padding:14px;margin-bottom:12px;
+}
+.mock-filter-row{display:flex;gap:8px;margin-bottom:10px}
+.mock-filter-input{
+  background:var(--app-bg3);border:1px solid var(--app-border);
+  border-radius:6px;color:var(--app-text2);
+  font-size:12px;padding:8px 10px;flex:1;font-family:var(--font);
+}
+.mock-btn-sm{
+  background:var(--app-accent);color:#0f1117;
+  border:none;border-radius:6px;
+  font-size:13px;font-weight:700;padding:8px 14px;
+  font-family:var(--font);cursor:pointer;white-space:nowrap;
+}
+.mock-btn-export{
+  background:#3b82f6;color:#fff;
+  border:none;border-radius:6px;
+  font-size:13px;font-weight:700;padding:8px 14px;
+  font-family:var(--font);cursor:pointer;white-space:nowrap;
+}
+.mock-table{width:100%;border-collapse:collapse;font-size:12px}
+.mock-table th{
+  text-align:left;padding:8px 10px;
+  font-size:10px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:#5a6078;
+  border-bottom:1px solid var(--app-border);
+}
+.mock-table td{
+  padding:9px 10px;border-bottom:1px solid var(--app-border);
+  color:var(--app-text2);
+}
+.mock-table td:first-child{font-family:var(--mono);color:var(--app-accent);font-size:11px}
+
+/* Stat cards */
+.mock-stats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px}
+.mock-stat{
+  background:var(--app-bg2);border:1px solid var(--app-border);
+  border-radius:8px;padding:12px;
+}
+.mock-stat-label{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#5a6078;margin-bottom:6px}
+.mock-stat-val{font-family:var(--mono);font-size:26px;color:var(--app-accent)}
+
+/* Admin user list */
+.mock-user-card{
+  background:var(--app-bg2);border:1px solid var(--app-border);
+  border-radius:8px;padding:12px 14px;
+  display:flex;align-items:center;gap:12px;margin-bottom:8px;
+}
+.mock-avatar{
+  width:36px;height:36px;background:var(--app-bg3);
+  border:1px solid #3a4158;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-weight:700;font-size:14px;color:var(--app-accent);flex-shrink:0;
+}
+.mock-user-info{flex:1}
+.mock-user-name{font-size:13px;font-weight:600;color:var(--app-text)}
+.mock-user-meta{font-size:11px;color:var(--app-text2);display:flex;gap:6px;margin-top:2px}
+.mock-user-actions{display:flex;gap:6px}
+.mock-btn-ghost{
+  background:transparent;border:1px solid #3a4158;
+  border-radius:5px;color:var(--app-text2);
+  font-size:11px;font-weight:600;padding:6px 10px;
+  font-family:var(--font);cursor:pointer;
+}
+.mock-role-badge{
+  display:inline-block;font-size:10px;font-weight:700;
+  letter-spacing:.06em;text-transform:uppercase;
+  padding:2px 6px;border-radius:3px;
+}
+.mock-role-operator    {background:rgba(59,130,246,.15);color:#60a5fa}
+.mock-role-supervisor  {background:rgba(240,180,41,.15);color:var(--app-accent)}
+.mock-role-manager     {background:rgba(168,85,247,.15);color:#c084fc}
+.mock-role-admin       {background:rgba(239,68,68,.15);color:#f87171}
+
+/* Annotation arrows */
+.annotated{position:relative}
+.annotation{
+  position:absolute;
+  background:#1e40af;color:#fff;
+  font-size:11px;font-weight:700;
+  padding:4px 10px;border-radius:20px;
+  white-space:nowrap;z-index:10;
+  box-shadow:0 2px 8px rgba(0,0,0,.3);
+}
+.annotation::before{
+  content:'';position:absolute;
+  border:5px solid transparent;
+}
+.ann-right{right:-8px}
+.ann-left{left:-8px}
+
+/* ── Keyboard shortcut / button pills ─────────────────────────────────── */
+.pill{
+  display:inline-flex;align-items:center;gap:5px;
+  background:var(--bg3);border:1px solid var(--border2);
+  border-radius:6px;padding:3px 10px;
+  font-size:13px;font-weight:600;color:var(--text);
+  vertical-align:middle;
+}
+.pill.green{background:#f0fdf4;border-color:#bbf7d0;color:#166534}
+.pill.red  {background:#fef2f2;border-color:#fecaca;color:#991b1b}
+.pill.amber{background:#fffbeb;border-color:#fde68a;color:#92400e}
+
+/* ── Checklist ────────────────────────────────────────────────────────── */
+.checklist{list-style:none;margin:12px 0}
+.checklist li{
+  padding:8px 0;border-bottom:1px solid var(--border);
+  display:flex;align-items:flex-start;gap:10px;font-size:14px;color:var(--text2);
+}
+.checklist li:last-child{border-bottom:none}
+.checklist li .ck{
+  width:20px;height:20px;border-radius:4px;
+  background:var(--green);display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;font-size:12px;color:#fff;margin-top:1px;
+}
+
+/* ── TOC ──────────────────────────────────────────────────────────────── */
+.toc{
+  background:var(--bg2);border:1px solid var(--border);
+  border-radius:var(--radius);padding:20px 24px;margin:24px 0;
+}
+.toc h4{margin:0 0 12px;color:var(--text)}
+.toc ol{padding-left:20px}
+.toc li{padding:4px 0;font-size:14px}
+.toc a{color:var(--text2)}
+.toc a:hover{color:var(--blue)}
+
+/* ── Responsive ───────────────────────────────────────────────────────── */
+@media(max-width:768px){
+  .sidebar{display:none}
+  .content{padding:24px 20px 60px}
+  h1{font-size:26px}
+  h2{font-size:20px}
+}
+
+/* Print */
+@media print{
+  .sidebar{display:none}
+  .content{padding:0}
+  .mockup-wrap{break-inside:avoid}
+}
+</style>
+</head>
+<body>
+<div class="wrapper">
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     SIDEBAR
+     ══════════════════════════════════════════════════════════════════════ -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-brand">
+      <span class="sidebar-hex">⬡</span>
+      <span class="sidebar-name">PHILTRONICS</span>
+    </div>
+    <div class="sidebar-sub">TIME TO COMPLETE — USER MANUAL</div>
+  </div>
+  <nav>
+    <ul>
+      <li class="nav-section">Getting Started</li>
+      <li><a href="#intro">What is this system?</a></li>
+      <li><a href="#roles">User Roles</a></li>
+      <li><a href="#login">Signing In</a></li>
+      <li class="nav-section">Operators</li>
+      <li><a href="#start-job">Starting a Job</a></li>
+      <li><a href="#scan-qr">Scanning a Barcode</a></li>
+      <li><a href="#stop-job">Stopping a Job</a></li>
+      <li><a href="#cancel-job">Cancelling a Timer</a></li>
+      <li><a href="#my-history">Viewing Your History</a></li>
+      <li class="nav-section">Supervisors</li>
+      <li><a href="#supervisor-history">Viewing All History</a></li>
+      <li><a href="#adjusting">Adjusting a Timer</a></li>
+      <li class="nav-section">Managers</li>
+      <li><a href="#dashboard">Dashboard</a></li>
+      <li><a href="#export">Exporting to CSV</a></li>
+      <li class="nav-section">Administrators</li>
+      <li><a href="#user-management">Managing Users</a></li>
+      <li><a href="#add-user">Adding a New User</a></li>
+      <li><a href="#reset-password">Resetting a Password</a></li>
+      <li class="nav-section">Help</li>
+      <li><a href="#troubleshooting">Troubleshooting</a></li>
+    </ul>
+  </nav>
+</aside>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     MAIN CONTENT
+     ══════════════════════════════════════════════════════════════════════ -->
+<main class="content">
+
+  <!-- Cover -->
+  <div class="cover">
+    <span class="cover-hex">⬡</span>
+    <h1>Time to Complete</h1>
+    <p class="lead">User Manual — Philtronics Ltd Shopfloor System</p>
+    <div class="cover-badges">
+      <span class="cover-badge">VERSION 1.0</span>
+      <span class="cover-badge">ANDROID TABLET</span>
+      <span class="cover-badge">ALL ROLES</span>
+    </div>
+  </div>
+
+  <!-- TOC -->
+  <div class="toc">
+    <h4>📋 Contents</h4>
+    <ol>
+      <li><a href="#intro">What is this system?</a></li>
+      <li><a href="#roles">User roles explained</a></li>
+      <li><a href="#login">Signing in</a></li>
+      <li><a href="#start-job">Starting a job timer</a></li>
+      <li><a href="#scan-qr">Scanning a barcode or QR code</a></li>
+      <li><a href="#stop-job">Stopping a job timer</a></li>
+      <li><a href="#cancel-job">Cancelling a timer</a></li>
+      <li><a href="#my-history">Viewing your history</a></li>
+      <li><a href="#supervisor-history">Supervisor: viewing all history</a></li>
+      <li><a href="#adjusting">Supervisor: adjusting a timer</a></li>
+      <li><a href="#dashboard">Manager dashboard</a></li>
+      <li><a href="#export">Exporting data to CSV</a></li>
+      <li><a href="#user-management">Admin: managing users</a></li>
+      <li><a href="#troubleshooting">Troubleshooting</a></li>
+    </ol>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────────── -->
+  <h2 id="intro">What is this system?</h2>
+
+  <p>The <strong>Time to Complete</strong> system is used on the shopfloor to record how long it takes to assemble each item. When you start working on a part, you press <strong>START</strong>. When you finish, you press <strong>STOP</strong>. The system automatically records the time and stores it.</p>
+
+  <p>This information helps the production team understand how long jobs take, spot any problems, and plan the day more accurately.</p>
+
+  <div class="callout tip">
+    <span class="callout-icon">💡</span>
+    <div class="callout-body">
+      <strong>You do not need to be technical to use this system.</strong>
+      <p>If you can use a smartphone, you can use this system. Everything is done with big, clearly labelled buttons.</p>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────────── -->
+  <h2 id="roles">User Roles</h2>
+
+  <p>Every person who uses the system has a <strong>role</strong>. Your role decides what you can see and do. There are four roles:</p>
+
+  <div class="roles-grid">
+    <div class="role-card">
+      <div class="role-icon">👷</div>
+      <div class="role-name operator">Operator</div>
+      <ul class="role-perms">
+        <li>Start and stop your own timers</li>
+        <li>View your own completed jobs</li>
+        <li>Cancel your own timer within 60 seconds</li>
+      </ul>
+    </div>
+    <div class="role-card">
+      <div class="role-icon">🦺</div>
+      <div class="role-name supervisor">Supervisor</div>
+      <ul class="role-perms">
+        <li>Everything Operators can do</li>
+        <li>View all operators' history</li>
+        <li>Cancel or adjust any timer</li>
+        <li>Must provide a reason for changes</li>
+      </ul>
+    </div>
+    <div class="role-card">
+      <div class="role-icon">📊</div>
+      <div class="role-name manager">Manager</div>
+      <ul class="role-perms">
+        <li>Everything Supervisors can do</li>
+        <li>View the dashboard with stats</li>
+        <li>Export data to a spreadsheet</li>
+        <li>Filter by date, operator, item</li>
+      </ul>
+    </div>
+    <div class="role-card">
+      <div class="role-icon">🔧</div>
+      <div class="role-name administrator">Administrator</div>
+      <ul class="role-perms">
+        <li>Everything Managers can do</li>
+        <li>Create and edit user accounts</li>
+        <li>Reset passwords</li>
+        <li>Enable or disable accounts</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout info">
+    <span class="callout-icon">ℹ️</span>
+    <div class="callout-body">
+      <strong>Not sure what role you have?</strong>
+      <p>After you sign in, your name and role are shown in the top-right corner of every screen. If you need a different role, speak to your administrator.</p>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────────── -->
+  <h2 id="login">Signing In</h2>
+
+  <p>Open the web address your supervisor gave you in the <strong>Chrome</strong> browser on your tablet. You will see the sign-in screen.</p>
+
+  <div class="mockup-wrap">
+    <div class="tablet-frame">
+      <div class="tablet-screen">
+        <div class="mock-login">
+          <div class="mock-login-card">
+            <span class="mock-hex-lg">⬡</span>
+            <div class="mock-title">PHILTRONICS</div>
+            <div class="mock-sub">Time to Complete System</div>
+            <div class="mock-label">Username</div>
+            <input class="mock-input filled" value="operator1" readonly/>
+            <div class="mock-label">Password</div>
+            <input class="mock-input filled" type="password" value="password" readonly/>
+            <button class="mock-btn-primary">Sign In</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="mockup-caption">The sign-in screen — enter your username and password, then tap Sign In</div>
+  </div>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <strong>Tap the Username box</strong>
+        <p>A keyboard will appear on screen. Type your username exactly as your supervisor gave it to you (e.g. <code>operator1</code>). Usernames are not case-sensitive.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <strong>Tap the Password box</strong>
+        <p>Type your password. The characters will appear as dots to keep it private.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <strong>Tap Sign In</strong>
+        <p>If your username and password are correct, you will go straight to the Timer screen. If you see a red error message, check you have typed both correctly and try again.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout warn">
+    <span class="callout-icon">⚠️</span>
+    <div class="callout-body">
+      <strong>Too many wrong attempts will temporarily lock you out.</strong>
+      <p>After 10 failed sign-in attempts, the system will block that device for 15 minutes. If this happens, wait 15 minutes and try again — or contact your supervisor.</p>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────────── -->
+  <h2 id="start-job">Starting a Job Timer</h2>
+
+  <p>Once signed in, you will see the <strong>Timer screen</strong>. This is where you start and stop your job timers.</p>
+
+  <div class="mockup-wrap">
+    <div class="tablet-frame">
+      <div class="tablet-screen">
+        <div class="app-topbar">
+          <div class="app-brand"><span class="app-hex">⬡</span><span class="app-name">PHILTRONICS</span></div>
+          <div class="app-spacer"></div>
+          <span class="app-user">John Smith</span>
+          <span class="app-menu">☰</span>
+        </div>
+        <div class="app-body">
+          <div class="mock-panel">
+            <div class="mock-panel-title">Start Job</div>
+            <div class="mock-label">Item Number</div>
+            <div class="mock-input-with-btn" style="margin-bottom:14px">
+              <input class="mock-input" placeholder="e.g. PHL-1001" readonly/>
+              <button class="mock-scan-btn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="7" y="7" width="3" height="3"/><rect x="14" y="7" width="3" height="3"/><rect x="7" y="14" width="3" height="3"/><rect x="14" y="14" width="3" height="3"/><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/></svg>
+                Scan
+              </button>
+            </div>
+            <div class="mock-label">Notes <span style="font-weight:400;text-transform:none;font-size:10px">(optional)</span></div>
+            <input class="mock-input" placeholder="Any notes for this job" readonly style="margin-bottom:8px"/>
+            <button class="mock-btn-start">▶ START</button>
+          </div>
+          <div class="mock-section-title">Today's Jobs</div>
+          <div class="mock-entry">
+            <div><div class="mock-entry-item">PHL-2001</div><div class="mock-entry-time">09:14 → 09:52</div></div>
+            <div style="text-align:right"><div class="mock-entry-dur">00:37:42</div><div><span class="mock-badge completed">completed</span></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="mockup-caption">The Timer screen — ready to start a new job</div>
+  </div>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <strong>Enter the Item Number</strong>
+        <p>Tap the <strong>Item Number</strong> box and type the part number you are working on (for example, <code>PHL-1001</code>). Item numbers can contain letters, numbers, hyphens and underscores — no spaces. You can also <strong>scan a barcode</strong> instead of typing — see the next section.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <strong>Add notes (optional)</strong>
+        <p>If you have anything to note about this job — such as a fault or rework — you can type it in the <strong>Notes</strong> box. This is completely optional.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <strong>Tap the green START button</strong>
+        <p>The timer starts immediately. The screen will change to show a running clock.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout warn">
+    <span class="callout-icon">⚠️</span>
+    <div class="callout-body">
+      <strong>You can only have one timer running at a time.</strong>
+      <p>If you try to start a second timer before stopping the first, you will see an error message. Stop your current job first, then start the new one.</p>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────────── -->
+  <h2 id="scan-qr">Scanning a Barcode or QR Code</h2>
+
+  <p>Instead of typing the item number, you can <strong>scan a barcode or QR code</strong> using the tablet's camera. This is faster and avoids typing errors.</p>
+
+  <div class="mockup-wrap">
+    <div class="tablet-frame">
+      <div class="tablet-screen">
+        <div class="mock-scanner-overlay">
+          <div class="mock-scanner-box">
+            <div class="mock-scanner-hdr">
+              <span class="mock-scanner-title">Point camera at barcode or QR code</span>
+              <span style="color:#9aa0b8;font-size:16px">✕</span>
+            </div>
+            <div class="mock-scanner-viewport">
+              <div class="mock-camera-bg">
+                <div class="mock-qr-code">
+                  <!-- Simple QR-like pattern -->
+                  <div class="mock-qr-cell"></div><div class="mock-qr-cell"></div><div class="mock-qr-cell"></div><div class="mock-qr-cell w"></div><div class="mock-qr-cell"></div><div class="mock-qr-cell"></div><div class="mock-qr-cell"></div>
+                  <div class="mock-qr-cell"></div><div class="mock-qr-cell w"></div><div class="mock-qr-cell"></div><div class="mock-qr-cell w"></div><div class="mock-qr-cell"></div><div class="mock-qr-cell w"></div><div class="mock-qr-cell"></div>
+                  <div class="mock-qr-cell"></div><div class="mock-qr-cell w"></div><div class="mock-qr-cell"></div><div class="mock-qr-cell"></div><div class="mock-qr-cell"></div><div class="mock-qr-cell w"></div><div class="mock-qr-cell"></div>
+                  <div class="mock-qr-cell w"></div><div class="mock-qr-cell"></div><div class="mock-qr-cell w"></div><div class="mock-qr-cell"></div><div class="mock-qr-cell w"></div><div class="mock-qr-cell"></div><div class="mock-qr-cell w"></div>
+                  <div class="mock-qr-cell"></div><div class="mock-qr-cell w"></div><div class="mock-qr-cell"></div><div class="mock-qr-cell"></div><div class="mock-qr-cell"></div><div class="mock-qr-cell w"></div><div class="mock-qr-cell"></div>
+                  <div class="mock-qr-cell"></div><div class="mock-qr-cell w"></div><div class="mock-qr-cell"></div><div class="mock-qr-cell w"></div><div class="mock-qr-cell"></div><div class="mock-qr-cell w"></div><div class="mock-qr-cell"></div>
+                  <div class="mock-qr-cell"></div><div class="mock-qr-cell"></div><div class="mock-qr-cell"></div><div class="mock-qr-cell w"></div><div class="mock-qr-cell"></div><div class="mock-qr-cell"></div><div class="mock-qr-cell"></div>
+                </div>
+                <div class="mock-reticle">
+                  <div class="mock-corner tl"></div>
+                  <div class="mock-corner tr"></div>
+                  <div class="mock-corner bl"></div>
+                  <div class="mock-corner br"></div>
+                  <div class="mock-scan-line"></div>
+                </div>
+              </div>
+            </div>
+            <div class="mock-scanner-status success">✓ Scanned: PHL-1001</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="mockup-caption">The scanner — camera is pointing at a QR code and has successfully read it</div>
+  </div>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <strong>Tap the Scan button</strong>
+        <p>Next to the Item Number box, tap the small <span class="pill">⊞ Scan</span> button. The camera screen will open.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <strong>Allow camera access (first time only)</strong>
+        <p>The first time you scan, Chrome will ask if the website can use your camera. Tap <strong>Allow</strong>. You will not be asked again on this device.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <strong>Point the camera at the barcode or QR code</strong>
+        <p>Hold the tablet so the code appears within the corner markers on screen. Keep it steady — the system will automatically read it within a second or two. Good lighting helps.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <strong>The item number fills in automatically</strong>
+        <p>Once scanned, the camera closes and the Item Number box is filled in for you. Check it looks correct, then tap <span class="pill green">▶ START</span> as normal.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout tip">
+    <span class="callout-icon">💡</span>
+    <div class="callout-body">
+      <strong>Torch button</strong>
+      <p>If the barcode is in a dark area, a <strong>🔦 Torch</strong> button will appear at the bottom of the camera screen. Tap it to switch on the tablet's flash as a light.</p>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────────── -->
+  <h2 id="stop-job">Stopping a Job Timer</h2>
+
+  <p>Once you have started a timer, the screen changes to show a running clock. When you have finished the job, press <strong>STOP</strong>.</p>
+
+  <div class="mockup-wrap">
+    <div class="tablet-frame">
+      <div class="tablet-screen">
+        <div class="app-topbar">
+          <div class="app-brand"><span class="app-hex">⬡</span><span class="app-name">PHILTRONICS</span></div>
+          <div class="app-spacer">
+            <span style="display:inline-flex;align-items:center;gap:6px;background:#16532d;border:1px solid #22c55e;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:600;color:#22c55e">
+              <span style="width:7px;height:7px;background:#22c55e;border-radius:50%;display:inline-block"></span>
+              TIMER RUNNING
+            </span>
+          </div>
+          <span class="app-menu">☰</span>
+        </div>
+        <div class="app-body">
+          <div class="mock-panel active-panel">
+            <div class="mock-active-hdr"><span class="mock-dot"></span>ACTIVE JOB</div>
+            <div class="mock-item-num">PHL-1001</div>
+            <div class="mock-stopwatch">00:24:37</div>
+            <div class="mock-meta">Started at 10:30:00</div>
+            <div class="mock-actions">
+              <button class="mock-btn-stop">■ STOP</button>
+              <button class="mock-btn-cancel">Cancel</button>
+            </div>
+          </div>
+          <div class="mock-section-title">Today's Jobs</div>
+          <div class="mock-entry">
+            <div><div class="mock-entry-item">PHL-2001</div><div class="mock-entry-time">09:14 → 09:52</div></div>
+            <div style="text-align:right"><div class="mock-entry-dur">00:37:42</div><div><span class="mock-badge completed">completed</span></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="mockup-caption">An active timer — the green banner at the top confirms a timer is running, and the clock counts up</div>
+  </div>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <strong>Check the item number shown on screen</strong>
+        <p>You can see the item number you entered displayed above the clock. Make sure it matches what you have just assembled.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <strong>Tap the red STOP button</strong>
+        <p>Press <span class="pill red">■ STOP</span> as soon as you finish the job. The time is recorded instantly.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <strong>The completed job appears in Today's Jobs</strong>
+        <p>The screen returns to the Start Job view. You will see your completed job listed at the bottom of the screen showing the item number, start and end time, and total duration.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout info">
+    <span class="callout-icon">ℹ️</span>
+    <div class="callout-body">
+      <strong>The green banner at the top</strong>
+      <p>While a timer is running, a green <strong>TIMER RUNNING</strong> banner appears at the top of every screen. This is a reminder that you have an active timer — even if you navigate to the History screen.</p>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────────── -->
+  <h2 id="cancel-job">Cancelling a Timer</h2>
+
+  <p>If you started a timer by mistake — for example, you scanned the wrong item number — you can cancel it. There are two situations:</p>
+
+  <h3>Within 60 seconds of starting</h3>
+  <p>If you realise the mistake quickly, tap the small <span class="pill">Cancel</span> button (next to the STOP button). A confirmation box will appear asking you to confirm. Tap <strong>Cancel Timer</strong> to confirm, or <strong>Keep Running</strong> if you changed your mind.</p>
+
+  <h3>After 60 seconds</h3>
+  <p>Once 60 seconds have passed, you <strong>cannot cancel your own timer</strong>. You will need to ask your supervisor to cancel it for you. This rule exists to keep the records accurate.</p>
+
+  <div class="callout warn">
+    <span class="callout-icon">⚠️</span>
+    <div class="callout-body">
+      <strong>Cancellations are recorded in the audit trail.</strong>
+      <p>All cancellations — including who cancelled it, when, and the reason — are stored permanently. This is for quality and traceability purposes.</p>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────────── -->
+  <h2 id="my-history">Viewing Your History</h2>
+
+  <p>You can look back at your own completed jobs by going to the <strong>History</strong> screen.</p>
+
+  <div class="mockup-wrap">
+    <div class="tablet-frame">
+      <div class="tablet-screen">
+        <div class="app-topbar">
+          <div class="app-brand"><span class="app-hex">⬡</span><span class="app-name">PHILTRONICS</span></div>
+          <div class="app-spacer"></div>
+          <span class="app-user">John Smith</span>
+          <span class="app-menu">☰</span>
+        </div>
+        <div class="app-body">
+          <div style="font-size:18px;font-weight:800;color:#e8eaf2;margin-bottom:14px">History</div>
+          <div class="mock-filter">
+            <div class="mock-filter-row">
+              <div style="flex:1"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#5a6078;margin-bottom:4px">From</div><input class="mock-filter-input" value="13/05/2025" readonly/></div>
+              <div style="flex:1"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#5a6078;margin-bottom:4px">To</div><input class="mock-filter-input" value="13/05/2025" readonly/></div>
+            </div>
+            <button class="mock-btn-sm">Search</button>
+          </div>
+          <div class="mock-entry">
+            <div><div class="mock-entry-item">PHL-1001</div><div class="mock-entry-time">10:30 → 10:54</div></div>
+            <div style="text-align:right"><div class="mock-entry-dur">00:24:37</div><div><span class="mock-badge completed">completed</span></div></div>
+          </div>
+          <div class="mock-entry">
+            <div><div class="mock-entry-item">PHL-2001</div><div class="mock-entry-time">09:14 → 09:52</div></div>
+            <div style="text-align:right"><div class="mock-entry-dur">00:37:42</div><div><span class="mock-badge completed">completed</span></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="mockup-caption">The History screen — shows your completed jobs for today</div>
+  </div>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <strong>Tap the menu button (☰) in the top-right</strong>
+        <p>A side menu slides in from the right.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <strong>Tap History</strong>
+        <p>The History screen opens showing today's jobs by default.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <strong>Change the date range if needed</strong>
+        <p>Tap the <strong>From</strong> or <strong>To</strong> date boxes to pick a different date, then tap <strong>Search</strong>. You can view up to the last 7 days of your own history.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────────── -->
+  <h2 id="supervisor-history">Supervisor: Viewing All Operators' History</h2>
+
+  <p>As a supervisor, your History screen includes extra filter boxes to search by operator and item number. You can see all operators' records, not just your own.</p>
+
+  <div class="mockup-wrap">
+    <div class="tablet-frame">
+      <div class="tablet-screen">
+        <div class="app-topbar">
+          <div class="app-brand"><span class="app-hex">⬡</span><span class="app-name">PHILTRONICS</span></div>
+          <div class="app-spacer"></div>
+          <span class="app-user">Line Supervisor</span>
+          <span class="app-menu">☰</span>
+        </div>
+        <div class="app-body">
+          <div style="font-size:18px;font-weight:800;color:#e8eaf2;margin-bottom:14px">History</div>
+          <div class="mock-filter">
+            <div class="mock-filter-row">
+              <div style="flex:1"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#5a6078;margin-bottom:4px">From</div><input class="mock-filter-input" value="13/05/2025" readonly/></div>
+              <div style="flex:1"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#5a6078;margin-bottom:4px">To</div><input class="mock-filter-input" value="13/05/2025" readonly/></div>
+            </div>
+            <div class="mock-filter-row">
+              <div style="flex:1"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#5a6078;margin-bottom:4px">Operator ID</div><input class="mock-filter-input" placeholder="All operators" readonly/></div>
+              <div style="flex:1"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#5a6078;margin-bottom:4px">Item Number</div><input class="mock-filter-input" placeholder="All items" readonly/></div>
+            </div>
+            <button class="mock-btn-sm">Search</button>
+          </div>
+          <div class="mock-entry">
+            <div><div class="mock-entry-item">PHL-1001</div><div class="mock-entry-time">John Smith · 10:30 → 10:54</div></div>
+            <div style="text-align:right"><div class="mock-entry-dur">00:24:37</div><div><span class="mock-badge completed">completed</span></div></div>
+          </div>
+          <div class="mock-entry">
+            <div><div class="mock-entry-item">PHL-3001</div><div class="mock-entry-time">Jane Doe · 10:15 → 11:02</div></div>
+            <div style="text-align:right"><div class="mock-entry-dur">00:47:10</div><div><span class="mock-badge completed">completed</span></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="mockup-caption">Supervisor history view — shows all operators with extra filter options</div>
+  </div>
+
+  <p>To search for a specific operator, type their <strong>Operator ID</strong> (their username, e.g. <code>operator1</code>) into the Operator ID box and tap <strong>Search</strong>. Leave it blank to see all operators.</p>
+
+  <!-- ─────────────────────────────────────────────────────────────────── -->
+  <h2 id="adjusting">Supervisor: Cancelling or Adjusting a Timer</h2>
+
+  <p>As a supervisor, you can cancel or adjust any timer — including timers that are over 60 seconds old. You <strong>must always enter a reason</strong> when making changes, as this is recorded in the audit trail.</p>
+
+  <h3>To cancel an active timer</h3>
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <strong>Find the active timer in History</strong>
+        <p>Search for the operator's records. Active timers are shown with a green <span class="pill green" style="font-size:11px">active</span> badge.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <strong>Enter a reason</strong>
+        <p>A box will appear asking you to explain why the timer is being cancelled. This is mandatory — you cannot proceed without entering a reason.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <strong>Confirm the cancellation</strong>
+        <p>Tap <strong>Cancel Timer</strong> to confirm. The record is updated immediately.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout danger">
+    <span class="callout-icon">🔒</span>
+    <div class="callout-body">
+      <strong>All changes are permanently recorded.</strong>
+      <p>Every cancellation and adjustment is stored in the audit trail along with your name, the date and time, and the reason you provided. This cannot be deleted.</p>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────────── -->
+  <h2 id="dashboard">Manager: The Dashboard</h2>
+
+  <p>As a manager, you have access to the <strong>Dashboard</strong> — a summary view showing how many jobs have been completed and how long they are taking on average.</p>
+
+  <div class="mockup-wrap">
+    <div class="tablet-frame">
+      <div class="tablet-screen">
+        <div class="app-topbar">
+          <div class="app-brand"><span class="app-hex">⬡</span><span class="app-name">PHILTRONICS</span></div>
+          <div class="app-spacer"></div>
+          <span class="app-user">Production Manager</span>
+          <span class="app-menu">☰</span>
+        </div>
+        <div class="app-body">
+          <div style="font-size:18px;font-weight:800;color:#e8eaf2;margin-bottom:14px">Dashboard</div>
+          <div class="mock-stats">
+            <div class="mock-stat"><div class="mock-stat-label">Active Now</div><div class="mock-stat-val">3</div></div>
+            <div class="mock-stat"><div class="mock-stat-label">Last 24 Hours</div><div class="mock-stat-val">47</div></div>
+            <div class="mock-stat"><div class="mock-stat-label">Last 7 Days</div><div class="mock-stat-val">218</div></div>
+            <div class="mock-stat"><div class="mock-stat-label">Item Types</div><div class="mock-stat-val">6</div></div>
+          </div>
+          <div class="mock-filter" style="margin-bottom:12px">
+            <div class="mock-filter-row">
+              <input class="mock-filter-input" value="06/05/2025" readonly/>
+              <input class="mock-filter-input" value="13/05/2025" readonly/>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="mock-btn-sm">Search</button>
+              <button class="mock-btn-export">⬇ Export CSV</button>
+            </div>
+          </div>
+          <table class="mock-table">
+            <thead><tr><th>Item</th><th>Count</th><th>Avg Time</th><th>Min</th><th>Max</th></tr></thead>
+            <tbody>
+              <tr><td>PHL-1001</td><td style="color:#e8eaf2">34</td><td style="color:#e8eaf2">00:28:14</td><td style="color:#e8eaf2">00:18:02</td><td style="color:#e8eaf2">00:52:37</td></tr>
+              <tr><td>PHL-2001</td><td style="color:#e8eaf2">28</td><td style="color:#e8eaf2">00:41:09</td><td style="color:#e8eaf2">00:29:44</td><td style="color:#e8eaf2">01:04:22</td></tr>
+              <tr><td>PHL-3001</td><td style="color:#e8eaf2">19</td><td style="color:#e8eaf2">00:55:30</td><td style="color:#e8eaf2">00:44:11</td><td style="color:#e8eaf2">01:12:08</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="mockup-caption">The Manager Dashboard — summary stats at the top, per-item breakdown below</div>
+  </div>
+
+  <h4>What the summary cards show</h4>
+  <ul class="checklist">
+    <li><span class="ck">✓</span><div><strong>Active Now</strong> — how many operators currently have a timer running</div></li>
+    <li><span class="ck">✓</span><div><strong>Last 24 Hours</strong> — total jobs completed in the past 24 hours</div></li>
+    <li><span class="ck">✓</span><div><strong>Last 7 Days</strong> — total jobs completed in the past 7 days</div></li>
+    <li><span class="ck">✓</span><div><strong>Item Types</strong> — how many different item numbers have been recorded</div></li>
+  </ul>
+
+  <h4>The per-item table</h4>
+  <p>Below the summary cards is a table broken down by item number, showing how many times each item has been assembled, the average time, and the fastest and slowest times recorded.</p>
+
+  <p>Use the <strong>From</strong> and <strong>To</strong> date boxes to filter the results to a specific date range, then tap <strong>Search</strong>.</p>
+
+  <!-- ─────────────────────────────────────────────────────────────────── -->
+  <h2 id="export">Manager: Exporting Data to a Spreadsheet</h2>
+
+  <p>You can download all the timing records as a <strong>CSV file</strong> — a format that opens in Microsoft Excel, Google Sheets, or any spreadsheet program.</p>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <strong>Go to the Dashboard</strong>
+        <p>Tap ☰ → Dashboard.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <strong>Set your filters</strong>
+        <p>Use the <strong>From</strong> and <strong>To</strong> date pickers to choose the date range you want to export. You can also filter by a specific item number or operator if needed — leave blank to export everything.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <strong>Tap ⬇ Export CSV</strong>
+        <p>The file will download to your device automatically. On an Android tablet it will appear in your <strong>Downloads</strong> folder.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <strong>Open the file in Excel or Google Sheets</strong>
+        <p>The file contains one row per job with columns for item number, operator name, start time, end time, and duration in both seconds and minutes.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout tip">
+    <span class="callout-icon">💡</span>
+    <div class="callout-body">
+      <strong>The file opens correctly in Excel.</strong>
+      <p>The CSV file includes a special character at the start that tells Excel to display times and dates correctly. You should not need to change any settings.</p>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────────── -->
+  <h2 id="user-management">Administrator: Managing Users</h2>
+
+  <p>As an administrator, you can create new user accounts, edit existing ones, disable accounts, and reset passwords. All of this is done from the <strong>Admin</strong> screen.</p>
+
+  <div class="mockup-wrap">
+    <div class="tablet-frame">
+      <div class="tablet-screen">
+        <div class="app-topbar">
+          <div class="app-brand"><span class="app-hex">⬡</span><span class="app-name">PHILTRONICS</span></div>
+          <div class="app-spacer"></div>
+          <span class="app-user">System Admin</span>
+          <span class="app-menu">☰</span>
+        </div>
+        <div class="app-body">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+            <div style="font-size:18px;font-weight:800;color:#e8eaf2">User Management</div>
+            <button class="mock-btn-sm" style="font-size:12px;padding:7px 12px">+ New User</button>
+          </div>
+          <div class="mock-user-card">
+            <div class="mock-avatar">JS</div>
+            <div class="mock-user-info">
+              <div class="mock-user-name">John Smith</div>
+              <div class="mock-user-meta"><span>@operator1</span><span class="mock-role-badge mock-role-operator">operator</span></div>
+            </div>
+            <div class="mock-user-actions">
+              <button class="mock-btn-ghost">Edit</button>
+              <button class="mock-btn-ghost">Reset PW</button>
+            </div>
+          </div>
+          <div class="mock-user-card">
+            <div class="mock-avatar">JD</div>
+            <div class="mock-user-info">
+              <div class="mock-user-name">Jane Doe</div>
+              <div class="mock-user-meta"><span>@operator2</span><span class="mock-role-badge mock-role-operator">operator</span></div>
+            </div>
+            <div class="mock-user-actions">
+              <button class="mock-btn-ghost">Edit</button>
+              <button class="mock-btn-ghost">Reset PW</button>
+            </div>
+          </div>
+          <div class="mock-user-card">
+            <div class="mock-avatar">LS</div>
+            <div class="mock-user-info">
+              <div class="mock-user-name">Line Supervisor</div>
+              <div class="mock-user-meta"><span>@supervisor1</span><span class="mock-role-badge mock-role-supervisor">supervisor</span></div>
+            </div>
+            <div class="mock-user-actions">
+              <button class="mock-btn-ghost">Edit</button>
+              <button class="mock-btn-ghost">Reset PW</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="mockup-caption">The User Management screen — shows all accounts with Edit and Reset PW buttons</div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────────── -->
+  <h2 id="add-user">Administrator: Adding a New User</h2>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <strong>Tap + New User</strong>
+        <p>This is in the top-right of the User Management screen.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <strong>Fill in the details</strong>
+        <p><strong>Username</strong> — the name they will use to sign in (letters and numbers only, e.g. <code>operator3</code>). <strong>Full Name</strong> — their real name as it will appear in reports. <strong>Password</strong> — at least 8 characters. <strong>Role</strong> — select from the dropdown.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <strong>Tap Create User</strong>
+        <p>The account is created immediately. Tell the new user their username and password — advise them to treat the password as private.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout tip">
+    <span class="callout-icon">💡</span>
+    <div class="callout-body">
+      <strong>Disabling an account</strong>
+      <p>If a user leaves the company, tap <strong>Edit</strong> next to their name, untick the <strong>Account Active</strong> box, and tap <strong>Save Changes</strong>. They will no longer be able to sign in, but their history records are kept.</p>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────────── -->
+  <h2 id="reset-password">Administrator: Resetting a Password</h2>
+
+  <p>If a user has forgotten their password, you can reset it for them.</p>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <strong>Find the user in the User Management screen</strong>
+        <p>Scroll through the list until you find the right person.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <strong>Tap Reset PW</strong>
+        <p>A box will appear asking you to enter a new password for that user.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <strong>Type a new password and tap Reset Password</strong>
+        <p>The password must be at least 8 characters long. Tell the user their new password — they can use it to sign in straight away.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────────── -->
+  <h2 id="troubleshooting">Troubleshooting</h2>
+
+  <h3>I cannot sign in</h3>
+  <ul style="padding-left:20px;color:var(--text2);font-size:15px;line-height:2">
+    <li>Check your username and password are typed correctly</li>
+    <li>Usernames are not case-sensitive, but passwords are</li>
+    <li>After 10 failed attempts, wait 15 minutes before trying again</li>
+    <li>If your account may have been disabled, contact your administrator</li>
+  </ul>
+
+  <h3>The Scan button says the barcode library is not loaded</h3>
+  <ul style="padding-left:20px;color:var(--text2);font-size:15px;line-height:2">
+    <li>Make sure you are using <strong>Google Chrome</strong> on your Android tablet</li>
+    <li>Check that Chrome is up to date (open Chrome → tap the three dots → Help → About Chrome)</li>
+    <li>The scan feature requires Chrome version 83 or later (released 2020)</li>
+    <li>As an alternative, type the item number manually</li>
+  </ul>
+
+  <h3>The camera does not open when I tap Scan</h3>
+  <ul style="padding-left:20px;color:var(--text2);font-size:15px;line-height:2">
+    <li>You may have previously denied camera permission — tap the padlock icon in the Chrome address bar, find Camera, and change it to Allow</li>
+    <li>Then refresh the page and try again</li>
+  </ul>
+
+  <h3>My timer is still showing as active but I finished the job</h3>
+  <ul style="padding-left:20px;color:var(--text2);font-size:15px;line-height:2">
+    <li>Go to the Timer screen and tap STOP</li>
+    <li>If the timer is not visible, refresh the page</li>
+    <li>If it still will not stop, contact your supervisor — they can stop or cancel it for you</li>
+  </ul>
+
+  <h3>I accidentally started a timer for the wrong item</h3>
+  <ul style="padding-left:20px;color:var(--text2);font-size:15px;line-height:2">
+    <li>If less than 60 seconds have passed, tap <strong>Cancel</strong> on the active timer panel</li>
+    <li>If more than 60 seconds have passed, contact your supervisor</li>
+  </ul>
+
+  <h3>The page is not loading</h3>
+  <ul style="padding-left:20px;color:var(--text2);font-size:15px;line-height:2">
+    <li>Check the tablet is connected to Wi-Fi</li>
+    <li>Try pulling the page down to refresh</li>
+    <li>If the problem continues, the server may be restarting — wait 30 seconds and try again</li>
+  </ul>
+
+  <div class="callout info" style="margin-top:32px">
+    <span class="callout-icon">📞</span>
+    <div class="callout-body">
+      <strong>Still having trouble?</strong>
+      <p>Contact your system administrator or supervisor. They can access the server logs and user settings to investigate further issues.</p>
+    </div>
+  </div>
+
+  <hr style="margin:48px 0;border:none;border-top:1px solid var(--border)"/>
+  <p style="font-size:13px;color:var(--text3);text-align:center">
+    Philtronics Ltd · Time to Complete System · User Manual v1.0
+  </p>
+
+</main>
+</div>
+
+<script>
+// Highlight active sidebar link based on scroll position
+const sections = document.querySelectorAll('h2[id], h3[id]');
+const navLinks  = document.querySelectorAll('.sidebar a');
+
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      navLinks.forEach(l => l.classList.remove('active'));
+      const active = document.querySelector(`.sidebar a[href="#${entry.target.id}"]`);
+      if (active) active.classList.add('active');
+    }
+  });
+}, { rootMargin: '-10% 0px -80% 0px' });
+
+sections.forEach(s => observer.observe(s));
+</script>
+</body>
+</html>
