@@ -189,10 +189,15 @@ function onLoggedIn() {
   document.getElementById('topbar').classList.remove('hidden');
   document.getElementById('pageLogin').hidden = true;
   document.getElementById('userLabel').textContent = state.user.fullName;
-  // Restore any active timer UI
+  // Pre-populate active timer state from the /me response so the banner
+  // shows immediately — loadTimerPage will then verify and correct this
+  // against the server before starting the stopwatch.
   if (state.user.activeTimer) {
-    state.activeTimerId  = state.user.activeTimer.id;
+    state.activeTimerId   = state.user.activeTimer.id;
     state.activeStartedAt = state.user.activeTimer.started_at;
+  } else {
+    state.activeTimerId   = null;
+    state.activeStartedAt = null;
   }
   refreshActiveTimerBanner();
   navigateTo('timer');
@@ -250,12 +255,36 @@ async function loadTimerPage() {
   clearError('startError');
   clearError('stopError');
 
-  if (state.activeTimerId) {
-    showActivePanel();
-    startStopwatch();
-  } else {
-    showStartPanel();
+  // Always ask the server for the current active timer — this means
+  // refreshes, different devices, and session restores all work correctly.
+  // The browser is never the source of truth for timer state.
+  try {
+    const me = await GET('/me');
+    if (me.activeTimer) {
+      // Restore state from server — timestamps come from DB, not the browser
+      state.activeTimerId   = me.activeTimer.id;
+      state.activeStartedAt = me.activeTimer.started_at;
+      refreshActiveTimerBanner();
+      await showActivePanel();
+      startStopwatch();
+    } else {
+      // No active timer on server — clear any stale local state
+      state.activeTimerId   = null;
+      state.activeStartedAt = null;
+      refreshActiveTimerBanner();
+      showStartPanel();
+      stopStopwatch();
+    }
+  } catch (_) {
+    // Fallback: use whatever state we already have if the request fails
+    if (state.activeTimerId) {
+      await showActivePanel();
+      startStopwatch();
+    } else {
+      showStartPanel();
+    }
   }
+
   loadTodayEntries();
 }
 
@@ -264,20 +293,35 @@ function showStartPanel() {
   hide('panelActive');
 }
 
-function showActivePanel() {
+async function showActivePanel() {
   hide('panelStart');
   show('panelActive');
-  // Fetch fresh data to display item number
-  GET('/timers?status=active').then(timers => {
+
+  // Fetch fresh timer data from server — guarantees the startedAt we use for
+  // the stopwatch is the real DB value, not a stale browser-side copy.
+  // This makes the elapsed time accurate after a refresh or device switch.
+  try {
+    const timers = await GET('/timers?status=active');
     const t = timers.find(t => t.id === state.activeTimerId);
     if (t) {
+      // Always update state.activeStartedAt from the server response
+      state.activeStartedAt = t.startedAt;
       document.getElementById('activeItemDisplay').textContent = t.itemNumber;
-      const started = new Date(t.startedAt);
       document.getElementById('activeMeta').textContent =
         `Started at ${formatLocalTime(t.startedAt)}`;
-      state.activeStartedAt = t.startedAt;
+    } else if (state.activeTimerId) {
+      // Timer ID exists in state but not in active list — it may have been
+      // stopped or cancelled on another device. Clear stale state.
+      state.activeTimerId   = null;
+      state.activeStartedAt = null;
+      refreshActiveTimerBanner();
+      showStartPanel();
+      stopStopwatch();
+      toast('Your previous timer was already stopped.', '');
     }
-  }).catch(() => {});
+  } catch (_) {
+    // If fetch fails, fall back to whatever startedAt we already have
+  }
 }
 
 // ─── Start job ───────────────────────────────────────────────────────────
@@ -305,7 +349,7 @@ document.getElementById('btnStart').addEventListener('click', async () => {
     document.getElementById('itemNumberInput').value = '';
     document.getElementById('startNotes').value = '';
     hideSuggestions();
-    showActivePanel();
+    await showActivePanel();
     startStopwatch();
     refreshActiveTimerBanner();
     loadTodayEntries();
@@ -332,6 +376,8 @@ document.getElementById('btnStop').addEventListener('click', async () => {
     refreshActiveTimerBanner();
     loadTodayEntries();
     toast(`✓ Job complete: ${formatDuration(timer.durationSeconds)}`, 'success');
+    // Re-sync user state so the banner and any other UI stays consistent
+    GET('/me').then(me => { state.user = me; refreshActiveTimerBanner(); }).catch(() => {});
   } catch (err) {
     setError('stopError', err.message);
   } finally {
@@ -403,7 +449,10 @@ function startStopwatch() {
 function stopStopwatch() {
   clearInterval(state.stopwatchTimer);
   state.stopwatchTimer = null;
-  document.getElementById('stopwatch').textContent = '00:00:00';
+  // Only reset display when there genuinely is no active timer
+  if (!state.activeTimerId) {
+    document.getElementById('stopwatch').textContent = '00:00:00';
+  }
 }
 function tickStopwatch() {
   if (!state.activeStartedAt) return;
@@ -871,13 +920,13 @@ function formatLocalTime(isoStr) {
    Falls back gracefully with a clear message on unsupported browsers.
    ═══════════════════════════════════════════════════════════════════════════ */
 const scanner = (() => {
-  let stream       = null;   // MediaStream
+  let stream       = null;
   let active       = false;
-  let scanInterval = null;   // polling interval for BarcodeDetector
-  let detector     = null;   // BarcodeDetector instance
+  let scanInterval = null;
+  let detector     = null;
   let torchEnabled = false;
   let targetInput  = null;   // the input element to fill on success
-  let targetMode   = 'item'; // 'item' | 'notes' — controls validation + toast wording
+  let targetMode   = 'item'; // 'item' | 'notes'
 
   const overlay  = document.getElementById('scannerOverlay');
   const video    = document.getElementById('scannerVideo');
@@ -890,18 +939,15 @@ const scanner = (() => {
     statusEl.className   = 'scanner-status' + (type ? ' ' + type : '');
   }
 
-  // open(inputEl, mode) — mode is 'item' or 'notes'
   async function open(inputEl, mode) {
     targetInput = inputEl;
     targetMode  = mode || 'item';
 
-    // ── Check camera API support ──────────────────────────────────────────
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       toast('Camera API not available. Use Chrome on Android.', 'error');
       return;
     }
 
-    // ── Check BarcodeDetector support ─────────────────────────────────────
     if (!('BarcodeDetector' in window)) {
       overlay.hidden = false;
       setStatus(
@@ -955,7 +1001,6 @@ const scanner = (() => {
     }
   }
 
-  // Poll BarcodeDetector against the live video frame every 300 ms
   function startScanLoop() {
     scanInterval = setInterval(async () => {
       if (!active || !detector || video.readyState < 2) return;
@@ -965,7 +1010,6 @@ const scanner = (() => {
           const text = barcodes[0].rawValue.trim();
 
           if (targetMode === 'item') {
-            // Item number: strict alphanumeric + hyphen/underscore, max 40
             if (/^[A-Za-z0-9\-_]{1,40}$/.test(text)) {
               onScanSuccess(text);
             } else {
@@ -975,15 +1019,13 @@ const scanner = (() => {
               }, 2000);
             }
           } else {
-            // Notes: accept any non-empty scan result (max 500 chars)
+            // Notes: accept any non-empty scan result up to 500 chars
             if (text.length > 0) {
               onScanSuccess(text.slice(0, 500));
             }
           }
         }
-      } catch (_) {
-        // Detection errors on individual frames are normal — ignore
-      }
+      } catch (_) {}
     }, 300);
   }
 
@@ -994,7 +1036,6 @@ const scanner = (() => {
     setStatus('✓ Scanned: ' + text, 'success');
 
     if (targetInput) {
-      // For notes: append to existing value if there is one, otherwise set
       if (targetMode === 'notes' && targetInput.value.trim()) {
         targetInput.value = targetInput.value.trimEnd() + ' ' + text;
       } else {
@@ -1031,7 +1072,6 @@ const scanner = (() => {
     setStatus('Initialising camera…');
   }
 
-  // Torch / flashlight — supported on most Android devices in Chrome
   function tryEnableTorch() {
     if (!stream) return;
     const track = stream.getVideoTracks()[0];
@@ -1050,12 +1090,10 @@ const scanner = (() => {
   }
 
   // ── Wire up buttons ───────────────────────────────────────────────────────
-  // Item number scan button
   document.getElementById('btnScan').addEventListener('click', () => {
     open(document.getElementById('itemNumberInput'), 'item');
   });
 
-  // Notes scan button
   document.getElementById('btnScanNotes').addEventListener('click', () => {
     open(document.getElementById('startNotes'), 'notes');
   });
