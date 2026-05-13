@@ -876,20 +876,25 @@ const scanner = (() => {
   let scanInterval = null;   // polling interval for BarcodeDetector
   let detector     = null;   // BarcodeDetector instance
   let torchEnabled = false;
+  let targetInput  = null;   // the input element to fill on success
+  let targetMode   = 'item'; // 'item' | 'notes' — controls validation + toast wording
 
   const overlay  = document.getElementById('scannerOverlay');
   const video    = document.getElementById('scannerVideo');
   const statusEl = document.getElementById('scannerStatus');
   const torchBtn = document.getElementById('btnScanTorch');
   const closeBtn = document.getElementById('btnScanClose');
-  const openBtn  = document.getElementById('btnScan');
 
   function setStatus(msg, type = '') {
     statusEl.textContent = msg;
     statusEl.className   = 'scanner-status' + (type ? ' ' + type : '');
   }
 
-  async function open() {
+  // open(inputEl, mode) — mode is 'item' or 'notes'
+  async function open(inputEl, mode) {
+    targetInput = inputEl;
+    targetMode  = mode || 'item';
+
     // ── Check camera API support ──────────────────────────────────────────
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       toast('Camera API not available. Use Chrome on Android.', 'error');
@@ -897,10 +902,7 @@ const scanner = (() => {
     }
 
     // ── Check BarcodeDetector support ─────────────────────────────────────
-    // BarcodeDetector is built into Chrome on Android and Chrome desktop.
-    // It requires HTTPS (Railway provides this automatically).
     if (!('BarcodeDetector' in window)) {
-      // Show a helpful message rather than a generic error
       overlay.hidden = false;
       setStatus(
         'Barcode scanning requires Chrome on Android or Chrome 83+ on desktop. ' +
@@ -912,10 +914,9 @@ const scanner = (() => {
 
     overlay.hidden = false;
     active = true;
-    setStatus('Requesting camera access…');
+    setStatus('Scanning — point at a barcode or QR code');
 
     try {
-      // Create detector supporting common barcode formats
       detector = new BarcodeDetector({
         formats: [
           'qr_code', 'code_128', 'code_39', 'code_93',
@@ -924,7 +925,6 @@ const scanner = (() => {
         ],
       });
 
-      // Prefer rear/environment camera on tablets and phones
       stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: 'environment' },
@@ -963,14 +963,22 @@ const scanner = (() => {
         const barcodes = await detector.detect(video);
         if (barcodes && barcodes.length > 0) {
           const text = barcodes[0].rawValue.trim();
-          if (/^[A-Za-z0-9\-_]{1,40}$/.test(text)) {
-            onScanSuccess(text);
+
+          if (targetMode === 'item') {
+            // Item number: strict alphanumeric + hyphen/underscore, max 40
+            if (/^[A-Za-z0-9\-_]{1,40}$/.test(text)) {
+              onScanSuccess(text);
+            } else {
+              setStatus(`Read "${text}" — not a valid item number. Try again.`, 'error');
+              setTimeout(() => {
+                if (active) setStatus('Scanning — point at a barcode or QR code');
+              }, 2000);
+            }
           } else {
-            setStatus(`Read "${text}" — not a valid item number. Try again.`, 'error');
-            // Reset status after 2 s so user can try again
-            setTimeout(() => {
-              if (active) setStatus('Scanning — point at a barcode or QR code');
-            }, 2000);
+            // Notes: accept any non-empty scan result (max 500 chars)
+            if (text.length > 0) {
+              onScanSuccess(text.slice(0, 500));
+            }
           }
         }
       } catch (_) {
@@ -980,20 +988,26 @@ const scanner = (() => {
   }
 
   function onScanSuccess(text) {
-    // Stop scanning immediately to avoid double-reads
     clearInterval(scanInterval);
     scanInterval = null;
 
     setStatus('✓ Scanned: ' + text, 'success');
 
-    const input = document.getElementById('itemNumberInput');
-    input.value = text;
-    hideSuggestions();
+    if (targetInput) {
+      // For notes: append to existing value if there is one, otherwise set
+      if (targetMode === 'notes' && targetInput.value.trim()) {
+        targetInput.value = targetInput.value.trimEnd() + ' ' + text;
+      } else {
+        targetInput.value = text;
+      }
+      if (targetMode === 'item') hideSuggestions();
+    }
 
+    const label = targetMode === 'notes' ? 'Note scanned' : 'Item number scanned';
     setTimeout(() => {
       close();
-      input.focus();
-      toast('Item number scanned: ' + text, 'success');
+      if (targetInput) targetInput.focus();
+      toast(`${label}: ${text}`, 'success');
     }, 700);
   }
 
@@ -1035,8 +1049,17 @@ const scanner = (() => {
     }
   }
 
-  // ── Wire up UI events ─────────────────────────────────────────────────────
-  openBtn.addEventListener('click', open);
+  // ── Wire up buttons ───────────────────────────────────────────────────────
+  // Item number scan button
+  document.getElementById('btnScan').addEventListener('click', () => {
+    open(document.getElementById('itemNumberInput'), 'item');
+  });
+
+  // Notes scan button
+  document.getElementById('btnScanNotes').addEventListener('click', () => {
+    open(document.getElementById('startNotes'), 'notes');
+  });
+
   closeBtn.addEventListener('click', close);
   overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
   document.addEventListener('keydown', e => {

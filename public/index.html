@@ -104,7 +104,24 @@
         </div>
         <div class="form-group">
           <label for="startNotes">Notes <span class="opt">(optional)</span></label>
-          <input id="startNotes" type="text" maxlength="500" placeholder="Any notes for this job" />
+          <div class="input-with-action">
+            <input id="startNotes" type="text" maxlength="500" placeholder="Any notes for this job" />
+            <button id="btnScanNotes" class="btn-scan" type="button"
+                    aria-label="Scan barcode into notes">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 7V5a2 2 0 0 1 2-2h2"/>
+                <path d="M17 3h2a2 2 0 0 1 2 2v2"/>
+                <path d="M21 17v2a2 2 0 0 1-2 2h-2"/>
+                <path d="M7 21H5a2 2 0 0 1-2-2v-2"/>
+                <rect x="7" y="7" width="3" height="3"/>
+                <rect x="14" y="7" width="3" height="3"/>
+                <rect x="7" y="14" width="3" height="3"/>
+                <rect x="14" y="14" width="3" height="3"/>
+              </svg>
+              Scan
+            </button>
+          </div>
         </div>
         <div id="startError" class="error-msg" role="alert" aria-live="assertive"></div>
         <button id="btnStart" class="btn btn-start btn-full btn-xl" aria-label="Start timer">
