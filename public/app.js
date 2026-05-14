@@ -609,75 +609,49 @@ function renderDashTable(rows) {
    ADMIN PAGE
    ═══════════════════════════════════════════════════════════════════════════ */
 async function loadAdminPage() {
+  // Always render the tools panel first — it doesn't depend on the user list
+  renderAdminTools();
   try {
     const users = await GET('/users');
     renderUserList(users);
-    renderAdminTools();
   } catch (err) {
     document.getElementById('userList').textContent = err.message;
   }
 }
 
 function renderAdminTools() {
-  // Remove existing tools panel if present (avoid duplicates on re-load)
-  const existing = document.getElementById('adminToolsPanel');
-  if (existing) existing.remove();
+  // The panel HTML is static in index.html — just wire up the button.
+  // This avoids any timing issues with dynamic DOM insertion.
+  const btn        = document.getElementById('btnCancelStuck');
+  const resultDiv  = document.getElementById('cancelStuckResult');
+  if (!btn) return;
 
-  const panel = el('div', {
-    id: 'adminToolsPanel',
-    style: 'background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:20px;'
-  });
+  // Remove any previous listener by cloning the button
+  const fresh = btn.cloneNode(true);
+  btn.parentNode.replaceChild(fresh, btn);
 
-  panel.appendChild(el('div', {
-    style: 'font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:12px;',
-    textContent: 'Tools'
-  }));
-
-  // Description
-  panel.appendChild(el('p', {
-    style: 'font-size:14px;color:var(--text2);margin-bottom:14px;',
-    textContent: 'If an operator has a stuck "active" timer they cannot stop, use the button below to cancel all active timers across all operators.'
-  }));
-
-  const resultDiv = el('div', {
-    style: 'font-size:14px;margin-top:10px;min-height:20px;',
-    role: 'status'
-  });
-
-  const cancelBtn = el('button', {
-    className: 'btn btn-danger',
-    textContent: '⚠ Cancel All Stuck Timers',
-    onclick: async () => {
-      if (!confirm('This will cancel ALL currently active timers for all operators. Are you sure?')) return;
-      cancelBtn.disabled = true;
-      cancelBtn.textContent = 'Cancelling…';
-      resultDiv.textContent = '';
-      try {
-        const result = await POST('/users/admin/cancel-stuck-timers', {
-          reason: 'Cancelled by administrator via emergency tool'
-        });
-        resultDiv.style.color = 'var(--green)';
-        resultDiv.textContent = '✓ ' + result.message;
-        // Clear local timer state in case this admin also had one
-        state.activeTimerId   = null;
-        state.activeStartedAt = null;
-        refreshActiveTimerBanner();
-      } catch (err) {
-        resultDiv.style.color = 'var(--red)';
-        resultDiv.textContent = '✗ ' + err.message;
-      } finally {
-        cancelBtn.disabled = false;
-        cancelBtn.textContent = '⚠ Cancel All Stuck Timers';
-      }
+  fresh.addEventListener('click', async () => {
+    if (!confirm('This will cancel ALL currently active timers for all operators. Are you sure?')) return;
+    fresh.disabled = true;
+    fresh.textContent = 'Cancelling…';
+    resultDiv.textContent = '';
+    try {
+      const result = await POST('/users/admin/cancel-stuck-timers', {
+        reason: 'Cancelled by administrator via emergency tool'
+      });
+      resultDiv.style.color = 'var(--green)';
+      resultDiv.textContent = '✓ ' + result.message;
+      state.activeTimerId   = null;
+      state.activeStartedAt = null;
+      refreshActiveTimerBanner();
+    } catch (err) {
+      resultDiv.style.color = 'var(--red)';
+      resultDiv.textContent = '✗ ' + err.message;
+    } finally {
+      fresh.disabled = false;
+      fresh.textContent = '⚠ Cancel All Stuck Timers';
     }
   });
-
-  panel.appendChild(cancelBtn);
-  panel.appendChild(resultDiv);
-
-  // Insert before the user list
-  const userList = document.getElementById('userList');
-  userList.parentNode.insertBefore(panel, userList);
 }
 
 document.getElementById('btnNewUser').addEventListener('click', () => {
@@ -851,6 +825,8 @@ function renderEntryList(containerId, timers, showOperator = false) {
     return;
   }
 
+  const isAdmin = hasRole('administrator');
+
   timers.forEach(t => {
     const card = el('div', { className: 'entry-card', role: 'listitem' });
 
@@ -874,10 +850,88 @@ function renderEntryList(containerId, timers, showOperator = false) {
       el('span', { className: `badge badge-${t.status}`, textContent: t.status })
     ));
 
+    // Delete button — administrators only
+    if (isAdmin) {
+      const delBtn = el('button', {
+        className: 'btn-delete-timer',
+        textContent: '🗑',
+        title: 'Delete this timer record',
+        'aria-label': 'Delete timer record for ' + t.itemNumber,
+      });
+      delBtn.addEventListener('click', () => confirmDeleteTimer(t, card, containerId, timers));
+      right.appendChild(delBtn);
+    }
+
     card.appendChild(left);
     card.appendChild(right);
     container.appendChild(card);
   });
+}
+
+// ─── Delete timer confirmation ────────────────────────────────────────────────
+function confirmDeleteTimer(t, card, containerId, timers) {
+  const body = el('div', {});
+  body.appendChild(el('p', {
+    textContent: `Are you sure you want to permanently delete this timer record?`,
+    style: 'margin-bottom:12px;'
+  }));
+
+  // Show summary of what will be deleted
+  const summary = el('div', {
+    style: 'background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:12px;font-size:13px;color:var(--text2);margin-bottom:12px;'
+  });
+  summary.appendChild(el('div', { textContent: 'Item: ' + t.itemNumber, style: 'font-family:var(--font-mono);color:var(--accent);margin-bottom:4px;' }));
+  summary.appendChild(el('div', { textContent: 'Operator: ' + t.operatorName }));
+  summary.appendChild(el('div', { textContent: 'Started: ' + formatLocalTime(t.startedAt) }));
+  summary.appendChild(el('div', { textContent: 'Status: ' + t.status }));
+  body.appendChild(summary);
+
+  body.appendChild(el('p', {
+    textContent: '⚠ This cannot be undone. The audit log for this timer will also be deleted.',
+    style: 'color:var(--red);font-size:13px;font-weight:600;'
+  }));
+
+  const errDiv = el('div', { className: 'error-msg', role: 'alert' });
+  body.appendChild(errDiv);
+
+  const btnConfirm = el('button', { className: 'btn btn-danger', textContent: 'Delete Record' });
+  const btnCancel  = el('button', { className: 'btn btn-ghost',  textContent: 'Keep Record' });
+
+  btnCancel.addEventListener('click', closeModal);
+
+  btnConfirm.addEventListener('click', async () => {
+    btnConfirm.disabled = true;
+    btnConfirm.textContent = 'Deleting…';
+    try {
+      await api('DELETE', '/timers/' + t.id);
+
+      // If this was the user's own active timer, clear state
+      if (t.id === state.activeTimerId) {
+        state.activeTimerId   = null;
+        state.activeStartedAt = null;
+        stopStopwatch();
+        refreshActiveTimerBanner();
+      }
+
+      // Remove the card from the DOM immediately
+      card.remove();
+
+      // If the list is now empty, show empty state
+      const container = document.getElementById(containerId);
+      if (container && container.children.length === 0) {
+        container.appendChild(el('div', { className: 'empty-state', textContent: 'No records found.' }));
+      }
+
+      closeModal();
+      toast('Timer record deleted.', '');
+    } catch (err) {
+      errDiv.textContent = err.message;
+      btnConfirm.disabled = false;
+      btnConfirm.textContent = 'Delete Record';
+    }
+  });
+
+  openModal('Delete Timer Record', body, [btnCancel, btnConfirm]);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

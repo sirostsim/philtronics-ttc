@@ -812,3 +812,24 @@ tbody tr:hover td { background: var(--bg3); }
   .page-content { padding: 32px 24px 80px; }
   .timer-panel  { padding: 32px; }
 }
+
+/* ─── Delete timer button (admin only, shown on entry cards) ─────────────── */
+.btn-delete-timer {
+  background: transparent;
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  color: var(--text3);
+  font-size: 15px;
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  margin-top: 6px;
+  margin-left: auto;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+  flex-shrink: 0;
+}
+.btn-delete-timer:hover {
+  background: var(--red-dim);
+  border-color: var(--red);
+  color: var(--red);
+}

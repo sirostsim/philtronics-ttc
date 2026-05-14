@@ -259,4 +259,26 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+
+// ─── DELETE /api/timers/:id ── Administrator only ─────────────────────────────
+router.delete('/:id', async (req, res) => {
+  if (!hasRole(req.user, 'administrator')) {
+    return res.status(403).json({ error: 'Only Administrators can delete timer records.' });
+  }
+  try {
+    const timer = await queryOne('SELECT * FROM timers WHERE id = $1', [req.params.id]);
+    if (!timer) return res.status(404).json({ error: 'Timer not found.' });
+
+    // Delete audit log entries for this timer first (foreign key)
+    await query('DELETE FROM audit_log WHERE timer_id = $1', [timer.id]);
+    // Delete the timer
+    await query('DELETE FROM timers WHERE id = $1', [timer.id]);
+
+    res.json({ ok: true, message: 'Timer record deleted.' });
+  } catch (err) {
+    console.error('Delete timer error:', err.message);
+    res.status(500).json({ error: 'Could not delete timer.' });
+  }
+});
+
 module.exports = router;
