@@ -32,6 +32,9 @@ function formatTimer(t) {
     completedAt:     t.completed_at,
     durationSeconds: t.duration_seconds,
     status:          t.status,
+    timeCheck:       !!t.time_check,
+    workstation:     t.workstation,
+    woNumber:        t.wo_number,
     notes:           t.notes,
     createdAt:       t.created_at,
   };
@@ -40,7 +43,7 @@ function formatTimer(t) {
 // ─── POST /api/timers/start ───────────────────────────────────────────────────
 router.post('/start', validate(schemas.startTimer), async (req, res) => {
   try {
-    const { itemNumber, notes } = req.body;
+    const { itemNumber, timeCheck, workstation, woNumber } = req.body;
     const user = req.user;
 
     const existing = await queryOne(
@@ -58,9 +61,9 @@ router.post('/start', validate(schemas.startTimer), async (req, res) => {
     const startedAt = new Date().toISOString();
 
     await query(
-      `INSERT INTO timers (id, item_number, operator_id, operator_name, started_at, status, notes, created_by)
-       VALUES ($1, $2, $3, $4, $5, 'active', $6, $7)`,
-      [id, itemNumber, user.id, user.full_name, startedAt, notes || null, user.id]
+      `INSERT INTO timers (id, item_number, operator_id, operator_name, started_at, status, time_check, workstation, wo_number, created_by)
+       VALUES ($1, $2, $3, $4, $5, 'active', $6, $7, $8, $9)`,
+      [id, itemNumber, user.id, user.full_name, startedAt, timeCheck || false, workstation || null, woNumber || null, user.id]
     );
 
     const timer = await queryOne('SELECT * FROM timers WHERE id = $1', [id]);

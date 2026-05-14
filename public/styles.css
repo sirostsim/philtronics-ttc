@@ -1012,3 +1012,88 @@ tbody tr:hover td { background: var(--bg3); }
 
 /* Nudge page content up so footer doesn't overlap */
 main { padding-bottom: 28px; }
+
+/* ─── Time Check toggle ──────────────────────────────────────────────────── */
+.time-check-group  { margin-bottom: 8px; }
+
+.time-check-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  cursor: pointer;
+  padding: 14px 16px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color var(--transition), background var(--transition);
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.time-check-label:hover { border-color: var(--border2); }
+
+/* Hide native checkbox */
+.time-check-input { position: absolute; opacity: 0; width: 0; height: 0; }
+
+/* Custom checkbox box */
+.time-check-box {
+  width: 26px; height: 26px;
+  border: 2px solid var(--border2);
+  border-radius: 6px;
+  background: var(--bg2);
+  flex-shrink: 0;
+  margin-top: 2px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background var(--transition), border-color var(--transition);
+  position: relative;
+}
+.time-check-box::after {
+  content: '';
+  width: 14px; height: 8px;
+  border-left: 3px solid #fff;
+  border-bottom: 3px solid #fff;
+  transform: rotate(-45deg) translateY(-2px);
+  opacity: 0;
+  transition: opacity .15s;
+}
+.time-check-input:checked ~ .time-check-box {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.time-check-input:checked ~ .time-check-box::after { opacity: 1; }
+
+/* Highlight the whole row when checked */
+.time-check-input:checked ~ .time-check-box,
+.time-check-label:has(.time-check-input:checked) {
+  border-color: var(--accent);
+  background: rgba(240,180,41,.08);
+}
+
+.time-check-text  { flex: 1; }
+.time-check-title {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+.time-check-desc {
+  display: block;
+  font-size: 12px;
+  color: var(--text3);
+  line-height: 1.4;
+}
+
+.badge-timecheck {
+  background: rgba(59,130,246,.15);
+  color: var(--blue);
+  border: 1px solid var(--blue);
+  font-size: 11px; font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase;
+  padding: 2px 8px; border-radius: 3px;
+  display: inline-block; margin-top: 4px;
+}
+.entry-meta-tag {
+  font-size: 12px;
+  color: var(--text2);
+  margin-top: 2px;
+}

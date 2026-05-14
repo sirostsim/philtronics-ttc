@@ -39,7 +39,8 @@ router.get('/csv', async (req, res) => {
 
     const rows = await query(
       `SELECT t.item_number, t.operator_id, t.operator_name,
-              t.started_at, t.completed_at, t.duration_seconds, t.notes, t.status
+              t.started_at, t.completed_at, t.duration_seconds,
+              t.time_check, t.workstation, t.wo_number, t.notes, t.status
        FROM timers t
        WHERE ${conditions.join(' AND ')}
        ORDER BY t.started_at ASC`,
@@ -56,6 +57,9 @@ router.get('/csv', async (req, res) => {
       completedAtLocal: toLocalString(r.completed_at),
       durationSeconds:  r.duration_seconds != null ? r.duration_seconds : '',
       durationMinutes:  r.duration_seconds != null ? (r.duration_seconds / 60).toFixed(2) : '',
+      timeCheck:        r.time_check ? 'Yes' : 'No',
+      workstation:      r.workstation || '',
+      woNumber:         r.wo_number || '',
       notes:            r.notes || '',
       status:           r.status,
     }));
@@ -72,8 +76,11 @@ router.get('/csv', async (req, res) => {
         { key: 'completedAtLocal', header: 'Completed At (London)'},
         { key: 'durationSeconds',  header: 'Duration (Seconds)'   },
         { key: 'durationMinutes',  header: 'Duration (Minutes)'   },
-        { key: 'notes',            header: 'Notes'                },
-        { key: 'status',           header: 'Status'               },
+        { key: 'timeCheck',        header: 'Time Check'            },
+        { key: 'workstation',      header: 'Workstation'           },
+        { key: 'woNumber',         header: 'W/O Number'            },
+        { key: 'notes',            header: 'Notes'                 },
+        { key: 'status',           header: 'Status'                },
       ],
     });
 

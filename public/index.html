@@ -73,6 +73,8 @@
       <!-- Start Job Panel -->
       <div id="panelStart" class="timer-panel">
         <h2 class="panel-title">Start Job</h2>
+
+        <!-- Item Number -->
         <div class="form-group">
           <label for="itemNumberInput">Item Number</label>
           <div class="autocomplete-wrap">
@@ -102,12 +104,15 @@
             <ul id="itemSuggestions" class="suggestions" role="listbox" hidden></ul>
           </div>
         </div>
+
+        <!-- Workstation -->
         <div class="form-group">
-          <label for="startNotes">Notes <span class="opt">(optional)</span></label>
+          <label for="startWorkstation">Workstation <span class="opt">(optional)</span></label>
           <div class="input-with-action">
-            <input id="startNotes" type="text" maxlength="500" placeholder="Any notes for this job" />
-            <button id="btnScanNotes" class="btn-scan" type="button"
-                    aria-label="Scan barcode into notes">
+            <input id="startWorkstation" type="text" maxlength="100"
+                   placeholder="e.g. WS-01" autocapitalize="characters" />
+            <button id="btnScanWorkstation" class="btn-scan" type="button"
+                    aria-label="Scan barcode into workstation">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M3 7V5a2 2 0 0 1 2-2h2"/>
@@ -123,6 +128,43 @@
             </button>
           </div>
         </div>
+
+        <!-- W/O Number -->
+        <div class="form-group">
+          <label for="startWoNumber">W/O Number <span class="opt">(optional)</span></label>
+          <div class="input-with-action">
+            <input id="startWoNumber" type="text" maxlength="100"
+                   placeholder="e.g. WO-10042" autocapitalize="characters" />
+            <button id="btnScanWoNumber" class="btn-scan" type="button"
+                    aria-label="Scan barcode into W/O number">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 7V5a2 2 0 0 1 2-2h2"/>
+                <path d="M17 3h2a2 2 0 0 1 2 2v2"/>
+                <path d="M21 17v2a2 2 0 0 1-2 2h-2"/>
+                <path d="M7 21H5a2 2 0 0 1-2-2v-2"/>
+                <rect x="7" y="7" width="3" height="3"/>
+                <rect x="14" y="7" width="3" height="3"/>
+                <rect x="7" y="14" width="3" height="3"/>
+                <rect x="14" y="14" width="3" height="3"/>
+              </svg>
+              Scan
+            </button>
+          </div>
+        </div>
+
+        <!-- Time Check toggle -->
+        <div class="form-group time-check-group">
+          <label class="time-check-label" for="startTimeCheck">
+            <input id="startTimeCheck" type="checkbox" class="time-check-input" />
+            <span class="time-check-box" aria-hidden="true"></span>
+            <span class="time-check-text">
+              <span class="time-check-title">Time Check</span>
+              <span class="time-check-desc">Tick for a measured timing — leave unticked for a simple time task</span>
+            </span>
+          </label>
+        </div>
+
         <div id="startError" class="error-msg" role="alert" aria-live="assertive"></div>
         <button id="btnStart" class="btn btn-start btn-full btn-xl" aria-label="Start timer">
           ▶ START
