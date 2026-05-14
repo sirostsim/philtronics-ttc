@@ -965,3 +965,50 @@ tbody tr:hover td { background: var(--bg3); }
   font-size: 18px;
   font-weight: 500;
 }
+
+/* ─── Prod Watch branding ────────────────────────────────────────────────── */
+.brand-logo-img {
+  height: 28px;
+  width:  auto;
+  object-fit: contain;
+  flex-shrink: 0;
+  /* Invert black background to transparent on dark topbar */
+  mix-blend-mode: screen;
+  filter: brightness(1.1);
+}
+
+.login-logo-img {
+  height: 72px;
+  width:  auto;
+  object-fit: contain;
+  display: block;
+  margin: 0 auto 12px;
+  mix-blend-mode: screen;
+  filter: brightness(1.1);
+}
+
+/* Remove old hex mark styles when logo image is used */
+.brand-mark,
+.brand-mark-large { display: none; }
+
+/* ─── Footer ─────────────────────────────────────────────────────────────── */
+.app-footer {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text3);
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  z-index: 10;
+  letter-spacing: .04em;
+}
+.app-footer strong { color: var(--text2); font-weight: 600; }
+.footer-dot        { color: var(--border2); }
+
+/* Nudge page content up so footer doesn't overlap */
+main { padding-bottom: 28px; }
