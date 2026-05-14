@@ -186,6 +186,17 @@
             <input id="histItem" type="text" placeholder="All items" />
           </div>
         </div>
+        <div class="filter-row">
+          <div class="form-group filter-group">
+            <label for="histStatus">Status</label>
+            <select id="histStatus" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:16px;padding:13px 14px;width:100%;">
+              <option value="">All statuses</option>
+              <option value="active">Active (stuck timers)</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+        </div>
         <button id="btnHistSearch" class="btn btn-primary">Search</button>
       </div>
 
@@ -236,6 +247,17 @@
         <h2 class="page-heading">User Management</h2>
         <button id="btnNewUser" class="btn btn-primary">+ New User</button>
       </div>
+
+      <!-- Admin Tools panel – always rendered, populated by renderAdminTools() -->
+      <div id="adminToolsPanel" style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:20px;">
+        <div style="font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:12px;">Tools</div>
+        <p style="font-size:14px;color:var(--text2);margin-bottom:14px;">
+          If an operator has a stuck active timer they cannot stop, use the button below to cancel all active timers across all operators.
+        </p>
+        <button id="btnCancelStuck" class="btn btn-danger">⚠ Cancel All Stuck Timers</button>
+        <div id="cancelStuckResult" style="font-size:14px;margin-top:10px;min-height:20px;" role="status"></div>
+      </div>
+
       <div id="userList" class="user-list" role="list" aria-label="User accounts"></div>
     </div>
   </section>
@@ -287,6 +309,6 @@
   </div>
 </div>
 
-<script src="app.js"></script>
+<script src="app.js?v=2"></script>
 </body>
 </html>

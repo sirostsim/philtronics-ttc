@@ -474,14 +474,17 @@ async function loadTodayEntries() {
    HISTORY PAGE
    ═══════════════════════════════════════════════════════════════════════════ */
 function loadHistoryPage() {
-  // Default: today
+  // Default: last 7 days — wide enough to catch any stuck timers
   const today = new Date().toISOString().slice(0, 10);
-  document.getElementById('histFrom').value = today;
+  const week  = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+  document.getElementById('histFrom').value = week;
   document.getElementById('histTo').value   = today;
 
+  // Supervisor+ get extra filters; admins also see status filter
   if (hasRole('supervisor')) {
     show('histSuperFilters');
   }
+
   searchHistory();
 }
 
@@ -492,12 +495,20 @@ async function searchHistory() {
   const to       = document.getElementById('histTo').value;
   const operator = document.getElementById('histOperator')?.value.trim() || '';
   const item     = document.getElementById('histItem')?.value.trim() || '';
+  const status   = document.getElementById('histStatus')?.value || '';
 
   const params = new URLSearchParams();
   if (from)     params.set('from',       new Date(from).toISOString());
   if (to)       { const d = new Date(to); d.setHours(23,59,59,999); params.set('to', d.toISOString()); }
   if (operator) params.set('operatorId', operator);
   if (item)     params.set('itemNumber', item);
+  if (status)   params.set('status',     status);
+
+  // When searching for active timers, don't restrict by date — they may be old
+  if (status === 'active') {
+    params.delete('from');
+    params.delete('to');
+  }
 
   try {
     const timers = await GET(`/timers?${params}`);
