@@ -18,11 +18,12 @@
 
 <!-- ═══ TOP BAR ═════════════════════════════════════════════════════════ -->
 <header id="topbar" class="topbar hidden" role="banner">
-  <div class="topbar-brand">
+  <button class="topbar-brand" onclick="if(typeof navigateTo==='function')navigateTo('timer')"
+          aria-label="Go to Timer" title="Go to Timer">
     <img src="/logo-transparent.png" alt="Work Time" class="brand-logo-img" aria-hidden="true"/>
     <span class="brand-name">WORK TIME</span>
     <span class="brand-sub">TIME TO COMPLETE</span>
-  </div>
+  </button>
   <div class="topbar-center" id="activeTimerBanner" role="status" aria-live="polite"></div>
   <div class="topbar-right">
     <span id="userLabel" class="user-label"></span>
