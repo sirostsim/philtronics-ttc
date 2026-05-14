@@ -41,9 +41,9 @@ async function api(method, path, body) {
   return data;
 }
 
-const GET   = (path)       => api('GET',    path);
-const POST  = (path, body) => api('POST',   path, body);
-const PATCH = (path, body) => api('PATCH',  path, body);
+const GET   = (path)       => api('GET',   path);
+const POST  = (path, body) => api('POST',  path, body);
+const PATCH = (path, body) => api('PATCH', path, body);
 
 /* ═══════════════════════════════════════════════════════════════════════════
    SAFE DOM HELPERS
@@ -797,8 +797,19 @@ const scanner = (() => {
 async function loadWallboard() {
   if (wallboardInterval) clearInterval(wallboardInterval);
   await refreshWallboard();
-  wallboardInterval = setInterval(refreshWallboard, 30000);
+  // Poll every 5 minutes (proof of concept — increase to 60s for production)
+  // Skips poll if tab is hidden to save Railway resources
+  wallboardInterval = setInterval(() => {
+    if (document.visibilityState === 'visible') refreshWallboard();
+  }, 300000);
 }
+
+// Resume immediately when a hidden tab becomes visible again
+document.addEventListener('visibilitychange', () => {
+  if (state.currentPage === 'wallboard' && document.visibilityState === 'visible') {
+    refreshWallboard();
+  }
+});
 
 async function refreshWallboard() {
   const container = document.getElementById('wallboardTiles');
