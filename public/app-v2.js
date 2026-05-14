@@ -113,10 +113,11 @@ document.getElementById('modal').addEventListener('click', e => {
    NAVIGATION
    ═══════════════════════════════════════════════════════════════════════════ */
 const PAGES = {
-  timer:     { id: 'pageTimer',     label: 'Timer',      minRole: 'operator'      },
-  history:   { id: 'pageHistory',   label: 'History',    minRole: 'operator'      },
-  dashboard: { id: 'pageDashboard', label: 'Dashboard',  minRole: 'manager'       },
-  admin:     { id: 'pageAdmin',     label: 'Admin',      minRole: 'administrator' },
+  timer:      { id: 'pageTimer',      label: 'Timer',      minRole: 'operator'      },
+  history:    { id: 'pageHistory',    label: 'History',    minRole: 'operator'      },
+  wallboard:  { id: 'pageWallboard',  label: 'Wall Board', minRole: 'supervisor'    },
+  dashboard:  { id: 'pageDashboard',  label: 'Dashboard',  minRole: 'manager'       },
+  admin:      { id: 'pageAdmin',      label: 'Admin',      minRole: 'administrator' },
 };
 
 function buildNav() {
@@ -146,10 +147,11 @@ function navigateTo(page) {
   }
   buildNav();
   // Lazy-load page data
-  if (page === 'timer')     loadTimerPage();
-  if (page === 'history')   loadHistoryPage();
-  if (page === 'dashboard') loadDashboard();
-  if (page === 'admin')     loadAdminPage();
+  if (page === 'timer')      loadTimerPage();
+  if (page === 'history')    loadHistoryPage();
+  if (page === 'wallboard')  loadWallboard();
+  if (page === 'dashboard')  loadDashboard();
+  if (page === 'admin')      loadAdminPage();
 }
 
 // Nav drawer toggle
@@ -1245,6 +1247,116 @@ const scanner = (() => {
 
   return { open, close };
 })();
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   WALL BOARD
+   Auto-refreshes every 30 seconds. Shows live tiles for all active timers.
+   Available to Supervisor, Manager, Administrator.
+   ═══════════════════════════════════════════════════════════════════════════ */
+let wallboardInterval = null;
+
+async function loadWallboard() {
+  // Stop any previous refresh interval
+  if (wallboardInterval) clearInterval(wallboardInterval);
+
+  await refreshWallboard();
+
+  // Auto-refresh every 30 seconds
+  wallboardInterval = setInterval(refreshWallboard, 30000);
+}
+
+async function refreshWallboard() {
+  const container  = document.getElementById('wallboardTiles');
+  const countEl    = document.getElementById('wallboardCount');
+  const updatedEl  = document.getElementById('wallboardUpdated');
+  if (!container) return;
+
+  try {
+    const timers = await GET('/timers?status=active&limit=200');
+
+    // Update count and last-updated time
+    if (countEl)   countEl.textContent  = timers.length + ' active job' + (timers.length !== 1 ? 's' : '');
+    if (updatedEl) updatedEl.textContent = 'Updated ' + new Date().toLocaleTimeString('en-GB');
+
+    container.innerHTML = '';
+
+    if (timers.length === 0) {
+      container.appendChild(el('div', { className: 'wallboard-empty' },
+        el('div', { className: 'wallboard-empty-icon', textContent: '✓' }),
+        el('div', { className: 'wallboard-empty-text', textContent: 'No active jobs right now' })
+      ));
+      return;
+    }
+
+    timers.forEach(t => {
+      const elapsed  = Math.max(0, Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000));
+      const tile     = el('div', { className: 'wallboard-tile' });
+
+      // Colour the tile amber if over 2 hours, red if over 4 hours
+      if (elapsed > 4 * 3600)      tile.classList.add('tile-overdue');
+      else if (elapsed > 2 * 3600) tile.classList.add('tile-warning');
+
+      tile.appendChild(el('div', { className: 'wb-item',     textContent: t.itemNumber }));
+      tile.appendChild(el('div', { className: 'wb-operator', textContent: t.operatorName }));
+      tile.appendChild(el('div', { className: 'wb-elapsed',  textContent: formatDuration(elapsed),
+        'data-timerid': t.id, 'data-startedat': t.startedAt }));
+      tile.appendChild(el('div', { className: 'wb-started',
+        textContent: 'Started ' + formatLocalTime(t.startedAt) }));
+
+      if (t.notes) {
+        tile.appendChild(el('div', { className: 'wb-notes', textContent: '📝 ' + t.notes }));
+      }
+
+      container.appendChild(tile);
+    });
+
+    // Tick elapsed times every second so tiles update live
+    startWallboardTick();
+
+  } catch (err) {
+    container.innerHTML = '';
+    container.appendChild(el('div', { className: 'wallboard-empty',
+      textContent: 'Could not load active timers: ' + err.message }));
+  }
+}
+
+// Live tick — updates elapsed time on each tile every second
+let wallboardTick = null;
+function startWallboardTick() {
+  if (wallboardTick) clearInterval(wallboardTick);
+  wallboardTick = setInterval(() => {
+    // Only tick if wallboard page is visible
+    if (state.currentPage !== 'wallboard') {
+      clearInterval(wallboardTick);
+      wallboardTick = null;
+      return;
+    }
+    document.querySelectorAll('.wb-elapsed[data-startedat]').forEach(el => {
+      const startedAt = el.getAttribute('data-startedat');
+      if (!startedAt) return;
+      const elapsed = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000));
+      el.textContent = formatDuration(elapsed);
+      // Update tile colour class dynamically
+      const tile = el.closest('.wallboard-tile');
+      if (tile) {
+        tile.classList.remove('tile-warning', 'tile-overdue');
+        if (elapsed > 4 * 3600)      tile.classList.add('tile-overdue');
+        else if (elapsed > 2 * 3600) tile.classList.add('tile-warning');
+      }
+    });
+  }, 1000);
+}
+
+// Stop intervals when navigating away
+const _origNavigateTo = navigateTo;
+function navigateTo(page) {
+  if (page !== 'wallboard') {
+    if (wallboardInterval) { clearInterval(wallboardInterval); wallboardInterval = null; }
+    if (wallboardTick)     { clearInterval(wallboardTick);     wallboardTick = null;     }
+  }
+  _origNavigateTo(page);
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    BOOT
