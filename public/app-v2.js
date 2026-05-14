@@ -9,7 +9,7 @@
    STATE
    ═══════════════════════════════════════════════════════════════════════════ */
 const state = {
-  user:          null,   // { id, username, fullName, role, activeTimer }
+  user:          null,
   currentPage:   null,
   stopwatchTimer: null,
   activeTimerId:  null,
@@ -47,7 +47,7 @@ const PATCH  = (path, body)  => api('PATCH', path, body);
 const DELETE = (path, body)  => api('DELETE', path, body);
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   SAFE DOM HELPERS  (XSS prevention)
+   SAFE DOM HELPERS
    ═══════════════════════════════════════════════════════════════════════════ */
 function esc(str) {
   if (str == null) return '';
@@ -141,15 +141,14 @@ function buildNav() {
 function navigateTo(page) {
   state.currentPage = page;
 
-  // Stop wallboard intervals when leaving the wallboard page
   if (page !== 'wallboard') {
     if (wallboardInterval) { clearInterval(wallboardInterval); wallboardInterval = null; }
     if (wallboardTick)     { clearInterval(wallboardTick);     wallboardTick = null;     }
   }
 
   for (const p of Object.values(PAGES)) {
-    const el = document.getElementById(p.id);
-    if (el) el.hidden = true;
+    const e = document.getElementById(p.id);
+    if (e) e.hidden = true;
   }
   const target = PAGES[page];
   if (target) {
@@ -157,7 +156,6 @@ function navigateTo(page) {
     if (node) node.hidden = false;
   }
   buildNav();
-  // Lazy-load page data
   if (page === 'timer')      loadTimerPage();
   if (page === 'history')    loadHistoryPage();
   if (page === 'wallboard')  loadWallboard();
@@ -165,7 +163,6 @@ function navigateTo(page) {
   if (page === 'admin')      loadAdminPage();
 }
 
-// Nav drawer toggle
 const navDrawer  = document.getElementById('navDrawer');
 const navOverlay = document.getElementById('navOverlay');
 const btnNav     = document.getElementById('btnNav');
@@ -202,12 +199,11 @@ function onLoggedIn() {
   document.getElementById('topbar').classList.remove('hidden');
   document.getElementById('pageLogin').hidden = true;
   document.getElementById('userLabel').textContent = state.user.fullName;
-  // Pre-populate active timer state from the /me response so the banner
-  // shows immediately — loadTimerPage will then verify and correct this
-  // against the server before starting the stopwatch.
   if (state.user.activeTimer) {
     state.activeTimerId   = state.user.activeTimer.id;
-    state.activeStartedAt = state.user.activeTimer.started_at;
+    state.activeStartedAt = state.user.activeTimer.started_at
+                         || state.user.activeTimer.startedAt
+                         || null;
   } else {
     state.activeTimerId   = null;
     state.activeStartedAt = null;
@@ -225,7 +221,6 @@ async function doLogout() {
   toast('Signed out.');
 }
 
-// Login form
 document.getElementById('loginForm').addEventListener('submit', async e => {
   e.preventDefault();
   clearError('loginError');
@@ -247,7 +242,7 @@ document.getElementById('loginForm').addEventListener('submit', async e => {
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   ACTIVE TIMER BANNER (topbar)
+   ACTIVE TIMER BANNER
    ═══════════════════════════════════════════════════════════════════════════ */
 function refreshActiveTimerBanner() {
   const banner = document.getElementById('activeTimerBanner');
@@ -268,20 +263,17 @@ async function loadTimerPage() {
   clearError('startError');
   clearError('stopError');
 
-  // Always ask the server for the current active timer — this means
-  // refreshes, different devices, and session restores all work correctly.
-  // The browser is never the source of truth for timer state.
   try {
     const me = await GET('/me');
     if (me.activeTimer) {
-      // Restore state from server — timestamps come from DB, not the browser
       state.activeTimerId   = me.activeTimer.id;
-      state.activeStartedAt = me.activeTimer.started_at;
+      state.activeStartedAt = me.activeTimer.started_at
+                           || me.activeTimer.startedAt
+                           || null;
       refreshActiveTimerBanner();
       await showActivePanel();
       startStopwatch();
     } else {
-      // No active timer on server — clear any stale local state
       state.activeTimerId   = null;
       state.activeStartedAt = null;
       refreshActiveTimerBanner();
@@ -289,7 +281,6 @@ async function loadTimerPage() {
       stopStopwatch();
     }
   } catch (_) {
-    // Fallback: use whatever state we already have if the request fails
     if (state.activeTimerId) {
       await showActivePanel();
       startStopwatch();
@@ -304,20 +295,18 @@ async function loadTimerPage() {
 function showStartPanel() {
   show('panelStart');
   hide('panelActive');
+  const rb = document.getElementById('btnResumeTimer');
+  if (rb) rb.remove();
+  clearError('startError');
 }
 
 async function showActivePanel() {
   hide('panelStart');
   show('panelActive');
-
-  // Fetch fresh timer data from server — guarantees the startedAt we use for
-  // the stopwatch is the real DB value, not a stale browser-side copy.
-  // This makes the elapsed time accurate after a refresh or device switch.
   try {
     const timers = await GET('/timers?status=active');
     const t = timers.find(t => t.id === state.activeTimerId);
     if (t) {
-      // Always update state.activeStartedAt from the server response
       state.activeStartedAt = t.startedAt;
       document.getElementById('activeItemDisplay').textContent = t.itemNumber;
       const metaParts = [`Started at ${formatLocalTime(t.startedAt)}`];
@@ -325,8 +314,6 @@ async function showActivePanel() {
       if (t.woNumber)    metaParts.push('W/O: ' + t.woNumber);
       document.getElementById('activeMeta').textContent = metaParts.join('  ·  ');
     } else if (state.activeTimerId) {
-      // Timer ID exists in state but not in active list — it may have been
-      // stopped or cancelled on another device. Clear stale state.
       state.activeTimerId   = null;
       state.activeStartedAt = null;
       refreshActiveTimerBanner();
@@ -334,12 +321,9 @@ async function showActivePanel() {
       stopStopwatch();
       toast('Your previous timer was already stopped.', '');
     }
-  } catch (_) {
-    // If fetch fails, fall back to whatever startedAt we already have
-  }
+  } catch (_) {}
 }
 
-// ─── Start job ───────────────────────────────────────────────────────────
 document.getElementById('btnStart').addEventListener('click', async () => {
   clearError('startError');
   const itemNumber  = document.getElementById('itemNumberInput').value.trim();
@@ -360,12 +344,43 @@ document.getElementById('btnStart').addEventListener('click', async () => {
   const btn = document.getElementById('btnStart');
   btn.disabled = true;
   try {
-    const timer = await POST('/timers/start', {
-      itemNumber,
-      timeCheck,
-      workstation: workstation || undefined,
-      woNumber:    woNumber    || undefined,
-    });
+    let timer;
+    try {
+      timer = await POST('/timers/start', {
+        itemNumber,
+        timeCheck,
+        workstation: workstation || undefined,
+        woNumber:    woNumber    || undefined,
+      });
+    } catch (startErr) {
+      if (startErr.status === 409) {
+        setError('startError', startErr.message);
+        const existingResumeBtn = document.getElementById('btnResumeTimer');
+        if (!existingResumeBtn) {
+          const resumeBtn = document.createElement('button');
+          resumeBtn.id = 'btnResumeTimer';
+          resumeBtn.className = 'btn btn-primary btn-full';
+          resumeBtn.style.marginTop = '8px';
+          resumeBtn.textContent = '↩ Resume My Active Timer';
+          resumeBtn.addEventListener('click', async () => {
+            resumeBtn.remove();
+            clearError('startError');
+            const me = await GET('/me').catch(() => null);
+            if (me && me.activeTimer) {
+              state.activeTimerId   = me.activeTimer.id;
+              state.activeStartedAt = me.activeTimer.started_at || me.activeTimer.startedAt;
+              refreshActiveTimerBanner();
+              await showActivePanel();
+              startStopwatch();
+            }
+          });
+          document.getElementById('startError').insertAdjacentElement('afterend', resumeBtn);
+        }
+        btn.disabled = false;
+        return;
+      }
+      throw startErr;
+    }
     state.activeTimerId   = timer.id;
     state.activeStartedAt = timer.startedAt;
     document.getElementById('itemNumberInput').value  = '';
@@ -373,7 +388,7 @@ document.getElementById('btnStart').addEventListener('click', async () => {
     document.getElementById('startWoNumber').value    = '';
     document.getElementById('startTimeCheck').checked = false;
     hideSuggestions();
-    showActivePanel();
+    await showActivePanel();
     startStopwatch();
     refreshActiveTimerBanner();
     loadTodayEntries();
@@ -385,7 +400,6 @@ document.getElementById('btnStart').addEventListener('click', async () => {
   }
 });
 
-// ─── Stop job ────────────────────────────────────────────────────────────
 document.getElementById('btnStop').addEventListener('click', async () => {
   if (!state.activeTimerId) return;
   clearError('stopError');
@@ -400,7 +414,6 @@ document.getElementById('btnStop').addEventListener('click', async () => {
     refreshActiveTimerBanner();
     loadTodayEntries();
     toast(`✓ Job complete: ${formatDuration(timer.durationSeconds)}`, 'success');
-    // Re-sync user state so the banner and any other UI stays consistent
     GET('/me').then(me => { state.user = me; refreshActiveTimerBanner(); }).catch(() => {});
   } catch (err) {
     setError('stopError', err.message);
@@ -409,16 +422,13 @@ document.getElementById('btnStop').addEventListener('click', async () => {
   }
 });
 
-// ─── Cancel timer ────────────────────────────────────────────────────────
 document.getElementById('btnCancelTimer').addEventListener('click', () => {
   if (!state.activeTimerId) return;
-  const ageMs  = state.activeStartedAt
+  const ageMs = state.activeStartedAt
     ? Date.now() - new Date(state.activeStartedAt).getTime()
     : Infinity;
   const needsReason = ageMs > 60000;
-
   const bodyDiv = el('div', {});
-
   if (needsReason) {
     bodyDiv.appendChild(el('p', { textContent: 'This timer is over 60 seconds old. A reason is required.', className: 'mt-8' }));
   } else {
@@ -433,10 +443,8 @@ document.getElementById('btnCancelTimer').addEventListener('click', () => {
   }
   const errDiv = el('div', { className: 'error-msg', role: 'alert' });
   bodyDiv.appendChild(errDiv);
-
   const btnConfirm = el('button', { className: 'btn btn-danger', textContent: 'Cancel Timer' });
-  const btnClose   = el('button', { className: 'btn btn-ghost', textContent: 'Keep Running' });
-
+  const btnClose   = el('button', { className: 'btn btn-ghost',  textContent: 'Keep Running' });
   btnClose.addEventListener('click', closeModal);
   btnConfirm.addEventListener('click', async () => {
     const reason = reasonInput.value.trim() || 'Operator cancelled';
@@ -460,11 +468,9 @@ document.getElementById('btnCancelTimer').addEventListener('click', () => {
       btnConfirm.disabled = false;
     }
   });
-
   openModal('Cancel Timer', bodyDiv, [btnClose, btnConfirm]);
 });
 
-// ─── Stopwatch ───────────────────────────────────────────────────────────
 function startStopwatch() {
   stopStopwatch();
   state.stopwatchTimer = setInterval(tickStopwatch, 500);
@@ -473,7 +479,6 @@ function startStopwatch() {
 function stopStopwatch() {
   clearInterval(state.stopwatchTimer);
   state.stopwatchTimer = null;
-  // Only reset display when there genuinely is no active timer
   if (!state.activeTimerId) {
     document.getElementById('stopwatch').textContent = '00:00:00';
   }
@@ -484,7 +489,6 @@ function tickStopwatch() {
   document.getElementById('stopwatch').textContent = formatDuration(elapsed);
 }
 
-// ─── Today's entries ─────────────────────────────────────────────────────
 async function loadTodayEntries() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -498,17 +502,13 @@ async function loadTodayEntries() {
    HISTORY PAGE
    ═══════════════════════════════════════════════════════════════════════════ */
 function loadHistoryPage() {
-  // Default: last 7 days — wide enough to catch any stuck timers
   const today = new Date().toISOString().slice(0, 10);
   const week  = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString().slice(0, 10);
   document.getElementById('histFrom').value = week;
   document.getElementById('histTo').value   = today;
-
-  // Supervisor+ get extra filters; admins also see status filter
   if (hasRole('supervisor')) {
     show('histSuperFilters');
   }
-
   searchHistory();
 }
 
@@ -520,20 +520,16 @@ async function searchHistory() {
   const operator = document.getElementById('histOperator')?.value.trim() || '';
   const item     = document.getElementById('histItem')?.value.trim() || '';
   const status   = document.getElementById('histStatus')?.value || '';
-
-  const params = new URLSearchParams();
+  const params   = new URLSearchParams();
   if (from)     params.set('from',       new Date(from).toISOString());
   if (to)       { const d = new Date(to); d.setHours(23,59,59,999); params.set('to', d.toISOString()); }
   if (operator) params.set('operatorId', operator);
   if (item)     params.set('itemNumber', item);
   if (status)   params.set('status',     status);
-
-  // When searching for active timers, don't restrict by date — they may be old
   if (status === 'active') {
     params.delete('from');
     params.delete('to');
   }
-
   try {
     const timers = await GET(`/timers?${params}`);
     renderEntryList('historyList', timers, true);
@@ -546,7 +542,6 @@ async function searchHistory() {
    DASHBOARD
    ═══════════════════════════════════════════════════════════════════════════ */
 async function loadDashboard() {
-  // Load stats
   try {
     const stats = await GET('/export/stats');
     renderStatCards(stats);
@@ -561,13 +556,11 @@ document.getElementById('btnDashSearch').addEventListener('click', async () => {
   const to       = document.getElementById('dashTo').value;
   const item     = document.getElementById('dashItem').value.trim();
   const operator = document.getElementById('dashOperator').value.trim();
-
-  const params = new URLSearchParams();
+  const params   = new URLSearchParams();
   if (from)     params.set('from',       new Date(from).toISOString());
   if (to)       { const d = new Date(to); d.setHours(23,59,59,999); params.set('to', d.toISOString()); }
   if (item)     params.set('itemNumber', item);
   if (operator) params.set('operatorId', operator);
-
   try {
     const stats = await GET(`/export/stats?${params}`);
     renderDashTable(stats.byItem);
@@ -581,13 +574,11 @@ document.getElementById('btnExportCSV').addEventListener('click', () => {
   const to       = document.getElementById('dashTo').value;
   const item     = document.getElementById('dashItem').value.trim();
   const operator = document.getElementById('dashOperator').value.trim();
-
-  const params = new URLSearchParams();
+  const params   = new URLSearchParams();
   if (from)     params.set('from',       new Date(from).toISOString());
   if (to)       { const d = new Date(to); d.setHours(23,59,59,999); params.set('to', d.toISOString()); }
   if (item)     params.set('itemNumber', item);
   if (operator) params.set('operatorId', operator);
-
   window.location.href = `/api/export/csv?${params}`;
 });
 
@@ -644,7 +635,6 @@ function renderDashTable(rows) {
    ADMIN PAGE
    ═══════════════════════════════════════════════════════════════════════════ */
 async function loadAdminPage() {
-  // Always render the tools panel first — it doesn't depend on the user list
   renderAdminTools();
   try {
     const users = await GET('/users');
@@ -655,16 +645,11 @@ async function loadAdminPage() {
 }
 
 function renderAdminTools() {
-  // The panel HTML is static in index.html — just wire up the button.
-  // This avoids any timing issues with dynamic DOM insertion.
-  const btn        = document.getElementById('btnCancelStuck');
-  const resultDiv  = document.getElementById('cancelStuckResult');
+  const btn       = document.getElementById('btnCancelStuck');
+  const resultDiv = document.getElementById('cancelStuckResult');
   if (!btn) return;
-
-  // Remove any previous listener by cloning the button
   const fresh = btn.cloneNode(true);
   btn.parentNode.replaceChild(fresh, btn);
-
   fresh.addEventListener('click', async () => {
     if (!confirm('This will cancel ALL currently active timers for all operators. Are you sure?')) return;
     fresh.disabled = true;
@@ -712,7 +697,6 @@ function renderUserList(users) {
     if (!u.isActive) meta.appendChild(el('span', { className: 'badge badge-cancelled', textContent: 'disabled' }));
     info.appendChild(meta);
     card.appendChild(info);
-
     const actions = el('div', { className: 'user-actions' });
     const editBtn = el('button', { className: 'btn btn-ghost', textContent: 'Edit',
       onclick: () => openUserModal(u) });
@@ -721,39 +705,31 @@ function renderUserList(users) {
     actions.appendChild(editBtn);
     actions.appendChild(pwBtn);
     card.appendChild(actions);
-
     container.appendChild(card);
   });
 }
 
 function openUserModal(user) {
-  const isNew  = !user;
-  const title  = isNew ? 'New User' : 'Edit User';
-
-  const body = el('div', {});
-
+  const isNew = !user;
+  const body  = el('div', {});
   const fields = [
-    { id: 'mUsername', label: 'Username *', type: 'text',     value: user?.username || '',  disabled: !isNew },
-    { id: 'mFullName', label: 'Full Name *', type: 'text',    value: user?.fullName || ''  },
+    { id: 'mUsername', label: 'Username *', value: user?.username || '', disabled: !isNew },
+    { id: 'mFullName', label: 'Full Name *', value: user?.fullName || '' },
   ];
   fields.forEach(f => {
-    const input = el('input', { id: f.id, type: f.type, value: f.value, maxlength: '100' });
+    const input = el('input', { id: f.id, type: 'text', value: f.value, maxlength: '100' });
     if (f.disabled) input.setAttribute('disabled', '');
     body.appendChild(el('div', { className: 'form-group' },
       el('label', { for: f.id, textContent: f.label }),
       input
     ));
   });
-
-  // Password field (new user only)
   if (isNew) {
     body.appendChild(el('div', { className: 'form-group' },
       el('label', { for: 'mPassword', textContent: 'Password *' }),
       el('input', { id: 'mPassword', type: 'password', maxlength: '64' })
     ));
   }
-
-  // Role select
   const roleSelect = el('select', { id: 'mRole', style: 'background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:16px;padding:12px 14px;width:100%;' });
   ['operator','supervisor','manager','administrator'].forEach(r => {
     const o = el('option', { value: r, textContent: r.charAt(0).toUpperCase() + r.slice(1) });
@@ -764,8 +740,6 @@ function openUserModal(user) {
     el('label', { for: 'mRole', textContent: 'Role *' }),
     roleSelect
   ));
-
-  // Active toggle (edit only)
   if (!isNew) {
     const activeCheck = el('input', { type: 'checkbox', id: 'mActive' });
     if (user.isActive) activeCheck.checked = true;
@@ -774,21 +748,16 @@ function openUserModal(user) {
       el('label', { for: 'mActive', textContent: 'Account Active' })
     ));
   }
-
-  const errDiv = el('div', { className: 'error-msg', role: 'alert' });
+  const errDiv  = el('div', { className: 'error-msg', role: 'alert' });
   body.appendChild(errDiv);
-
   const btnSave   = el('button', { className: 'btn btn-primary', textContent: isNew ? 'Create User' : 'Save Changes' });
   const btnCancel = el('button', { className: 'btn btn-ghost',   textContent: 'Cancel' });
   btnCancel.addEventListener('click', closeModal);
-
   btnSave.addEventListener('click', async () => {
     errDiv.textContent = '';
     const fullName = document.getElementById('mFullName').value.trim();
     const role     = document.getElementById('mRole').value;
-
     if (!fullName) { errDiv.textContent = 'Full name is required.'; return; }
-
     btnSave.disabled = true;
     try {
       if (isNew) {
@@ -811,8 +780,7 @@ function openUserModal(user) {
       btnSave.disabled = false;
     }
   });
-
-  openModal(title, body, [btnCancel, btnSave]);
+  openModal(isNew ? 'New User' : 'Edit User', body, [btnCancel, btnSave]);
 }
 
 function openResetPasswordModal(user) {
@@ -823,13 +791,11 @@ function openResetPasswordModal(user) {
     el('label', { for: 'mNewPw', textContent: 'New Password *' }),
     pwInput
   ));
-  const errDiv = el('div', { className: 'error-msg', role: 'alert' });
+  const errDiv  = el('div', { className: 'error-msg', role: 'alert' });
   body.appendChild(errDiv);
-
   const btnSave   = el('button', { className: 'btn btn-primary', textContent: 'Reset Password' });
   const btnCancel = el('button', { className: 'btn btn-ghost',   textContent: 'Cancel' });
   btnCancel.addEventListener('click', closeModal);
-
   btnSave.addEventListener('click', async () => {
     const pw = pwInput.value;
     if (pw.length < 8) { errDiv.textContent = 'Password must be at least 8 characters.'; return; }
@@ -843,7 +809,6 @@ function openResetPasswordModal(user) {
       btnSave.disabled = false;
     }
   });
-
   openModal('Reset Password', body, [btnCancel, btnSave]);
 }
 
@@ -854,17 +819,13 @@ function renderEntryList(containerId, timers, showOperator = false) {
   const container = document.getElementById(containerId);
   if (!container) return;
   container.innerHTML = '';
-
   if (!timers || timers.length === 0) {
     container.appendChild(el('div', { className: 'empty-state', textContent: 'No records found.' }));
     return;
   }
-
   const isAdmin = hasRole('administrator');
-
   timers.forEach(t => {
     const card = el('div', { className: 'entry-card', role: 'listitem' });
-
     const left = el('div', {});
     left.appendChild(el('div', { className: 'entry-item', textContent: t.itemNumber }));
     if (showOperator) {
@@ -876,7 +837,6 @@ function renderEntryList(containerId, timers, showOperator = false) {
     if (t.workstation) left.appendChild(el('div', { className: 'entry-meta-tag', textContent: '🖥 ' + t.workstation }));
     if (t.woNumber)    left.appendChild(el('div', { className: 'entry-meta-tag', textContent: '📋 W/O: ' + t.woNumber }));
     if (t.timeCheck)   left.appendChild(el('span', { className: 'badge badge-timecheck', textContent: '✓ Time Check' }));
-
     const right = el('div', {});
     right.appendChild(el('div', { className: 'entry-duration',
       textContent: t.durationSeconds != null ? formatDuration(t.durationSeconds) : '—'
@@ -884,8 +844,6 @@ function renderEntryList(containerId, timers, showOperator = false) {
     right.appendChild(el('div', { className: 'entry-status' },
       el('span', { className: `badge badge-${t.status}`, textContent: t.status })
     ));
-
-    // Delete button — administrators only
     if (isAdmin) {
       const delBtn = el('button', {
         className: 'btn-delete-timer',
@@ -896,22 +854,18 @@ function renderEntryList(containerId, timers, showOperator = false) {
       delBtn.addEventListener('click', () => confirmDeleteTimer(t, card, containerId, timers));
       right.appendChild(delBtn);
     }
-
     card.appendChild(left);
     card.appendChild(right);
     container.appendChild(card);
   });
 }
 
-// ─── Delete timer confirmation ────────────────────────────────────────────────
 function confirmDeleteTimer(t, card, containerId, timers) {
   const body = el('div', {});
   body.appendChild(el('p', {
-    textContent: `Are you sure you want to permanently delete this timer record?`,
+    textContent: 'Are you sure you want to permanently delete this timer record?',
     style: 'margin-bottom:12px;'
   }));
-
-  // Show summary of what will be deleted
   const summary = el('div', {
     style: 'background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:12px;font-size:13px;color:var(--text2);margin-bottom:12px;'
   });
@@ -920,43 +874,31 @@ function confirmDeleteTimer(t, card, containerId, timers) {
   summary.appendChild(el('div', { textContent: 'Started: ' + formatLocalTime(t.startedAt) }));
   summary.appendChild(el('div', { textContent: 'Status: ' + t.status }));
   body.appendChild(summary);
-
   body.appendChild(el('p', {
     textContent: '⚠ This cannot be undone. The audit log for this timer will also be deleted.',
     style: 'color:var(--red);font-size:13px;font-weight:600;'
   }));
-
-  const errDiv = el('div', { className: 'error-msg', role: 'alert' });
+  const errDiv    = el('div', { className: 'error-msg', role: 'alert' });
   body.appendChild(errDiv);
-
   const btnConfirm = el('button', { className: 'btn btn-danger', textContent: 'Delete Record' });
   const btnCancel  = el('button', { className: 'btn btn-ghost',  textContent: 'Keep Record' });
-
   btnCancel.addEventListener('click', closeModal);
-
   btnConfirm.addEventListener('click', async () => {
     btnConfirm.disabled = true;
     btnConfirm.textContent = 'Deleting…';
     try {
       await api('DELETE', '/timers/' + t.id);
-
-      // If this was the user's own active timer, clear state
       if (t.id === state.activeTimerId) {
         state.activeTimerId   = null;
         state.activeStartedAt = null;
         stopStopwatch();
         refreshActiveTimerBanner();
       }
-
-      // Remove the card from the DOM immediately
       card.remove();
-
-      // If the list is now empty, show empty state
       const container = document.getElementById(containerId);
       if (container && container.children.length === 0) {
         container.appendChild(el('div', { className: 'empty-state', textContent: 'No records found.' }));
       }
-
       closeModal();
       toast('Timer record deleted.', '');
     } catch (err) {
@@ -965,7 +907,6 @@ function confirmDeleteTimer(t, card, containerId, timers) {
       btnConfirm.textContent = 'Delete Record';
     }
   });
-
   openModal('Delete Timer Record', body, [btnCancel, btnConfirm]);
 }
 
@@ -973,8 +914,8 @@ function confirmDeleteTimer(t, card, containerId, timers) {
    AUTOCOMPLETE
    ═══════════════════════════════════════════════════════════════════════════ */
 let acDebounce = null;
-const itemInput  = document.getElementById('itemNumberInput');
-const sugList    = document.getElementById('itemSuggestions');
+const itemInput = document.getElementById('itemNumberInput');
+const sugList   = document.getElementById('itemSuggestions');
 
 itemInput.addEventListener('input', () => {
   clearTimeout(acDebounce);
@@ -982,7 +923,6 @@ itemInput.addEventListener('input', () => {
   if (q.length < 1) { hideSuggestions(); return; }
   acDebounce = setTimeout(() => fetchSuggestions(q), 200);
 });
-
 itemInput.addEventListener('keydown', e => {
   const items = sugList.querySelectorAll('li');
   if (!items.length) return;
@@ -1004,7 +944,6 @@ itemInput.addEventListener('keydown', e => {
     hideSuggestions();
   }
 });
-
 document.addEventListener('click', e => {
   if (!itemInput.contains(e.target) && !sugList.contains(e.target)) hideSuggestions();
 });
@@ -1015,7 +954,6 @@ async function fetchSuggestions(q) {
     showSuggestions(items);
   } catch (_) {}
 }
-
 function showSuggestions(items) {
   sugList.innerHTML = '';
   if (!items.length) { hideSuggestions(); return; }
@@ -1034,7 +972,6 @@ function showSuggestions(items) {
   });
   sugList.hidden = false;
 }
-
 function hideSuggestions() {
   sugList.hidden = true;
   sugList.innerHTML = '';
@@ -1050,36 +987,22 @@ function formatDuration(seconds) {
   const s = seconds % 60;
   return [h, m, s].map(n => String(n).padStart(2, '0')).join(':');
 }
-
 function formatLocalTime(isoStr) {
   if (!isoStr) return '';
   return new Date(isoStr).toLocaleString('en-GB', {
-    timeZone:  'Europe/London',
-    day:       '2-digit',
-    month:     '2-digit',
-    year:      'numeric',
-    hour:      '2-digit',
-    minute:    '2-digit',
-    second:    '2-digit',
-    hour12:    false,
+    timeZone: 'Europe/London',
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
   });
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   QR / BARCODE SCANNER
-   Uses the browser-native BarcodeDetector API — built into Android Chrome
-   83+ and Chrome desktop. No external libraries required.
-   Falls back gracefully with a clear message on unsupported browsers.
+   SCANNER
    ═══════════════════════════════════════════════════════════════════════════ */
 const scanner = (() => {
-  let stream       = null;   // MediaStream
-  let active       = false;
-  let scanInterval = null;   // polling interval for BarcodeDetector
-  let detector     = null;   // BarcodeDetector instance
-  let torchEnabled = false;
-  let targetInput  = null;   // the input element to fill on success
-  let targetMode   = 'item'; // 'item' | 'notes' — controls validation + toast wording
-
+  let stream = null, active = false, scanInterval = null, detector = null;
+  let torchEnabled = false, targetInput = null, targetMode = 'item';
   const overlay  = document.getElementById('scannerOverlay');
   const video    = document.getElementById('scannerVideo');
   const statusEl = document.getElementById('scannerStatus');
@@ -1091,72 +1014,41 @@ const scanner = (() => {
     statusEl.className   = 'scanner-status' + (type ? ' ' + type : '');
   }
 
-  // open(inputEl, mode) — mode is 'item' or 'notes'
   async function open(inputEl, mode) {
     targetInput = inputEl;
     targetMode  = mode || 'item';
-
-    // ── Check camera API support ──────────────────────────────────────────
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       toast('Camera API not available. Use Chrome on Android.', 'error');
       return;
     }
-
-    // ── Check BarcodeDetector support ─────────────────────────────────────
     if (!('BarcodeDetector' in window)) {
       overlay.hidden = false;
-      setStatus(
-        'Barcode scanning requires Chrome on Android or Chrome 83+ on desktop. ' +
-        'Your current browser does not support it.',
-        'error'
-      );
+      setStatus('Barcode scanning requires Chrome on Android or Chrome 83+ on desktop. Your current browser does not support it.', 'error');
       return;
     }
-
     overlay.hidden = false;
     active = true;
     setStatus('Scanning — point at a barcode or QR code');
-
     try {
       detector = new BarcodeDetector({
-        formats: [
-          'qr_code', 'code_128', 'code_39', 'code_93',
-          'ean_13', 'ean_8', 'upc_a', 'upc_e',
-          'data_matrix', 'pdf417',
-        ],
+        formats: ['qr_code','code_128','code_39','code_93','ean_13','ean_8','upc_a','upc_e','data_matrix','pdf417'],
       });
-
       stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: 'environment' },
-          width:      { ideal: 1280 },
-          height:     { ideal: 720 },
-        },
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: false,
       });
-
       video.srcObject = stream;
       await video.play();
-
       setStatus('Scanning — point at a barcode or QR code');
       tryEnableTorch();
       startScanLoop();
-
     } catch (err) {
-      if (err.name === 'NotAllowedError') {
-        setStatus(
-          'Camera permission denied. Tap the camera icon in your browser address bar to allow access.',
-          'error'
-        );
-      } else if (err.name === 'NotFoundError') {
-        setStatus('No camera found on this device.', 'error');
-      } else {
-        setStatus('Camera error: ' + err.message, 'error');
-      }
+      if (err.name === 'NotAllowedError') setStatus('Camera permission denied. Tap the camera icon in your browser address bar to allow access.', 'error');
+      else if (err.name === 'NotFoundError') setStatus('No camera found on this device.', 'error');
+      else setStatus('Camera error: ' + err.message, 'error');
     }
   }
 
-  // Poll BarcodeDetector against the live video frame every 300 ms
   function startScanLoop() {
     scanInterval = setInterval(async () => {
       if (!active || !detector || video.readyState < 2) return;
@@ -1164,38 +1056,25 @@ const scanner = (() => {
         const barcodes = await detector.detect(video);
         if (barcodes && barcodes.length > 0) {
           const text = barcodes[0].rawValue.trim();
-
           if (targetMode === 'item') {
-            // Item number: strict alphanumeric + hyphen/underscore, max 40
-            if (/^[A-Za-z0-9\-_]{1,40}$/.test(text)) {
-              onScanSuccess(text);
-            } else {
+            if (/^[A-Za-z0-9\-_]{1,40}$/.test(text)) onScanSuccess(text);
+            else {
               setStatus(`Read "${text}" — not a valid item number. Try again.`, 'error');
-              setTimeout(() => {
-                if (active) setStatus('Scanning — point at a barcode or QR code');
-              }, 2000);
+              setTimeout(() => { if (active) setStatus('Scanning — point at a barcode or QR code'); }, 2000);
             }
           } else {
-            // Notes: accept any non-empty scan result (max 500 chars)
-            if (text.length > 0) {
-              onScanSuccess(text.slice(0, 500));
-            }
+            if (text.length > 0) onScanSuccess(text.slice(0, 500));
           }
         }
-      } catch (_) {
-        // Detection errors on individual frames are normal — ignore
-      }
+      } catch (_) {}
     }, 300);
   }
 
   function onScanSuccess(text) {
     clearInterval(scanInterval);
     scanInterval = null;
-
     setStatus('✓ Scanned: ' + text, 'success');
-
     if (targetInput) {
-      // For notes: append to existing value if there is one, otherwise set
       if (targetMode === 'notes' && targetInput.value.trim()) {
         targetInput.value = targetInput.value.trimEnd() + ' ' + text;
       } else {
@@ -1203,7 +1082,6 @@ const scanner = (() => {
       }
       if (targetMode === 'item') hideSuggestions();
     }
-
     const label = targetMode === 'notes' ? 'Note scanned' : 'Item number scanned';
     setTimeout(() => {
       close();
@@ -1215,24 +1093,17 @@ const scanner = (() => {
   function close() {
     active = false;
     overlay.hidden = true;
-
     clearInterval(scanInterval);
     scanInterval = null;
-
-    if (stream) {
-      stream.getTracks().forEach(t => t.stop());
-      stream = null;
-    }
-
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
     video.srcObject = null;
-    detector        = null;
-    torchEnabled    = false;
+    detector = null;
+    torchEnabled = false;
     torchBtn.hidden = true;
     torchBtn.textContent = '🔦 Torch';
     setStatus('Initialising camera…');
   }
 
-  // Torch / flashlight — supported on most Android devices in Chrome
   function tryEnableTorch() {
     if (!stream) return;
     const track = stream.getVideoTracks()[0];
@@ -1250,45 +1121,32 @@ const scanner = (() => {
     }
   }
 
-  // ── Wire up buttons ───────────────────────────────────────────────────────
-  // Item number scan button
   document.getElementById('btnScan').addEventListener('click', () => {
     open(document.getElementById('itemNumberInput'), 'item');
   });
-
-  // Notes scan button
   document.getElementById('btnScanWorkstation').addEventListener('click', () => {
     open(document.getElementById('startWorkstation'), 'notes');
   });
   document.getElementById('btnScanWoNumber').addEventListener('click', () => {
     open(document.getElementById('startWoNumber'), 'notes');
   });
-
   closeBtn.addEventListener('click', close);
   overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
-  document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && !overlay.hidden) close();
-  });
-
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !overlay.hidden) close(); });
   return { open, close };
 })();
 
-
 /* ═══════════════════════════════════════════════════════════════════════════
    WALL BOARD
-   Auto-refreshes every 30 seconds. Shows live tiles for all active timers.
-   Available to Supervisor, Manager, Administrator.
    ═══════════════════════════════════════════════════════════════════════════ */
 async function loadWallboard() {
   if (wallboardInterval) clearInterval(wallboardInterval);
   await refreshWallboard();
-  // Poll every 60s, but skip if tab is hidden — saves server resources
   wallboardInterval = setInterval(() => {
     if (document.visibilityState === 'visible') refreshWallboard();
   }, 300000);
 }
 
-// Resume immediately when a hidden tab becomes visible again
 document.addEventListener('visibilitychange', () => {
   if (state.currentPage === 'wallboard' && document.visibilityState === 'visible') {
     refreshWallboard();
@@ -1296,20 +1154,15 @@ document.addEventListener('visibilitychange', () => {
 });
 
 async function refreshWallboard() {
-  const container  = document.getElementById('wallboardTiles');
-  const countEl    = document.getElementById('wallboardCount');
-  const updatedEl  = document.getElementById('wallboardUpdated');
+  const container = document.getElementById('wallboardTiles');
+  const countEl   = document.getElementById('wallboardCount');
+  const updatedEl = document.getElementById('wallboardUpdated');
   if (!container) return;
-
   try {
     const timers = await GET('/timers?status=active&limit=200');
-
-    // Update count and last-updated time
-    if (countEl)   countEl.textContent  = timers.length + ' active job' + (timers.length !== 1 ? 's' : '');
+    if (countEl)   countEl.textContent   = timers.length + ' active job' + (timers.length !== 1 ? 's' : '');
     if (updatedEl) updatedEl.textContent = 'Updated ' + new Date().toLocaleTimeString('en-GB');
-
     container.innerHTML = '';
-
     if (timers.length === 0) {
       container.appendChild(el('div', { className: 'wallboard-empty' },
         el('div', { className: 'wallboard-empty-icon', textContent: '✓' }),
@@ -1317,32 +1170,22 @@ async function refreshWallboard() {
       ));
       return;
     }
-
     timers.forEach(t => {
-      const elapsed  = Math.max(0, Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000));
-      const tile     = el('div', { className: 'wallboard-tile' });
-
-      // Colour the tile amber if over 2 hours, red if over 4 hours
+      const elapsed = Math.max(0, Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000));
+      const tile    = el('div', { className: 'wallboard-tile' });
       if (elapsed > 4 * 3600)      tile.classList.add('tile-overdue');
       else if (elapsed > 2 * 3600) tile.classList.add('tile-warning');
-
       tile.appendChild(el('div', { className: 'wb-item',     textContent: t.itemNumber }));
       tile.appendChild(el('div', { className: 'wb-operator', textContent: t.operatorName }));
       tile.appendChild(el('div', { className: 'wb-elapsed',  textContent: formatDuration(elapsed),
         'data-timerid': t.id, 'data-startedat': t.startedAt }));
-      tile.appendChild(el('div', { className: 'wb-started',
-        textContent: 'Started ' + formatLocalTime(t.startedAt) }));
-
+      tile.appendChild(el('div', { className: 'wb-started',  textContent: 'Started ' + formatLocalTime(t.startedAt) }));
       if (t.workstation) tile.appendChild(el('div', { className: 'wb-notes', textContent: '🖥 ' + t.workstation }));
       if (t.woNumber)    tile.appendChild(el('div', { className: 'wb-notes', textContent: '📋 W/O: ' + t.woNumber }));
       if (t.timeCheck)   tile.appendChild(el('span', { className: 'badge badge-timecheck', style: 'margin-top:6px;display:inline-block;', textContent: '✓ Time Check' }));
-
       container.appendChild(tile);
     });
-
-    // Tick elapsed times every second so tiles update live
     startWallboardTick();
-
   } catch (err) {
     container.innerHTML = '';
     container.appendChild(el('div', { className: 'wallboard-empty',
@@ -1350,23 +1193,20 @@ async function refreshWallboard() {
   }
 }
 
-// Live tick — updates elapsed time on each tile every second
 function startWallboardTick() {
   if (wallboardTick) clearInterval(wallboardTick);
   wallboardTick = setInterval(() => {
-    // Only tick if wallboard page is visible
     if (state.currentPage !== 'wallboard') {
       clearInterval(wallboardTick);
       wallboardTick = null;
       return;
     }
-    document.querySelectorAll('.wb-elapsed[data-startedat]').forEach(el => {
-      const startedAt = el.getAttribute('data-startedat');
+    document.querySelectorAll('.wb-elapsed[data-startedat]').forEach(node => {
+      const startedAt = node.getAttribute('data-startedat');
       if (!startedAt) return;
       const elapsed = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000));
-      el.textContent = formatDuration(elapsed);
-      // Update tile colour class dynamically
-      const tile = el.closest('.wallboard-tile');
+      node.textContent = formatDuration(elapsed);
+      const tile = node.closest('.wallboard-tile');
       if (tile) {
         tile.classList.remove('tile-warning', 'tile-overdue');
         if (elapsed > 4 * 3600)      tile.classList.add('tile-overdue');
@@ -1375,8 +1215,6 @@ function startWallboardTick() {
     });
   }, 1000);
 }
-
-
 
 /* ═══════════════════════════════════════════════════════════════════════════
    BOOT
