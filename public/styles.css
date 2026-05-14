@@ -1097,3 +1097,28 @@ main { padding-bottom: 28px; }
   color: var(--text2);
   margin-top: 2px;
 }
+
+/* ─── User Manual nav link ───────────────────────────────────────────────── */
+.nav-manual-btn {
+  display: block;
+  width: 100%;
+  padding: 13px 16px;
+  margin-bottom: 10px;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  color: var(--text2);
+  font-size: 14px;
+  font-weight: 600;
+  font-family: var(--font-body);
+  text-align: center;
+  text-decoration: none;
+  letter-spacing: .04em;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+.nav-manual-btn:hover {
+  background: var(--bg2);
+  color: var(--accent);
+  border-color: var(--accent);
+  text-decoration: none;
+}
