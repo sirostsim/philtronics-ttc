@@ -16,7 +16,6 @@ const state = {
   activeStartedAt: null,
 };
 
-// Wallboard interval handles — declared here so navigateTo can always access them
 let wallboardInterval = null;
 let wallboardTick     = null;
 
@@ -266,13 +265,26 @@ async function loadTimerPage() {
   try {
     const me = await GET('/me');
     if (me.activeTimer) {
+      // Restore state from server — timestamps come from DB, not the browser
+      // /me returns snake_case from the DB; normalise to camelCase to be safe
       state.activeTimerId   = me.activeTimer.id;
       state.activeStartedAt = me.activeTimer.started_at
                            || me.activeTimer.startedAt
                            || null;
+
+      // Show the active panel immediately using /me data so the operator sees
+      // their timer straight away — showActivePanel will then fetch the
+      // full timer record and update the display with complete details.
+      hide('panelStart');
+      show('panelActive');
+      document.getElementById('activeItemDisplay').textContent =
+        me.activeTimer.item_number || me.activeTimer.itemNumber || '';
+      document.getElementById('activeMeta').textContent =
+        'Started at ' + formatLocalTime(state.activeStartedAt);
+
       refreshActiveTimerBanner();
-      await showActivePanel();
-      startStopwatch();
+      startStopwatch();                 // start counting immediately
+      await showActivePanel();          // then fetch full details & correct display
     } else {
       state.activeTimerId   = null;
       state.activeStartedAt = null;
@@ -303,10 +315,42 @@ function showStartPanel() {
 async function showActivePanel() {
   hide('panelStart');
   show('panelActive');
+
+  // Always fetch the timer directly by ID from the server.
+  // This is the most reliable restore path — works after browser close,
+  // session crash, device switch, or page refresh.
   try {
-    const timers = await GET('/timers?status=active');
-    const t = timers.find(t => t.id === state.activeTimerId);
+    let t = null;
+
+    // Primary: fetch directly by ID — most reliable
+    if (state.activeTimerId) {
+      try {
+        const direct = await GET('/timers/' + state.activeTimerId);
+        if (direct && direct.status === 'active') {
+          t = direct;
+        } else if (direct && direct.status !== 'active') {
+          // Timer exists but is no longer active — was stopped/cancelled elsewhere
+          state.activeTimerId   = null;
+          state.activeStartedAt = null;
+          refreshActiveTimerBanner();
+          showStartPanel();
+          stopStopwatch();
+          toast('Your previous timer was already stopped.', '');
+          return;
+        }
+      } catch (_) {
+        // Direct fetch failed — fall through to list fallback
+      }
+    }
+
+    // Fallback: search the active list
+    if (!t) {
+      const timers = await GET('/timers?status=active');
+      t = timers.find(timer => timer.id === state.activeTimerId);
+    }
+
     if (t) {
+      state.activeTimerId   = t.id;
       state.activeStartedAt = t.startedAt;
       document.getElementById('activeItemDisplay').textContent = t.itemNumber;
       const metaParts = [`Started at ${formatLocalTime(t.startedAt)}`];
@@ -321,7 +365,10 @@ async function showActivePanel() {
       stopStopwatch();
       toast('Your previous timer was already stopped.', '');
     }
-  } catch (_) {}
+  } catch (_) {
+    // Network failure — keep whatever state we have so the stopwatch
+    // continues running. The operator can still press STOP.
+  }
 }
 
 document.getElementById('btnStart').addEventListener('click', async () => {
@@ -506,9 +553,7 @@ function loadHistoryPage() {
   const week  = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString().slice(0, 10);
   document.getElementById('histFrom').value = week;
   document.getElementById('histTo').value   = today;
-  if (hasRole('supervisor')) {
-    show('histSuperFilters');
-  }
+  if (hasRole('supervisor')) show('histSuperFilters');
   searchHistory();
 }
 
@@ -526,10 +571,7 @@ async function searchHistory() {
   if (operator) params.set('operatorId', operator);
   if (item)     params.set('itemNumber', item);
   if (status)   params.set('status',     status);
-  if (status === 'active') {
-    params.delete('from');
-    params.delete('to');
-  }
+  if (status === 'active') { params.delete('from'); params.delete('to'); }
   try {
     const timers = await GET(`/timers?${params}`);
     renderEntryList('historyList', timers, true);
@@ -674,9 +716,7 @@ function renderAdminTools() {
   });
 }
 
-document.getElementById('btnNewUser').addEventListener('click', () => {
-  openUserModal(null);
-});
+document.getElementById('btnNewUser').addEventListener('click', () => openUserModal(null));
 
 function renderUserList(users) {
   const container = document.getElementById('userList');
@@ -698,12 +738,8 @@ function renderUserList(users) {
     info.appendChild(meta);
     card.appendChild(info);
     const actions = el('div', { className: 'user-actions' });
-    const editBtn = el('button', { className: 'btn btn-ghost', textContent: 'Edit',
-      onclick: () => openUserModal(u) });
-    const pwBtn   = el('button', { className: 'btn btn-ghost', textContent: 'Reset PW',
-      onclick: () => openResetPasswordModal(u) });
-    actions.appendChild(editBtn);
-    actions.appendChild(pwBtn);
+    actions.appendChild(el('button', { className: 'btn btn-ghost', textContent: 'Edit', onclick: () => openUserModal(u) }));
+    actions.appendChild(el('button', { className: 'btn btn-ghost', textContent: 'Reset PW', onclick: () => openResetPasswordModal(u) }));
     card.appendChild(actions);
     container.appendChild(card);
   });
@@ -712,23 +748,17 @@ function renderUserList(users) {
 function openUserModal(user) {
   const isNew = !user;
   const body  = el('div', {});
-  const fields = [
-    { id: 'mUsername', label: 'Username *', value: user?.username || '', disabled: !isNew },
-    { id: 'mFullName', label: 'Full Name *', value: user?.fullName || '' },
-  ];
-  fields.forEach(f => {
+  [{ id: 'mUsername', label: 'Username *', value: user?.username || '', disabled: !isNew },
+   { id: 'mFullName', label: 'Full Name *', value: user?.fullName || '' }].forEach(f => {
     const input = el('input', { id: f.id, type: 'text', value: f.value, maxlength: '100' });
     if (f.disabled) input.setAttribute('disabled', '');
     body.appendChild(el('div', { className: 'form-group' },
-      el('label', { for: f.id, textContent: f.label }),
-      input
-    ));
+      el('label', { for: f.id, textContent: f.label }), input));
   });
   if (isNew) {
     body.appendChild(el('div', { className: 'form-group' },
       el('label', { for: 'mPassword', textContent: 'Password *' }),
-      el('input', { id: 'mPassword', type: 'password', maxlength: '64' })
-    ));
+      el('input', { id: 'mPassword', type: 'password', maxlength: '64' })));
   }
   const roleSelect = el('select', { id: 'mRole', style: 'background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:16px;padding:12px 14px;width:100%;' });
   ['operator','supervisor','manager','administrator'].forEach(r => {
@@ -737,16 +767,12 @@ function openUserModal(user) {
     roleSelect.appendChild(o);
   });
   body.appendChild(el('div', { className: 'form-group' },
-    el('label', { for: 'mRole', textContent: 'Role *' }),
-    roleSelect
-  ));
+    el('label', { for: 'mRole', textContent: 'Role *' }), roleSelect));
   if (!isNew) {
-    const activeCheck = el('input', { type: 'checkbox', id: 'mActive' });
-    if (user.isActive) activeCheck.checked = true;
+    const chk = el('input', { type: 'checkbox', id: 'mActive' });
+    if (user.isActive) chk.checked = true;
     body.appendChild(el('div', { className: 'form-group', style: 'flex-direction:row;align-items:center;gap:10px;' },
-      activeCheck,
-      el('label', { for: 'mActive', textContent: 'Account Active' })
-    ));
+      chk, el('label', { for: 'mActive', textContent: 'Account Active' })));
   }
   const errDiv  = el('div', { className: 'error-msg', role: 'alert' });
   body.appendChild(errDiv);
@@ -788,9 +814,7 @@ function openResetPasswordModal(user) {
   body.appendChild(el('p', { textContent: `Reset password for ${user.fullName} (@${user.username}).`, className: 'mt-8' }));
   const pwInput = el('input', { type: 'password', placeholder: 'New password (min 8 chars)', maxlength: '64', id: 'mNewPw' });
   body.appendChild(el('div', { className: 'form-group mt-16' },
-    el('label', { for: 'mNewPw', textContent: 'New Password *' }),
-    pwInput
-  ));
+    el('label', { for: 'mNewPw', textContent: 'New Password *' }), pwInput));
   const errDiv  = el('div', { className: 'error-msg', role: 'alert' });
   body.appendChild(errDiv);
   const btnSave   = el('button', { className: 'btn btn-primary', textContent: 'Reset Password' });
@@ -828,9 +852,7 @@ function renderEntryList(containerId, timers, showOperator = false) {
     const card = el('div', { className: 'entry-card', role: 'listitem' });
     const left = el('div', {});
     left.appendChild(el('div', { className: 'entry-item', textContent: t.itemNumber }));
-    if (showOperator) {
-      left.appendChild(el('div', { className: 'entry-operator', textContent: t.operatorName }));
-    }
+    if (showOperator) left.appendChild(el('div', { className: 'entry-operator', textContent: t.operatorName }));
     left.appendChild(el('div', { className: 'entry-time',
       textContent: formatLocalTime(t.startedAt) + (t.completedAt ? ' → ' + formatLocalTime(t.completedAt) : '')
     }));
@@ -846,8 +868,7 @@ function renderEntryList(containerId, timers, showOperator = false) {
     ));
     if (isAdmin) {
       const delBtn = el('button', {
-        className: 'btn-delete-timer',
-        textContent: '🗑',
+        className: 'btn-delete-timer', textContent: '🗑',
         title: 'Delete this timer record',
         'aria-label': 'Delete timer record for ' + t.itemNumber,
       });
@@ -862,22 +883,14 @@ function renderEntryList(containerId, timers, showOperator = false) {
 
 function confirmDeleteTimer(t, card, containerId, timers) {
   const body = el('div', {});
-  body.appendChild(el('p', {
-    textContent: 'Are you sure you want to permanently delete this timer record?',
-    style: 'margin-bottom:12px;'
-  }));
-  const summary = el('div', {
-    style: 'background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:12px;font-size:13px;color:var(--text2);margin-bottom:12px;'
-  });
+  body.appendChild(el('p', { textContent: 'Are you sure you want to permanently delete this timer record?', style: 'margin-bottom:12px;' }));
+  const summary = el('div', { style: 'background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:12px;font-size:13px;color:var(--text2);margin-bottom:12px;' });
   summary.appendChild(el('div', { textContent: 'Item: ' + t.itemNumber, style: 'font-family:var(--font-mono);color:var(--accent);margin-bottom:4px;' }));
   summary.appendChild(el('div', { textContent: 'Operator: ' + t.operatorName }));
   summary.appendChild(el('div', { textContent: 'Started: ' + formatLocalTime(t.startedAt) }));
   summary.appendChild(el('div', { textContent: 'Status: ' + t.status }));
   body.appendChild(summary);
-  body.appendChild(el('p', {
-    textContent: '⚠ This cannot be undone. The audit log for this timer will also be deleted.',
-    style: 'color:var(--red);font-size:13px;font-weight:600;'
-  }));
+  body.appendChild(el('p', { textContent: '⚠ This cannot be undone. The audit log for this timer will also be deleted.', style: 'color:var(--red);font-size:13px;font-weight:600;' }));
   const errDiv    = el('div', { className: 'error-msg', role: 'alert' });
   body.appendChild(errDiv);
   const btnConfirm = el('button', { className: 'btn btn-danger', textContent: 'Delete Record' });
@@ -940,19 +953,13 @@ itemInput.addEventListener('keydown', e => {
   } else if (e.key === 'Enter') {
     const sel = sugList.querySelector('[aria-selected="true"]');
     if (sel) { e.preventDefault(); itemInput.value = sel.dataset.value; hideSuggestions(); }
-  } else if (e.key === 'Escape') {
-    hideSuggestions();
-  }
+  } else if (e.key === 'Escape') { hideSuggestions(); }
 });
 document.addEventListener('click', e => {
   if (!itemInput.contains(e.target) && !sugList.contains(e.target)) hideSuggestions();
 });
-
 async function fetchSuggestions(q) {
-  try {
-    const items = await GET(`/items?q=${encodeURIComponent(q)}`);
-    showSuggestions(items);
-  } catch (_) {}
+  try { showSuggestions(await GET(`/items?q=${encodeURIComponent(q)}`)); } catch (_) {}
 }
 function showSuggestions(items) {
   sugList.innerHTML = '';
@@ -972,10 +979,7 @@ function showSuggestions(items) {
   });
   sugList.hidden = false;
 }
-function hideSuggestions() {
-  sugList.hidden = true;
-  sugList.innerHTML = '';
-}
+function hideSuggestions() { sugList.hidden = true; sugList.innerHTML = ''; }
 
 /* ═══════════════════════════════════════════════════════════════════════════
    FORMATTING
@@ -1013,26 +1017,21 @@ const scanner = (() => {
     statusEl.textContent = msg;
     statusEl.className   = 'scanner-status' + (type ? ' ' + type : '');
   }
-
   async function open(inputEl, mode) {
     targetInput = inputEl;
     targetMode  = mode || 'item';
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      toast('Camera API not available. Use Chrome on Android.', 'error');
-      return;
+      toast('Camera API not available. Use Chrome on Android.', 'error'); return;
     }
     if (!('BarcodeDetector' in window)) {
       overlay.hidden = false;
       setStatus('Barcode scanning requires Chrome on Android or Chrome 83+ on desktop. Your current browser does not support it.', 'error');
       return;
     }
-    overlay.hidden = false;
-    active = true;
+    overlay.hidden = false; active = true;
     setStatus('Scanning — point at a barcode or QR code');
     try {
-      detector = new BarcodeDetector({
-        formats: ['qr_code','code_128','code_39','code_93','ean_13','ean_8','upc_a','upc_e','data_matrix','pdf417'],
-      });
+      detector = new BarcodeDetector({ formats: ['qr_code','code_128','code_39','code_93','ean_13','ean_8','upc_a','upc_e','data_matrix','pdf417'] });
       stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: false,
@@ -1048,7 +1047,6 @@ const scanner = (() => {
       else setStatus('Camera error: ' + err.message, 'error');
     }
   }
-
   function startScanLoop() {
     scanInterval = setInterval(async () => {
       if (!active || !detector || video.readyState < 2) return;
@@ -1069,41 +1067,25 @@ const scanner = (() => {
       } catch (_) {}
     }, 300);
   }
-
   function onScanSuccess(text) {
-    clearInterval(scanInterval);
-    scanInterval = null;
+    clearInterval(scanInterval); scanInterval = null;
     setStatus('✓ Scanned: ' + text, 'success');
     if (targetInput) {
-      if (targetMode === 'notes' && targetInput.value.trim()) {
-        targetInput.value = targetInput.value.trimEnd() + ' ' + text;
-      } else {
-        targetInput.value = text;
-      }
+      if (targetMode === 'notes' && targetInput.value.trim()) targetInput.value = targetInput.value.trimEnd() + ' ' + text;
+      else targetInput.value = text;
       if (targetMode === 'item') hideSuggestions();
     }
     const label = targetMode === 'notes' ? 'Note scanned' : 'Item number scanned';
-    setTimeout(() => {
-      close();
-      if (targetInput) targetInput.focus();
-      toast(`${label}: ${text}`, 'success');
-    }, 700);
+    setTimeout(() => { close(); if (targetInput) targetInput.focus(); toast(`${label}: ${text}`, 'success'); }, 700);
   }
-
   function close() {
-    active = false;
-    overlay.hidden = true;
-    clearInterval(scanInterval);
-    scanInterval = null;
+    active = false; overlay.hidden = true;
+    clearInterval(scanInterval); scanInterval = null;
     if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-    video.srcObject = null;
-    detector = null;
-    torchEnabled = false;
-    torchBtn.hidden = true;
-    torchBtn.textContent = '🔦 Torch';
+    video.srcObject = null; detector = null; torchEnabled = false;
+    torchBtn.hidden = true; torchBtn.textContent = '🔦 Torch';
     setStatus('Initialising camera…');
   }
-
   function tryEnableTorch() {
     if (!stream) return;
     const track = stream.getVideoTracks()[0];
@@ -1113,23 +1095,13 @@ const scanner = (() => {
       torchBtn.hidden = false;
       torchBtn.onclick = async () => {
         torchEnabled = !torchEnabled;
-        try {
-          await track.applyConstraints({ advanced: [{ torch: torchEnabled }] });
-          torchBtn.textContent = torchEnabled ? '🔦 Torch On' : '🔦 Torch';
-        } catch (_) {}
+        try { await track.applyConstraints({ advanced: [{ torch: torchEnabled }] }); torchBtn.textContent = torchEnabled ? '🔦 Torch On' : '🔦 Torch'; } catch (_) {}
       };
     }
   }
-
-  document.getElementById('btnScan').addEventListener('click', () => {
-    open(document.getElementById('itemNumberInput'), 'item');
-  });
-  document.getElementById('btnScanWorkstation').addEventListener('click', () => {
-    open(document.getElementById('startWorkstation'), 'notes');
-  });
-  document.getElementById('btnScanWoNumber').addEventListener('click', () => {
-    open(document.getElementById('startWoNumber'), 'notes');
-  });
+  document.getElementById('btnScan').addEventListener('click', () => open(document.getElementById('itemNumberInput'), 'item'));
+  document.getElementById('btnScanWorkstation').addEventListener('click', () => open(document.getElementById('startWorkstation'), 'notes'));
+  document.getElementById('btnScanWoNumber').addEventListener('click', () => open(document.getElementById('startWoNumber'), 'notes'));
   closeBtn.addEventListener('click', close);
   overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !overlay.hidden) close(); });
@@ -1146,13 +1118,9 @@ async function loadWallboard() {
     if (document.visibilityState === 'visible') refreshWallboard();
   }, 300000);
 }
-
 document.addEventListener('visibilitychange', () => {
-  if (state.currentPage === 'wallboard' && document.visibilityState === 'visible') {
-    refreshWallboard();
-  }
+  if (state.currentPage === 'wallboard' && document.visibilityState === 'visible') refreshWallboard();
 });
-
 async function refreshWallboard() {
   const container = document.getElementById('wallboardTiles');
   const countEl   = document.getElementById('wallboardCount');
@@ -1166,8 +1134,7 @@ async function refreshWallboard() {
     if (timers.length === 0) {
       container.appendChild(el('div', { className: 'wallboard-empty' },
         el('div', { className: 'wallboard-empty-icon', textContent: '✓' }),
-        el('div', { className: 'wallboard-empty-text', textContent: 'No active jobs right now' })
-      ));
+        el('div', { className: 'wallboard-empty-text', textContent: 'No active jobs right now' })));
       return;
     }
     timers.forEach(t => {
@@ -1177,8 +1144,7 @@ async function refreshWallboard() {
       else if (elapsed > 2 * 3600) tile.classList.add('tile-warning');
       tile.appendChild(el('div', { className: 'wb-item',     textContent: t.itemNumber }));
       tile.appendChild(el('div', { className: 'wb-operator', textContent: t.operatorName }));
-      tile.appendChild(el('div', { className: 'wb-elapsed',  textContent: formatDuration(elapsed),
-        'data-timerid': t.id, 'data-startedat': t.startedAt }));
+      tile.appendChild(el('div', { className: 'wb-elapsed',  textContent: formatDuration(elapsed), 'data-timerid': t.id, 'data-startedat': t.startedAt }));
       tile.appendChild(el('div', { className: 'wb-started',  textContent: 'Started ' + formatLocalTime(t.startedAt) }));
       if (t.workstation) tile.appendChild(el('div', { className: 'wb-notes', textContent: '🖥 ' + t.workstation }));
       if (t.woNumber)    tile.appendChild(el('div', { className: 'wb-notes', textContent: '📋 W/O: ' + t.woNumber }));
@@ -1188,19 +1154,13 @@ async function refreshWallboard() {
     startWallboardTick();
   } catch (err) {
     container.innerHTML = '';
-    container.appendChild(el('div', { className: 'wallboard-empty',
-      textContent: 'Could not load active timers: ' + err.message }));
+    container.appendChild(el('div', { className: 'wallboard-empty', textContent: 'Could not load active timers: ' + err.message }));
   }
 }
-
 function startWallboardTick() {
   if (wallboardTick) clearInterval(wallboardTick);
   wallboardTick = setInterval(() => {
-    if (state.currentPage !== 'wallboard') {
-      clearInterval(wallboardTick);
-      wallboardTick = null;
-      return;
-    }
+    if (state.currentPage !== 'wallboard') { clearInterval(wallboardTick); wallboardTick = null; return; }
     document.querySelectorAll('.wb-elapsed[data-startedat]').forEach(node => {
       const startedAt = node.getAttribute('data-startedat');
       if (!startedAt) return;
