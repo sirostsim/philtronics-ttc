@@ -65,8 +65,27 @@ router.post('/login', loginLimiter, validate(schemas.login), async (req, res) =>
       { expiresIn: process.env.JWT_EXPIRES_IN || '8h' }
     );
 
+    // Also fetch any active timer so the frontend can restore it immediately
+    const active = await queryOne(
+      `SELECT id, item_number, started_at, workstation, wo_number, status FROM timers
+       WHERE operator_id = $1 AND status = 'active' LIMIT 1`,
+      [user.id]
+    );
+    const activeTimer = active ? {
+      id:          active.id,
+      itemNumber:  active.item_number,
+      startedAt:   active.started_at,
+      workstation: active.workstation,
+      woNumber:    active.wo_number,
+      status:      active.status,
+    } : null;
+
     res.cookie('token', token, COOKIE_OPTS);
-    res.json({ id: user.id, username: user.username, fullName: user.full_name, role: user.role });
+    res.json({
+      id: user.id, username: user.username,
+      fullName: user.full_name, role: user.role,
+      activeTimer,
+    });
   } catch (err) {
     console.error('Login error:', err.message);
     res.status(500).json({ error: 'Login failed. Please try again.' });
@@ -84,13 +103,22 @@ router.get('/me', requireAuth, async (req, res) => {
   try {
     const u = req.user;
     const active = await queryOne(
-      `SELECT id, item_number, started_at FROM timers
+      `SELECT id, item_number, started_at, workstation, wo_number, status FROM timers
        WHERE operator_id = $1 AND status = 'active' LIMIT 1`,
       [u.id]
     );
+    // Normalise to camelCase so the frontend only needs one format
+    const activeTimer = active ? {
+      id:          active.id,
+      itemNumber:  active.item_number,
+      startedAt:   active.started_at,
+      workstation: active.workstation,
+      woNumber:    active.wo_number,
+      status:      active.status,
+    } : null;
     res.json({
       id: u.id, username: u.username, fullName: u.full_name,
-      role: u.role, activeTimer: active || null,
+      role: u.role, activeTimer,
     });
   } catch (err) {
     res.status(500).json({ error: 'Could not load user data.' });
