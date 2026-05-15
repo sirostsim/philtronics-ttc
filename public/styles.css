@@ -1353,3 +1353,8 @@ button.topbar-brand:focus-visible {
 }
 .active-target-label.warn   { color: var(--accent); font-weight: 600; }
 .active-target-label.overdue { color: var(--red);    font-weight: 700; }
+
+/* ─── Dashboard table delta column ──────────────────────────────────────── */
+.dash-over       { color: var(--red);    font-weight: 600; }
+.dash-under      { color: var(--green);  font-weight: 600; }
+.dash-no-target  { color: var(--text3);  }

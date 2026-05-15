@@ -806,20 +806,37 @@ function renderDashTable(rows) {
     el('tr', {},
       el('th', { textContent: 'Item Number' }),
       el('th', { textContent: 'Count' }),
-      el('th', { textContent: 'Avg Duration' }),
+      el('th', { textContent: 'Avg Actual' }),
       el('th', { textContent: 'Min' }),
       el('th', { textContent: 'Max' }),
+      el('th', { textContent: 'Target' }),
+      el('th', { textContent: 'Avg Delta' }),
     )
   );
   const tbody = el('tbody', {});
   rows.forEach(r => {
-    tbody.appendChild(el('tr', {},
+    const hasTarget   = r.target_seconds != null;
+    const avgDelta    = hasTarget ? Math.round(r.avg_seconds) - r.target_seconds : null;
+    const deltaText   = avgDelta !== null ? (avgDelta >= 0 ? '+' : '') + formatDuration(Math.abs(avgDelta)) : '—';
+    const deltaClass  = avgDelta === null ? '' : avgDelta > 0 ? 'dash-over' : 'dash-under';
+
+    const row = el('tr', {},
       el('td', { textContent: r.item_number }),
       el('td', { textContent: r.count }),
       el('td', { textContent: formatDuration(Math.round(r.avg_seconds)) }),
       el('td', { textContent: formatDuration(r.min_seconds) }),
       el('td', { textContent: formatDuration(r.max_seconds) }),
-    ));
+      el('td', { textContent: hasTarget ? formatHM(r.target_seconds) : '—',
+        className: hasTarget ? '' : 'dash-no-target' }),
+    );
+    const deltaCell = el('td', { textContent: deltaText, className: deltaClass });
+    if (avgDelta !== null && avgDelta > 0) {
+      deltaCell.title = 'Average is ' + formatDuration(avgDelta) + ' over target';
+    } else if (avgDelta !== null && avgDelta < 0) {
+      deltaCell.title = 'Average is ' + formatDuration(Math.abs(avgDelta)) + ' under target';
+    }
+    row.appendChild(deltaCell);
+    tbody.appendChild(row);
   });
   table.appendChild(thead);
   table.appendChild(tbody);

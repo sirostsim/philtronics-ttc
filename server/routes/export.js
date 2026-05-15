@@ -111,14 +111,17 @@ router.get('/stats', async (req, res) => {
     if (itemNumber) { conditions.push(`item_number ILIKE $${p++}`); params.push(`%${itemNumber}%`); }
 
     const byItem = await query(
-      `SELECT item_number,
+      `SELECT t.item_number,
               COUNT(*)::int                        AS count,
-              ROUND(AVG(duration_seconds))::int    AS avg_seconds,
-              MIN(duration_seconds)                AS min_seconds,
-              MAX(duration_seconds)                AS max_seconds
-       FROM timers
+              ROUND(AVG(t.duration_seconds))::int  AS avg_seconds,
+              MIN(t.duration_seconds)              AS min_seconds,
+              MAX(t.duration_seconds)              AS max_seconds,
+              -- Target time joined from target_times (null if not set)
+              MAX(tt.hours * 3600 + tt.minutes * 60)::int AS target_seconds
+       FROM timers t
+       LEFT JOIN target_times tt ON tt.item_number = t.item_number
        WHERE ${conditions.join(' AND ')}
-       GROUP BY item_number
+       GROUP BY t.item_number
        ORDER BY count DESC
        LIMIT 50`,
       params
