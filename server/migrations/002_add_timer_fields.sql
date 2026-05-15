@@ -5,5 +5,4 @@ ALTER TABLE timers ADD COLUMN IF NOT EXISTS time_check  BOOLEAN NOT NULL DEFAULT
 ALTER TABLE timers ADD COLUMN IF NOT EXISTS workstation TEXT;
 ALTER TABLE timers ADD COLUMN IF NOT EXISTS wo_number   TEXT;
 
--- Index wo_number for filtering/search
 CREATE INDEX IF NOT EXISTS idx_timers_wo_number ON timers (wo_number);
