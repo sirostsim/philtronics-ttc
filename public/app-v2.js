@@ -629,7 +629,6 @@ async function searchHistory() {
    DASHBOARD
    ═══════════════════════════════════════════════════════════════════════════ */
 async function loadDashboard() {
-  // Load stats
   try {
     const stats = await GET('/export/stats');
     renderStatCards(stats);
@@ -637,6 +636,7 @@ async function loadDashboard() {
   } catch (err) {
     document.getElementById('dashTable').textContent = err.message;
   }
+  loadTargetTimes();
 }
 
 document.getElementById('btnDashSearch').addEventListener('click', async () => {
@@ -959,6 +959,8 @@ function renderEntryList(containerId, timers, showOperator = false) {
     if (t.workstation) left.appendChild(el('div', { className: 'entry-meta-tag', textContent: '🖥 ' + t.workstation }));
     if (t.woNumber)    left.appendChild(el('div', { className: 'entry-meta-tag', textContent: '📋 W/O: ' + t.woNumber }));
     if (t.timeCheck)   left.appendChild(el('span', { className: 'badge badge-timecheck', textContent: '✓ Time Check' }));
+    if (t.targetSeconds) left.appendChild(el('div', { className: 'entry-target',
+      textContent: '🎯 Target: ' + formatHM(t.targetSeconds) }));
 
     const right = el('div', {});
     right.appendChild(el('div', { className: 'entry-duration',
@@ -1419,6 +1421,22 @@ async function refreshWallboard() {
       if (t.workstation) tile.appendChild(el('div', { className: 'wb-notes', textContent: '🖥 ' + t.workstation }));
       if (t.woNumber)    tile.appendChild(el('div', { className: 'wb-notes', textContent: '📋 W/O: ' + t.woNumber }));
       if (t.timeCheck)   tile.appendChild(el('span', { className: 'badge badge-timecheck', style: 'margin-top:6px;display:inline-block;', textContent: '✓ Time Check' }));
+      if (t.targetSeconds) {
+        const pct = Math.min(100, Math.round((elapsed / t.targetSeconds) * 100));
+        const targetWrap = el('div', { className: 'wb-target-wrap' });
+        targetWrap.appendChild(el('div', { className: 'wb-target-label',
+          textContent: 'Target: ' + formatHM(t.targetSeconds) + '  (' + pct + '%)' }));
+        const bar  = el('div', { className: 'wb-target-bar' });
+        const fill = el('div', {
+          className: 'wb-target-fill' + (pct >= 100 ? ' over' : ''),
+          style: 'width:' + Math.min(pct, 100) + '%',
+          'data-startedat': t.startedAt,
+          'data-targetseconds': String(t.targetSeconds),
+        });
+        bar.appendChild(fill);
+        targetWrap.appendChild(bar);
+        tile.appendChild(targetWrap);
+      }
 
       container.appendChild(tile);
     });
@@ -1448,18 +1466,172 @@ function startWallboardTick() {
       if (!startedAt) return;
       const elapsed = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000));
       el.textContent = formatDuration(elapsed);
-      // Update tile colour class dynamically
       const tile = el.closest('.wallboard-tile');
       if (tile) {
         tile.classList.remove('tile-warning', 'tile-overdue');
         if (elapsed > 4 * 3600)      tile.classList.add('tile-overdue');
         else if (elapsed > 2 * 3600) tile.classList.add('tile-warning');
+        // Update target progress bar
+        const fill = tile.querySelector('.wb-target-fill');
+        if (fill) {
+          const tgt = parseInt(fill.getAttribute('data-targetseconds'), 10);
+          if (tgt) {
+            const pct = Math.min(100, Math.round((elapsed / tgt) * 100));
+            fill.style.width = Math.min(pct, 100) + '%';
+            fill.classList.toggle('over', pct >= 100);
+            const lbl = tile.querySelector('.wb-target-label');
+            if (lbl) lbl.textContent = 'Target: ' + formatHM(tgt) + '  (' + pct + '%)';
+          }
+        }
       }
     });
   }, 1000);
 }
 
 
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TARGET TIMES  (Manager / Administrator)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+// Format seconds as "Xh Ym"
+function formatHM(totalSeconds) {
+  if (!totalSeconds) return '—';
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  if (h === 0) return m + 'm';
+  if (m === 0) return h + 'h';
+  return h + 'h ' + m + 'm';
+}
+
+async function loadTargetTimes() {
+  const container = document.getElementById('targetTimesList');
+  if (!container) return;
+  container.innerHTML = '<div class="empty-state">Loading...</div>';
+  try {
+    const targets = await GET('/targets');
+    renderTargetList(targets);
+  } catch (_) {
+    container.innerHTML = '<div class="empty-state">Could not load target times.</div>';
+  }
+}
+
+function renderTargetList(targets) {
+  const container = document.getElementById('targetTimesList');
+  if (!container) return;
+  container.innerHTML = '';
+  if (!targets || targets.length === 0) {
+    container.appendChild(el('div', { className: 'empty-state',
+      textContent: 'No target times set yet. Click + Add Target Time to get started.' }));
+    return;
+  }
+  targets.forEach(t => {
+    const row = el('div', { className: 'target-row' });
+    const info = el('div', { className: 'target-row-info' });
+    info.appendChild(el('span', { className: 'target-item-number', textContent: t.itemNumber }));
+    info.appendChild(el('span', { className: 'target-time-display',
+      textContent: formatHM(t.totalSeconds) }));
+    const actions = el('div', { className: 'target-row-actions' });
+    actions.appendChild(el('button', { className: 'btn btn-ghost btn-sm', textContent: 'Edit',
+      onclick: () => openTargetModal(t) }));
+    actions.appendChild(el('button', { className: 'btn btn-ghost btn-sm', textContent: '🗑',
+      onclick: () => confirmDeleteTarget(t) }));
+    row.appendChild(info);
+    row.appendChild(actions);
+    container.appendChild(row);
+  });
+}
+
+function openTargetModal(existing) {
+  const isNew = !existing;
+  const body  = el('div', {});
+  const itemInput = el('input', {
+    id: 'ttItemNumber', type: 'text',
+    maxlength: '40',
+    placeholder: 'e.g. PHL-1001',
+    value: existing ? existing.itemNumber : '',
+    autocapitalize: 'characters',
+  });
+  if (!isNew) itemInput.setAttribute('disabled', '');
+  body.appendChild(el('div', { className: 'form-group' },
+    el('label', { for: 'ttItemNumber', textContent: 'Item Number *' }),
+    itemInput));
+
+  const timeRow = el('div', { className: 'form-group' });
+  timeRow.appendChild(el('label', { textContent: 'Target Time *' }));
+  const timeInputs = el('div', { className: 'time-input-row' });
+  const hoursInput = el('input', {
+    id: 'ttHours', type: 'number', min: '0', max: '99',
+    placeholder: '0', style: 'width:70px;text-align:center;',
+    value: existing ? String(existing.hours) : '0',
+  });
+  const minsInput = el('input', {
+    id: 'ttMinutes', type: 'number', min: '0', max: '59',
+    placeholder: '0', style: 'width:70px;text-align:center;',
+    value: existing ? String(existing.minutes) : '0',
+  });
+  timeInputs.appendChild(hoursInput);
+  timeInputs.appendChild(el('span', { textContent: 'h', style: 'margin:0 6px;color:var(--text2);font-weight:600;' }));
+  timeInputs.appendChild(minsInput);
+  timeInputs.appendChild(el('span', { textContent: 'm', style: 'margin:0 6px;color:var(--text2);font-weight:600;' }));
+  timeRow.appendChild(timeInputs);
+  body.appendChild(timeRow);
+
+  const errDiv  = el('div', { className: 'error-msg', role: 'alert' });
+  body.appendChild(errDiv);
+  const btnSave   = el('button', { className: 'btn btn-primary', textContent: isNew ? 'Add Target Time' : 'Save Changes' });
+  const btnCancel = el('button', { className: 'btn btn-ghost',   textContent: 'Cancel' });
+  btnCancel.addEventListener('click', closeModal);
+  btnSave.addEventListener('click', async () => {
+    errDiv.textContent = '';
+    const itemNumber = (document.getElementById('ttItemNumber').value || '').trim().toUpperCase();
+    const hours      = parseInt(document.getElementById('ttHours').value, 10) || 0;
+    const minutes    = parseInt(document.getElementById('ttMinutes').value, 10) || 0;
+    if (!itemNumber) { errDiv.textContent = 'Item Number is required.'; return; }
+    if (hours === 0 && minutes === 0) { errDiv.textContent = 'Target time must be greater than zero.'; return; }
+    btnSave.disabled = true;
+    try {
+      await POST('/targets', { itemNumber, hours, minutes });
+      toast((isNew ? 'Target time added' : 'Target time updated') + ' for ' + itemNumber, 'success');
+      closeModal();
+      loadTargetTimes();
+    } catch (err) {
+      errDiv.textContent = err.message;
+    } finally {
+      btnSave.disabled = false;
+    }
+  });
+  openModal(isNew ? 'Add Target Time' : 'Edit Target Time', body, [btnCancel, btnSave]);
+}
+
+function confirmDeleteTarget(t) {
+  const body = el('div', {});
+  body.appendChild(el('p', { textContent: 'Remove the target time for ' + t.itemNumber + '?',
+    style: 'margin-bottom:12px;' }));
+  const errDiv    = el('div', { className: 'error-msg', role: 'alert' });
+  body.appendChild(errDiv);
+  const btnConfirm = el('button', { className: 'btn btn-danger', textContent: 'Remove' });
+  const btnCancel  = el('button', { className: 'btn btn-ghost',  textContent: 'Keep' });
+  btnCancel.addEventListener('click', closeModal);
+  btnConfirm.addEventListener('click', async () => {
+    btnConfirm.disabled = true;
+    try {
+      await api('DELETE', '/targets/' + encodeURIComponent(t.itemNumber));
+      toast('Target time removed for ' + t.itemNumber, '');
+      closeModal();
+      loadTargetTimes();
+    } catch (err) {
+      errDiv.textContent = err.message;
+      btnConfirm.disabled = false;
+    }
+  });
+  openModal('Remove Target Time', body, [btnCancel, btnConfirm]);
+}
+
+// Wire up the Add Target Time button on the dashboard
+document.getElementById('btnAddTarget') &&
+  document.getElementById('btnAddTarget').addEventListener('click', () => openTargetModal(null));
 
 /* ═══════════════════════════════════════════════════════════════════════════
    BOOT

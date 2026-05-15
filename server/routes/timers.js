@@ -37,6 +37,12 @@ function formatTimer(t) {
     woNumber:        t.wo_number,
     notes:           t.notes,
     createdAt:       t.created_at,
+    // Target time joined from target_times table (null if not set)
+    targetSeconds:   t.target_hours != null
+                       ? (t.target_hours * 3600) + (t.target_minutes * 60)
+                       : null,
+    targetHours:     t.target_hours   != null ? t.target_hours   : null,
+    targetMinutes:   t.target_minutes != null ? t.target_minutes : null,
   };
 }
 
@@ -155,7 +161,13 @@ router.patch('/:id', validate(schemas.adjustTimer), async (req, res) => {
     return res.status(403).json({ error: 'Only Supervisors and above can adjust timers.' });
   }
   try {
-    const timer = await queryOne('SELECT * FROM timers WHERE id = $1', [req.params.id]);
+    const timer = await queryOne(
+      `SELECT t.*, tt.hours AS target_hours, tt.minutes AS target_minutes
+       FROM timers t
+       LEFT JOIN target_times tt ON tt.item_number = t.item_number
+       WHERE t.id = $1`,
+      [req.params.id]
+    );
     if (!timer) return res.status(404).json({ error: 'Timer not found.' });
 
     const { startedAt, completedAt, reason, notes } = req.body;
@@ -223,8 +235,11 @@ router.get('/', async (req, res) => {
     params.push(rowLimit);
 
     const rows = await query(
-      `SELECT t.*, u.username FROM timers t
+      `SELECT t.*, u.username,
+              tt.hours AS target_hours, tt.minutes AS target_minutes
+       FROM timers t
        LEFT JOIN users u ON u.id = t.operator_id
+       LEFT JOIN target_times tt ON tt.item_number = t.item_number
        ${where}
        ORDER BY t.started_at DESC
        LIMIT $${p}`,
