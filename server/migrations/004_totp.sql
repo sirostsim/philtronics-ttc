@@ -9,7 +9,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN NOT NULL DEFAULT
 -- These are short-lived (5 minutes) and single-use
 CREATE TABLE IF NOT EXISTS totp_challenges (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   token        TEXT NOT NULL UNIQUE,
   expires_at   TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '5 minutes'),
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
