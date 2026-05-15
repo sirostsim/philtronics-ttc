@@ -1136,3 +1136,28 @@ button.topbar-brand:focus-visible {
   outline-offset: 3px;
   border-radius: 4px;
 }
+
+/* ─── Login client branding ──────────────────────────────────────────────── */
+.login-client-brand {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.login-client-brand-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+.login-client-logo {
+  width: 180px;
+  height: auto;
+  object-fit: contain;
+  opacity: .85;
+  filter: brightness(1.1);
+}
