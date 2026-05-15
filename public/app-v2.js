@@ -120,6 +120,7 @@ document.getElementById('modal').addEventListener('click', e => {
    NAVIGATION
    ═══════════════════════════════════════════════════════════════════════════ */
 const PAGES = {
+  home:       { id: 'pageHome',       label: 'Home',               minRole: 'supervisor'    },
   timer:      { id: 'pageTimer',      label: 'Timer',              minRole: 'operator'      },
   history:    { id: 'pageHistory',    label: 'History',            minRole: 'operator'      },
   wallboard:  { id: 'pageWallboard',  label: 'Wall Board',         minRole: 'supervisor'    },
@@ -167,6 +168,7 @@ function navigateTo(page) {
   }
   buildNav();
   // Lazy-load page data
+  if (page === 'home')       loadHomePage();
   if (page === 'timer')      loadTimerPage();
   if (page === 'history')    loadHistoryPage();
   if (page === 'wallboard')  loadWallboard();
@@ -224,7 +226,13 @@ function onLoggedIn() {
     state.activeStartedAt = null;
   }
   refreshActiveTimerBanner();
-  navigateTo('timer');
+  // Supervisors, managers and admins land on the home dashboard
+  // Operators go straight to the timer
+  if (hasRole('supervisor')) {
+    navigateTo('home');
+  } else {
+    navigateTo('timer');
+  }
   checkTotpSetupRequired();
   // Open SSE connection to receive real-time messages from supervisors/managers
   connectMessageStream();
@@ -1988,6 +1996,281 @@ async function openTotpSetupModal() {
 }
 
 
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   HOME PAGE  (Supervisor / Manager / Administrator)
+   A command-centre dashboard landing page.
+   Operators land on the Timer page instead.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+async function loadHomePage() {
+  // Render the skeleton immediately so the page feels instant
+  renderHomeSkeleton();
+
+  // Fetch all data in parallel
+  const [activeTimers, stats, users] = await Promise.all([
+    GET('/timers?status=active&limit=200').catch(() => []),
+    GET('/export/stats').catch(() => null),
+    hasRole('administrator') ? GET('/users').catch(() => []) : Promise.resolve([]),
+  ]);
+
+  renderHomeActiveJobs(activeTimers);
+  renderHomeTodayStats(stats);
+  if (hasRole('manager')) renderHomePerformance(stats);
+  if (hasRole('administrator')) renderHomeUsers(users);
+  renderHomeQuickActions();
+}
+
+function renderHomeSkeleton() {
+  const page = document.getElementById('pageHome');
+  if (!page) return;
+  page.innerHTML = `
+    <div class="home-page">
+      <div class="home-greeting" id="homeGreeting"></div>
+      <div class="home-grid" id="homeGrid">
+        <div class="home-card home-card-full" id="homeActiveJobs">
+          <div class="home-card-title">Active Jobs</div>
+          <div class="home-card-body"><div class="empty-state">Loading…</div></div>
+        </div>
+        <div class="home-card" id="homeTodayStats">
+          <div class="home-card-title">Today at a Glance</div>
+          <div class="home-card-body"><div class="empty-state">Loading…</div></div>
+        </div>
+        <div class="home-card" id="homeQuickActions">
+          <div class="home-card-title">Quick Actions</div>
+          <div class="home-card-body"></div>
+        </div>
+        ${hasRole('manager') ? '<div class="home-card home-card-full" id="homePerformance"><div class="home-card-title">Performance</div><div class="home-card-body"><div class="empty-state">Loading...</div></div></div>' : ''}
+        ${hasRole('administrator') ? '<div class="home-card home-card-full" id="homeUsers"><div class="home-card-title">User Status</div><div class="home-card-body"><div class="empty-state">Loading...</div></div></div>' : ''}
+      </div>
+    </div>`;
+
+  // Greeting
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const greetEl = document.getElementById('homeGreeting');
+  if (greetEl) {
+    greetEl.innerHTML = `<span class="home-greeting-text">${greeting}, ${state.user.fullName.split(' ')[0]}</span>
+      <span class="home-greeting-date">${new Date().toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long' })}</span>`;
+  }
+}
+
+function renderHomeActiveJobs(timers) {
+  const card = document.getElementById('homeActiveJobs');
+  if (!card) return;
+  const body = card.querySelector('.home-card-body');
+  body.innerHTML = '';
+
+  const titleEl = card.querySelector('.home-card-title');
+  if (titleEl) titleEl.textContent = `Active Jobs  (${timers.length})`;
+
+  if (!timers.length) {
+    body.appendChild(el('div', { className: 'empty-state', textContent: 'No jobs currently running.' }));
+    return;
+  }
+
+  // Sort overdue first, then by elapsed desc
+  const now = Date.now();
+  timers.sort((a, b) => {
+    const elA = now - new Date(a.startedAt).getTime();
+    const elB = now - new Date(b.startedAt).getTime();
+    const overdueA = a.targetSeconds ? elA / 1000 > a.targetSeconds : elA > 4 * 3600000;
+    const overdueB = b.targetSeconds ? elB / 1000 > b.targetSeconds : elB > 4 * 3600000;
+    if (overdueA !== overdueB) return overdueA ? -1 : 1;
+    return elB - elA;
+  });
+
+  const grid = el('div', { className: 'home-active-grid' });
+
+  timers.forEach(t => {
+    const elapsed   = Math.max(0, Math.floor((now - new Date(t.startedAt).getTime()) / 1000));
+    const isOver    = t.targetSeconds ? elapsed >= t.targetSeconds : elapsed > 4 * 3600;
+    const isWarning = !isOver && (t.targetSeconds ? elapsed / t.targetSeconds >= 0.8 : elapsed > 2 * 3600);
+
+    const row = el('div', { className: 'home-active-row' + (isOver ? ' over' : isWarning ? ' warn' : '') });
+
+    // Status dot
+    row.appendChild(el('span', { className: 'home-active-dot' + (isOver ? ' dot-red' : isWarning ? ' dot-amber' : ' dot-green') }));
+
+    // Operator + item
+    const info = el('div', { className: 'home-active-info' });
+    info.appendChild(el('span', { className: 'home-active-name', textContent: t.operatorName }));
+    info.appendChild(el('span', { className: 'home-active-item', textContent: t.itemNumber }));
+    if (t.workstation) info.appendChild(el('span', { className: 'home-active-ws', textContent: '🖥 ' + t.workstation }));
+    row.appendChild(info);
+
+    // Elapsed + target
+    const timeInfo = el('div', { className: 'home-active-time' });
+    timeInfo.appendChild(el('span', {
+      className: 'home-active-elapsed' + (isOver ? ' text-red' : isWarning ? ' text-amber' : ''),
+      textContent: formatDuration(elapsed),
+    }));
+    if (t.targetSeconds) {
+      const remaining = t.targetSeconds - elapsed;
+      timeInfo.appendChild(el('span', {
+        className: 'home-active-target' + (isOver ? ' text-red' : ''),
+        textContent: isOver
+          ? '⚠ ' + formatHM(Math.abs(remaining)) + ' overdue'
+          : '🎯 ' + formatHM(remaining) + ' left',
+      }));
+    }
+    row.appendChild(timeInfo);
+
+    // Message button (supervisor+)
+    if (hasRole('supervisor')) {
+      const msgBtn = el('button', {
+        className: 'btn btn-ghost btn-sm home-msg-btn',
+        textContent: '✉',
+        title: 'Message ' + t.operatorName,
+        onclick: () => openSendMessageModal(t.operatorId, t.operatorName),
+      });
+      row.appendChild(msgBtn);
+    }
+
+    grid.appendChild(row);
+  });
+
+  body.appendChild(grid);
+}
+
+function renderHomeTodayStats(stats) {
+  const card = document.getElementById('homeTodayStats');
+  if (!card) return;
+  const body = card.querySelector('.home-card-body');
+  body.innerHTML = '';
+  if (!stats) {
+    body.appendChild(el('div', { className: 'empty-state', textContent: 'Could not load stats.' }));
+    return;
+  }
+  const items = [
+    { icon: '▶', label: 'Active Now',    value: stats.activeCount, cls: 'stat-active' },
+    { icon: '✓', label: 'Completed Today', value: stats.total24h,  cls: 'stat-done'   },
+    { icon: '📅', label: 'This Week',     value: stats.total7d,    cls: ''             },
+    { icon: '📦', label: 'Item Types',    value: stats.byItem?.length || 0, cls: '' },
+  ];
+  const grid = el('div', { className: 'home-stats-grid' });
+  items.forEach(s => {
+    const item = el('div', { className: 'home-stat-item' });
+    item.appendChild(el('div', { className: 'home-stat-icon ' + s.cls, textContent: s.icon }));
+    item.appendChild(el('div', { className: 'home-stat-value', textContent: s.value }));
+    item.appendChild(el('div', { className: 'home-stat-label', textContent: s.label }));
+    grid.appendChild(item);
+  });
+  body.appendChild(grid);
+}
+
+function renderHomePerformance(stats) {
+  const card = document.getElementById('homePerformance');
+  if (!card || !stats || !stats.byItem || !stats.byItem.length) {
+    if (card) card.querySelector('.home-card-body').innerHTML =
+      '<div class="empty-state">No completed jobs today.</div>';
+    return;
+  }
+  const body = card.querySelector('.home-card-body');
+  body.innerHTML = '';
+
+  // Show top 10 by count, with target delta
+  const rows = stats.byItem.slice(0, 10);
+  const table = el('table', { className: 'home-perf-table' });
+  const thead = el('thead', {}, el('tr', {},
+    el('th', { textContent: 'Item' }),
+    el('th', { textContent: 'Jobs' }),
+    el('th', { textContent: 'Avg Time' }),
+    el('th', { textContent: 'Target' }),
+    el('th', { textContent: 'Delta' }),
+  ));
+  const tbody = el('tbody', {});
+  rows.forEach(r => {
+    const hasTarget = r.target_seconds != null;
+    const delta     = hasTarget ? Math.round(r.avg_seconds) - r.target_seconds : null;
+    const tr = el('tr', {},
+      el('td', { className: 'perf-item', textContent: r.item_number }),
+      el('td', { textContent: r.count }),
+      el('td', { textContent: formatDuration(Math.round(r.avg_seconds)) }),
+      el('td', { textContent: hasTarget ? formatHM(r.target_seconds) : '—', className: hasTarget ? '' : 'dash-no-target' }),
+    );
+    const deltaCell = el('td', {
+      textContent: delta === null ? '—' : (delta >= 0 ? '+' : '') + formatDuration(Math.abs(delta)),
+      className:   delta === null ? 'dash-no-target' : delta > 0 ? 'dash-over' : 'dash-under',
+    });
+    tr.appendChild(deltaCell);
+    tbody.appendChild(tr);
+  });
+  table.appendChild(thead);
+  table.appendChild(tbody);
+  body.appendChild(table);
+
+  // Export shortcut
+  const exportBtn = el('button', {
+    className: 'btn btn-ghost btn-sm',
+    textContent: '\u2b07 Export Today CSV',
+    style: 'margin-top:12px;',
+    onclick: () => {
+      const today = new Date(); today.setHours(0,0,0,0);
+      window.location.href = `/api/export/csv?from=${today.toISOString()}`;
+    },
+  });
+  body.appendChild(exportBtn);
+}
+
+function renderHomeUsers(users) {
+  const card = document.getElementById('homeUsers');
+  if (!card || !users.length) return;
+  const body = card.querySelector('.home-card-body');
+  body.innerHTML = '';
+
+  const active   = users.filter(u => u.isActive);
+  const disabled = users.filter(u => !u.isActive);
+  const need2fa  = active.filter(u => ['manager','administrator'].includes(u.role) && !u.totpEnabled);
+
+  const summary = el('div', { className: 'home-user-summary' });
+  [
+    { label: 'Active Accounts',  value: active.length,   cls: '' },
+    { label: 'Disabled',         value: disabled.length, cls: disabled.length ? 'text-amber' : '' },
+    { label: '2FA Not Configured', value: need2fa.length, cls: need2fa.length ? 'text-red' : 'text-green' },
+  ].forEach(s => {
+    const item = el('div', { className: 'home-user-stat' });
+    item.appendChild(el('span', { className: 'home-user-stat-val ' + s.cls, textContent: s.value }));
+    item.appendChild(el('span', { className: 'home-user-stat-lbl', textContent: s.label }));
+    summary.appendChild(item);
+  });
+  body.appendChild(summary);
+
+  if (need2fa.length) {
+    const warn = el('div', { className: 'home-2fa-warn' });
+    warn.appendChild(el('span', { textContent: '⚠ Users without 2FA: ' }));
+    warn.appendChild(el('span', { textContent: need2fa.map(u => u.fullName).join(', '), style: 'font-weight:600;' }));
+    body.appendChild(warn);
+  }
+}
+
+function renderHomeQuickActions() {
+  const card = document.getElementById('homeQuickActions');
+  if (!card) return;
+  const body = card.querySelector('.home-card-body');
+  body.innerHTML = '';
+
+  const actions = [
+    { label: '📋 Wall Board',       page: 'wallboard',  role: 'supervisor'    },
+    { label: '📺 Compact Board',    page: 'wallboardc', role: 'supervisor'    },
+    { label: '📊 Dashboard',        page: 'dashboard',  role: 'manager'       },
+    { label: '🎯 Target Times',     page: 'targets',    role: 'manager'       },
+    { label: '🕐 History',          page: 'history',    role: 'operator'      },
+    { label: '👥 User Management',  page: 'admin',      role: 'administrator' },
+  ];
+
+  actions
+    .filter(a => hasRole(a.role))
+    .forEach(a => {
+      const btn = el('button', {
+        className: 'home-action-btn',
+        textContent: a.label,
+        onclick: () => { navigateTo(a.page); closeNav(); },
+      });
+      body.appendChild(btn);
+    });
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    WALL BOARD — COMPACT MODE
