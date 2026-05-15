@@ -117,11 +117,12 @@ document.getElementById('modal').addEventListener('click', e => {
    NAVIGATION
    ═══════════════════════════════════════════════════════════════════════════ */
 const PAGES = {
-  timer:      { id: 'pageTimer',      label: 'Timer',      minRole: 'operator'      },
-  history:    { id: 'pageHistory',    label: 'History',    minRole: 'operator'      },
-  wallboard:  { id: 'pageWallboard',  label: 'Wall Board', minRole: 'supervisor'    },
-  dashboard:  { id: 'pageDashboard',  label: 'Dashboard',  minRole: 'manager'       },
-  admin:      { id: 'pageAdmin',      label: 'Admin',      minRole: 'administrator' },
+  timer:      { id: 'pageTimer',      label: 'Timer',        minRole: 'operator'      },
+  history:    { id: 'pageHistory',    label: 'History',      minRole: 'operator'      },
+  wallboard:  { id: 'pageWallboard',  label: 'Wall Board',   minRole: 'supervisor'    },
+  dashboard:  { id: 'pageDashboard',  label: 'Dashboard',    minRole: 'manager'       },
+  targets:    { id: 'pageTargets',    label: 'Target Times', minRole: 'manager'       },
+  admin:      { id: 'pageAdmin',      label: 'Admin',        minRole: 'administrator' },
 };
 
 function buildNav() {
@@ -162,6 +163,7 @@ function navigateTo(page) {
   if (page === 'history')    loadHistoryPage();
   if (page === 'wallboard')  loadWallboard();
   if (page === 'dashboard')  loadDashboard();
+  if (page === 'targets')    loadTargetsPage();
   if (page === 'admin')      loadAdminPage();
 }
 
@@ -424,8 +426,9 @@ async function showActivePanel() {
       state.activeStartedAt = t.startedAt;
       document.getElementById('activeItemDisplay').textContent = t.itemNumber;
       const metaParts = [`Started at ${formatLocalTime(t.startedAt)}`];
-      if (t.workstation) metaParts.push('WS: ' + t.workstation);
-      if (t.woNumber)    metaParts.push('W/O: ' + t.woNumber);
+      if (t.workstation)   metaParts.push('WS: ' + t.workstation);
+      if (t.woNumber)      metaParts.push('W/O: ' + t.woNumber);
+      if (t.targetSeconds) metaParts.push('🎯 Target: ' + formatHM(t.targetSeconds));
       document.getElementById('activeMeta').textContent = metaParts.join('  ·  ');
     } else if (state.activeTimerId) {
       // Both fetches found nothing — timer genuinely gone
@@ -1480,8 +1483,15 @@ async function refreshWallboard() {
       const tile     = el('div', { className: 'wallboard-tile' });
 
       // Colour the tile amber if over 2 hours, red if over 4 hours
-      if (elapsed > 4 * 3600)      tile.classList.add('tile-overdue');
-      else if (elapsed > 2 * 3600) tile.classList.add('tile-warning');
+      // Smart colouring: target-relative if set, fixed thresholds if not
+      if (t.targetSeconds) {
+        const pctNow = elapsed / t.targetSeconds;
+        if (pctNow >= 1.0)   tile.classList.add('tile-overdue');
+        else if (pctNow >= 0.8) tile.classList.add('tile-warning');
+      } else {
+        if (elapsed > 4 * 3600)      tile.classList.add('tile-overdue');
+        else if (elapsed > 2 * 3600) tile.classList.add('tile-warning');
+      }
 
       tile.appendChild(el('div', { className: 'wb-item',     textContent: t.itemNumber }));
       tile.appendChild(el('div', { className: 'wb-operator', textContent: t.operatorName }));
@@ -1494,15 +1504,25 @@ async function refreshWallboard() {
       if (t.woNumber)    tile.appendChild(el('div', { className: 'wb-notes', textContent: '📋 W/O: ' + t.woNumber }));
       if (t.timeCheck)   tile.appendChild(el('span', { className: 'badge badge-timecheck', style: 'margin-top:6px;display:inline-block;', textContent: '✓ Time Check' }));
       if (t.targetSeconds) {
-        const pct = Math.min(100, Math.round((elapsed / t.targetSeconds) * 100));
+        const pct       = elapsed / t.targetSeconds;
+        const pctCapped = Math.min(1, pct);
+        const remaining = t.targetSeconds - elapsed;
         const targetWrap = el('div', { className: 'wb-target-wrap' });
-        targetWrap.appendChild(el('div', { className: 'wb-target-label',
-          textContent: 'Target: ' + formatHM(t.targetSeconds) + '  (' + pct + '%)' }));
+        const labelText  = remaining > 0
+          ? formatHM(remaining) + ' remaining'
+          : formatHM(Math.abs(remaining)) + ' overdue';
+        const labelEl = el('div', {
+          className: 'wb-target-label' + (remaining <= 0 ? ' overdue' : ''),
+          textContent: '🎯 Target: ' + formatHM(t.targetSeconds) + '  —  ' + labelText,
+          'data-startedat':    t.startedAt,
+          'data-targetseconds': String(t.targetSeconds),
+        });
+        targetWrap.appendChild(labelEl);
         const bar  = el('div', { className: 'wb-target-bar' });
         const fill = el('div', {
-          className: 'wb-target-fill' + (pct >= 100 ? ' over' : ''),
-          style: 'width:' + Math.min(pct, 100) + '%',
-          'data-startedat': t.startedAt,
+          className: 'wb-target-fill' + (pct >= 1 ? ' over' : ''),
+          style: 'width:' + Math.round(pctCapped * 100) + '%',
+          'data-startedat':     t.startedAt,
           'data-targetseconds': String(t.targetSeconds),
         });
         bar.appendChild(fill);
@@ -1541,19 +1561,30 @@ function startWallboardTick() {
       const tile = el.closest('.wallboard-tile');
       if (tile) {
         tile.classList.remove('tile-warning', 'tile-overdue');
-        if (elapsed > 4 * 3600)      tile.classList.add('tile-overdue');
-        else if (elapsed > 2 * 3600) tile.classList.add('tile-warning');
-        // Update target progress bar
         const fill = tile.querySelector('.wb-target-fill');
-        if (fill) {
-          const tgt = parseInt(fill.getAttribute('data-targetseconds'), 10);
-          if (tgt) {
-            const pct = Math.min(100, Math.round((elapsed / tgt) * 100));
-            fill.style.width = Math.min(pct, 100) + '%';
-            fill.classList.toggle('over', pct >= 100);
-            const lbl = tile.querySelector('.wb-target-label');
-            if (lbl) lbl.textContent = 'Target: ' + formatHM(tgt) + '  (' + pct + '%)';
+        const tgt  = fill ? parseInt(fill.getAttribute('data-targetseconds'), 10) : 0;
+        if (tgt) {
+          // Target-relative colouring
+          const pct = elapsed / tgt;
+          if (pct >= 1.0)      tile.classList.add('tile-overdue');
+          else if (pct >= 0.8) tile.classList.add('tile-warning');
+          // Update progress bar
+          fill.style.width = Math.round(Math.min(1, pct) * 100) + '%';
+          fill.classList.toggle('over', pct >= 1);
+          // Update label with time remaining/overdue
+          const lbl = tile.querySelector('.wb-target-label');
+          if (lbl) {
+            const remaining = tgt - elapsed;
+            const labelText = remaining > 0
+              ? formatHM(remaining) + ' remaining'
+              : formatHM(Math.abs(remaining)) + ' overdue';
+            lbl.textContent = '🎯 Target: ' + formatHM(tgt) + '  —  ' + labelText;
+            lbl.className   = 'wb-target-label' + (remaining <= 0 ? ' overdue' : '');
           }
+        } else {
+          // No target — fixed thresholds
+          if (elapsed > 4 * 3600)      tile.classList.add('tile-overdue');
+          else if (elapsed > 2 * 3600) tile.classList.add('tile-warning');
         }
       }
     });
@@ -1577,20 +1608,20 @@ function formatHM(totalSeconds) {
   return h + 'h ' + m + 'm';
 }
 
-async function loadTargetTimes() {
-  const container = document.getElementById('targetTimesList');
+async function loadTargetTimes(containerId = 'targetTimesList') {
+  const container = document.getElementById(containerId);
   if (!container) return;
   container.innerHTML = '<div class="empty-state">Loading...</div>';
   try {
     const targets = await GET('/targets');
-    renderTargetList(targets);
+    renderTargetList(targets, containerId);
   } catch (_) {
     container.innerHTML = '<div class="empty-state">Could not load target times.</div>';
   }
 }
 
-function renderTargetList(targets) {
-  const container = document.getElementById('targetTimesList');
+function renderTargetList(targets, containerId = 'targetTimesList') {
+  const container = document.getElementById(containerId);
   if (!container) return;
   container.innerHTML = '';
   if (!targets || targets.length === 0) {
@@ -1599,23 +1630,33 @@ function renderTargetList(targets) {
     return;
   }
   targets.forEach(t => {
-    const row = el('div', { className: 'target-row' });
+    const row  = el('div', { className: 'target-row' });
     const info = el('div', { className: 'target-row-info' });
     info.appendChild(el('span', { className: 'target-item-number', textContent: t.itemNumber }));
     info.appendChild(el('span', { className: 'target-time-display',
       textContent: formatHM(t.totalSeconds) }));
     const actions = el('div', { className: 'target-row-actions' });
     actions.appendChild(el('button', { className: 'btn btn-ghost btn-sm', textContent: 'Edit',
-      onclick: () => openTargetModal(t) }));
+      onclick: () => openTargetModal(t, containerId) }));
     actions.appendChild(el('button', { className: 'btn btn-ghost btn-sm', textContent: '🗑',
-      onclick: () => confirmDeleteTarget(t) }));
+      onclick: () => confirmDeleteTarget(t, containerId) }));
     row.appendChild(info);
     row.appendChild(actions);
     container.appendChild(row);
   });
 }
 
-function openTargetModal(existing) {
+// Dedicated Target Times page loader
+function loadTargetsPage() {
+  loadTargetTimes('targetTimesPageList');
+}
+
+// Wire up Add button on the dedicated page
+document.getElementById('btnAddTargetPage') &&
+  document.getElementById('btnAddTargetPage').addEventListener('click', () =>
+    openTargetModal(null, 'targetTimesPageList'));
+
+function openTargetModal(existing, containerId = 'targetTimesList') {
   const isNew = !existing;
   const body  = el('div', {});
   const itemInput = el('input', {
@@ -1691,7 +1732,9 @@ function openTargetModal(existing) {
       await POST('/targets', { itemNumber, hours, minutes });
       toast((isNew ? 'Target time added' : 'Target time updated') + ' for ' + itemNumber, 'success');
       closeModal();
-      loadTargetTimes();
+      // Reload both the dedicated page list and the dashboard section if present
+      loadTargetTimes(containerId);
+      if (containerId !== 'targetTimesList') loadTargetTimes('targetTimesList');
     } catch (err) {
       errDiv.textContent = err.message;
     } finally {
@@ -1701,7 +1744,7 @@ function openTargetModal(existing) {
   openModal(isNew ? 'Add Target Time' : 'Edit Target Time', body, [btnCancel, btnSave]);
 }
 
-function confirmDeleteTarget(t) {
+function confirmDeleteTarget(t, containerId = 'targetTimesList') {
   const body = el('div', {});
   body.appendChild(el('p', { textContent: 'Remove the target time for ' + t.itemNumber + '?',
     style: 'margin-bottom:12px;' }));
@@ -1716,7 +1759,8 @@ function confirmDeleteTarget(t) {
       await api('DELETE', '/targets/' + encodeURIComponent(t.itemNumber));
       toast('Target time removed for ' + t.itemNumber, '');
       closeModal();
-      loadTargetTimes();
+      loadTargetTimes(containerId);
+      if (containerId !== 'targetTimesList') loadTargetTimes('targetTimesList');
     } catch (err) {
       errDiv.textContent = err.message;
       btnConfirm.disabled = false;
@@ -1727,7 +1771,8 @@ function confirmDeleteTarget(t) {
 
 // Wire up the Add Target Time button on the dashboard
 document.getElementById('btnAddTarget') &&
-  document.getElementById('btnAddTarget').addEventListener('click', () => openTargetModal(null));
+  document.getElementById('btnAddTarget').addEventListener('click', () =>
+    openTargetModal(null, 'targetTimesList'));
 
 
 

@@ -1284,3 +1284,12 @@ button.topbar-brand:focus-visible {
   padding: 14px !important;
   width: 100%;
 }
+
+/* ─── Target label overdue state ─────────────────────────────────────────── */
+.wb-target-label.overdue {
+  color: var(--red);
+  font-weight: 700;
+}
+.wallboard-tile.tile-warning .wb-target-label:not(.overdue) {
+  color: var(--accent);
+}
