@@ -9,11 +9,12 @@
    STATE
    ═══════════════════════════════════════════════════════════════════════════ */
 const state = {
-  user:          null,   // { id, username, fullName, role, activeTimer }
-  currentPage:   null,
-  stopwatchTimer: null,
-  activeTimerId:  null,
-  activeStartedAt: null,
+  user:                null,
+  currentPage:         null,
+  stopwatchTimer:      null,
+  activeTimerId:       null,
+  activeStartedAt:     null,
+  activeTargetSeconds: null,
 };
 
 // Wallboard interval handles — declared here so navigateTo can always access them
@@ -372,7 +373,8 @@ async function loadTimerPage() {
 function showStartPanel() {
   show('panelStart');
   hide('panelActive');
-  // Clear any stale resume button and error from a previous conflict
+  state.activeTargetSeconds = null;
+  hide('activeTargetWrap');
   const rb = document.getElementById('btnResumeTimer');
   if (rb) rb.remove();
   clearError('startError');
@@ -426,10 +428,12 @@ async function showActivePanel() {
       state.activeStartedAt = t.startedAt;
       document.getElementById('activeItemDisplay').textContent = t.itemNumber;
       const metaParts = [`Started at ${formatLocalTime(t.startedAt)}`];
-      if (t.workstation)   metaParts.push('WS: ' + t.workstation);
-      if (t.woNumber)      metaParts.push('W/O: ' + t.woNumber);
-      if (t.targetSeconds) metaParts.push('🎯 Target: ' + formatHM(t.targetSeconds));
+      if (t.workstation) metaParts.push('WS: ' + t.workstation);
+      if (t.woNumber)    metaParts.push('W/O: ' + t.woNumber);
       document.getElementById('activeMeta').textContent = metaParts.join('  ·  ');
+      // Store and display target time
+      state.activeTargetSeconds = t.targetSeconds || null;
+      updateActiveTargetDisplay();
     } else if (state.activeTimerId) {
       // Both fetches found nothing — timer genuinely gone
       state.activeTimerId   = null;
@@ -534,8 +538,9 @@ document.getElementById('btnStop').addEventListener('click', async () => {
   btn.disabled = true;
   try {
     const timer = await POST(`/timers/${state.activeTimerId}/stop`, {});
-    state.activeTimerId   = null;
-    state.activeStartedAt = null;
+    state.activeTimerId       = null;
+    state.activeStartedAt     = null;
+    state.activeTargetSeconds = null;
     stopStopwatch();
     showStartPanel();
     refreshActiveTimerBanner();
@@ -623,6 +628,46 @@ function tickStopwatch() {
   if (!state.activeStartedAt) return;
   const elapsed = Math.max(0, Math.floor((Date.now() - new Date(state.activeStartedAt).getTime()) / 1000));
   document.getElementById('stopwatch').textContent = formatDuration(elapsed);
+  if (state.activeTargetSeconds) updateActiveTargetDisplay(elapsed);
+}
+
+function updateActiveTargetDisplay(elapsed) {
+  if (elapsed === undefined) {
+    elapsed = state.activeStartedAt
+      ? Math.max(0, Math.floor((Date.now() - new Date(state.activeStartedAt).getTime()) / 1000))
+      : 0;
+  }
+  const tgt  = state.activeTargetSeconds;
+  const wrap = document.getElementById('activeTargetWrap');
+  if (!tgt || !wrap) return;
+
+  wrap.hidden = false;
+  const pct       = elapsed / tgt;
+  const remaining = tgt - elapsed;
+  const over      = remaining <= 0;
+
+  // Progress bar fill
+  const fill = document.getElementById('activeTargetFill');
+  if (fill) {
+    fill.style.width = Math.round(Math.min(1, pct) * 100) + '%';
+    fill.className   = 'active-target-fill' + (over ? ' over' : pct >= 0.8 ? ' warn' : '');
+  }
+
+  // Percentage label
+  const pctEl = document.getElementById('activeTargetPct');
+  if (pctEl) pctEl.textContent = Math.round(pct * 100) + '%';
+
+  // Text label
+  const lbl = document.getElementById('activeTargetLabel');
+  if (lbl) {
+    if (over) {
+      lbl.textContent = '⚠ ' + formatHM(Math.abs(remaining)) + ' overdue (target: ' + formatHM(tgt) + ')';
+      lbl.className   = 'active-target-label overdue';
+    } else {
+      lbl.textContent = '🎯 ' + formatHM(remaining) + ' remaining (target: ' + formatHM(tgt) + ')';
+      lbl.className   = 'active-target-label' + (pct >= 0.8 ? ' warn' : '');
+    }
+  }
 }
 
 // ─── Today's entries ─────────────────────────────────────────────────────
@@ -1817,7 +1862,10 @@ const ROLES_REQUIRING_TOTP = ['manager', 'administrator'];
 // Called from onLoggedIn — prompts setup if TOTP required but not configured
 function checkTotpSetupRequired() {
   if (!ROLES_REQUIRING_TOTP.includes(state.user.role)) return;
-  if (state.user.totpEnabled) return;
+  // Only prompt if totpEnabled is EXPLICITLY false — not undefined/missing.
+  // undefined means the field wasn't returned (e.g. older login path) — don't prompt.
+  // false means the server confirmed 2FA is not yet set up — prompt.
+  if (state.user.totpEnabled !== false) return;
   // Show setup prompt after a short delay so the main UI renders first
   setTimeout(() => openTotpSetupModal(), 800);
 }
@@ -1854,7 +1902,11 @@ async function openTotpSetupModal() {
 
   const btnEnable = el('button', { className: 'btn btn-primary', textContent: 'Enable 2FA' });
   const btnSkip   = el('button', { className: 'btn btn-ghost',   textContent: 'Remind Me Later' });
-  btnSkip.addEventListener('click', closeModal);
+  btnSkip.addEventListener('click', () => {
+    // Set to null (not false) so we don't re-prompt during this session
+    state.user.totpEnabled = null;
+    closeModal();
+  });
 
   openModal('Set Up Two-Factor Authentication', body, [btnSkip, btnEnable]);
 

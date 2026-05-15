@@ -221,6 +221,18 @@
           00:00:00
         </div>
         <div class="active-meta" id="activeMeta"></div>
+
+        <!-- Target time display — only shown when a target is set -->
+        <div id="activeTargetWrap" class="active-target-wrap" hidden>
+          <div class="active-target-bar-wrap">
+            <div class="active-target-bar">
+              <div id="activeTargetFill" class="active-target-fill"></div>
+            </div>
+            <span id="activeTargetPct" class="active-target-pct"></span>
+          </div>
+          <div id="activeTargetLabel" class="active-target-label"></div>
+        </div>
+
         <div id="stopError" class="error-msg" role="alert" aria-live="assertive"></div>
         <div class="active-actions">
           <button id="btnStop" class="btn btn-stop btn-xl" aria-label="Stop timer">

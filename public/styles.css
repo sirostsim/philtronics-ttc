@@ -1293,3 +1293,63 @@ button.topbar-brand:focus-visible {
 .wallboard-tile.tile-warning .wb-target-label:not(.overdue) {
   color: var(--accent);
 }
+
+/* ─── Active panel target time display ───────────────────────────────────── */
+.active-target-wrap {
+  margin: 12px 0 4px;
+  padding: 12px 16px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color var(--transition);
+}
+.active-target-wrap:has(.active-target-fill.warn) {
+  border-color: var(--accent);
+}
+.active-target-wrap:has(.active-target-fill.over) {
+  border-color: var(--red);
+  background: rgba(239,68,68,.04);
+}
+
+.active-target-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.active-target-bar {
+  flex: 1;
+  height: 8px;
+  background: var(--bg2);
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--border2);
+}
+.active-target-fill {
+  height: 100%;
+  background: var(--green);
+  border-radius: 4px;
+  transition: width .8s ease, background .3s;
+  min-width: 2px;
+}
+.active-target-fill.warn { background: var(--accent); }
+.active-target-fill.over { background: var(--red); }
+
+.active-target-pct {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+  min-width: 38px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.active-target-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text2);
+  text-align: center;
+}
+.active-target-label.warn   { color: var(--accent); font-weight: 600; }
+.active-target-label.overdue { color: var(--red);    font-weight: 700; }

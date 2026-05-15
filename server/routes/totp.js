@@ -156,6 +156,7 @@ router.post('/verify', async (req, res) => {
     res.json({
       id: user.id, username: user.username,
       fullName: user.full_name, role: user.role,
+      totpEnabled: true,   // they just passed TOTP — always true at this point
       activeTimer,
     });
   } catch (err) {
