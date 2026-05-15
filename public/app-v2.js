@@ -217,12 +217,14 @@ function onLoggedIn() {
   }
   refreshActiveTimerBanner();
   navigateTo('timer');
-  // Prompt TOTP setup if required for this role but not yet configured
   checkTotpSetupRequired();
+  // Open SSE connection to receive real-time messages from supervisors/managers
+  connectMessageStream();
 }
 
 async function doLogout() {
   stopStopwatch();
+  disconnectMessageStream();
   try { await POST('/auth/logout'); } catch (_) {}
   state.user = null;
   closeNav();
@@ -1592,6 +1594,17 @@ async function refreshWallboard() {
         tile.appendChild(targetWrap);
       }
 
+      // Message button — supervisors and managers only
+      if (hasRole('supervisor')) {
+        const msgBtn = el('button', {
+          className: 'wb-msg-btn',
+          textContent: '✉ Message',
+          'aria-label': 'Send message to ' + t.operatorName,
+          onclick: () => openSendMessageModal(t.operatorId, t.operatorName),
+        });
+        tile.appendChild(msgBtn);
+      }
+
       container.appendChild(tile);
     });
 
@@ -1964,6 +1977,142 @@ async function openTotpSetupModal() {
       btnEnable.disabled = false;
     }
   });
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   REAL-TIME MESSAGING  (SSE)
+   Operators receive messages from supervisors/managers via Server-Sent Events.
+   Managers/supervisors send via the wallboard message button.
+   ═══════════════════════════════════════════════════════════════════════════ */
+let _messageStream = null;
+
+function connectMessageStream() {
+  if (_messageStream) return; // already connected
+  try {
+    _messageStream = new EventSource('/api/messages/listen', { withCredentials: true });
+
+    _messageStream.addEventListener('message', e => {
+      try {
+        const data = JSON.parse(e.data);
+        showMessageNotification(data);
+      } catch (_) {}
+    });
+
+    _messageStream.addEventListener('error', () => {
+      // Connection dropped — retry after 10s (browser retries automatically
+      // but we close and reopen to ensure a fresh auth check)
+      disconnectMessageStream();
+      setTimeout(() => {
+        if (state.user) connectMessageStream();
+      }, 10000);
+    });
+  } catch (_) {}
+}
+
+function disconnectMessageStream() {
+  if (_messageStream) {
+    _messageStream.close();
+    _messageStream = null;
+  }
+}
+
+function showMessageNotification(data) {
+  // Remove any existing notification first
+  const existing = document.getElementById('msgNotification');
+  if (existing) existing.remove();
+
+  const notif = el('div', { id: 'msgNotification', className: 'msg-notification', role: 'alert' });
+
+  const header = el('div', { className: 'msg-notif-header' });
+  header.appendChild(el('span', { className: 'msg-notif-from',
+    textContent: '✉ Message from ' + data.from }));
+  const closeBtn = el('button', { className: 'msg-notif-close',
+    'aria-label': 'Dismiss message', textContent: '✕' });
+  closeBtn.addEventListener('click', () => notif.remove());
+  header.appendChild(closeBtn);
+
+  notif.appendChild(header);
+  notif.appendChild(el('p', { className: 'msg-notif-body', textContent: data.message }));
+
+  const time = el('div', { className: 'msg-notif-time',
+    textContent: 'Sent at ' + new Date(data.sentAt).toLocaleTimeString('en-GB',
+      { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit' }) });
+  notif.appendChild(time);
+
+  document.body.appendChild(notif);
+
+  // Also play a subtle audio ping if supported
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.4);
+  } catch (_) {}
+
+  // Auto-dismiss after 60 seconds
+  setTimeout(() => { if (notif.isConnected) notif.remove(); }, 60000);
+}
+
+// ── Send message modal (supervisor/manager, opened from wallboard tile) ───────
+function openSendMessageModal(operatorId, operatorName) {
+  const body = el('div', {});
+  body.appendChild(el('p', {
+    textContent: 'Send a message to ' + operatorName + '. It will appear as a popup on their screen immediately.',
+    style: 'margin-bottom:14px;font-size:14px;color:var(--text2);',
+  }));
+  const textarea = el('textarea', {
+    id: 'msgText',
+    placeholder: 'Type your message here…',
+    maxlength: '500',
+    rows: '4',
+    style: 'width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:6px;' +
+           'color:var(--text);font-size:15px;padding:12px;resize:vertical;font-family:var(--font-body);',
+  });
+  body.appendChild(textarea);
+  const charCount = el('div', { style: 'font-size:11px;color:var(--text3);text-align:right;margin-top:4px;',
+    textContent: '0 / 500' });
+  textarea.addEventListener('input', () => {
+    charCount.textContent = textarea.value.length + ' / 500';
+  });
+  body.appendChild(charCount);
+  const errDiv = el('div', { className: 'error-msg', role: 'alert' });
+  body.appendChild(errDiv);
+
+  const btnSend   = el('button', { className: 'btn btn-primary', textContent: '✉ Send Message' });
+  const btnCancel = el('button', { className: 'btn btn-ghost',   textContent: 'Cancel' });
+  btnCancel.addEventListener('click', closeModal);
+
+  btnSend.addEventListener('click', async () => {
+    const message = textarea.value.trim();
+    if (!message) { errDiv.textContent = 'Please type a message.'; return; }
+    btnSend.disabled = true; btnSend.textContent = 'Sending…';
+    try {
+      const result = await POST('/messages/send', { operatorId, message });
+      closeModal();
+      if (result.delivered) {
+        toast('Message delivered to ' + result.operatorName, 'success');
+      } else {
+        toast(result.operatorName + ' is not currently logged in — message not delivered.', '');
+      }
+    } catch (err) {
+      errDiv.textContent = err.message;
+      btnSend.disabled = false; btnSend.textContent = '✉ Send Message';
+    }
+  });
+
+  // Allow Ctrl+Enter to send
+  textarea.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) btnSend.click();
+  });
+
+  openModal('Send Message to ' + operatorName, body, [btnCancel, btnSend]);
+  setTimeout(() => textarea.focus(), 50);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

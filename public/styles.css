@@ -1358,3 +1358,81 @@ button.topbar-brand:focus-visible {
 .dash-over       { color: var(--red);    font-weight: 600; }
 .dash-under      { color: var(--green);  font-weight: 600; }
 .dash-no-target  { color: var(--text3);  }
+
+/* ─── Operator message notification ──────────────────────────────────────── */
+.msg-notification {
+  position: fixed;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(420px, calc(100vw - 32px));
+  background: var(--bg2);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 32px rgba(0,0,0,.35), 0 0 0 1px rgba(240,180,41,.2);
+  z-index: 9999;
+  padding: 16px 18px;
+  animation: msg-slide-in .25s ease;
+}
+@keyframes msg-slide-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-16px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.msg-notif-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.msg-notif-from {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: .03em;
+}
+.msg-notif-close {
+  background: none;
+  border: none;
+  color: var(--text3);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  transition: color var(--transition);
+}
+.msg-notif-close:hover { color: var(--text); }
+.msg-notif-body {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.5;
+  margin-bottom: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.msg-notif-time {
+  font-size: 11px;
+  color: var(--text3);
+}
+
+/* ─── Wallboard message button ───────────────────────────────────────────── */
+.wb-msg-btn {
+  margin-top: 10px;
+  width: 100%;
+  background: transparent;
+  border: 1px solid var(--border2);
+  border-radius: 5px;
+  color: var(--text2);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-body);
+  padding: 7px;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+  letter-spacing: .04em;
+}
+.wb-msg-btn:hover {
+  background: rgba(240,180,41,.1);
+  color: var(--accent);
+  border-color: var(--accent);
+}
