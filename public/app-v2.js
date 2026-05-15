@@ -18,8 +18,10 @@ const state = {
 };
 
 // Wallboard interval handles — declared here so navigateTo can always access them
-let wallboardInterval = null;
-let wallboardTick     = null;
+let wallboardInterval  = null;
+let wallboardTick      = null;
+let wallboardCInterval = null;
+let wallboardCTick     = null;
 
 const ROLE_LEVEL = { operator: 1, supervisor: 2, manager: 3, administrator: 4 };
 function hasRole(min) {
@@ -118,12 +120,13 @@ document.getElementById('modal').addEventListener('click', e => {
    NAVIGATION
    ═══════════════════════════════════════════════════════════════════════════ */
 const PAGES = {
-  timer:      { id: 'pageTimer',      label: 'Timer',        minRole: 'operator'      },
-  history:    { id: 'pageHistory',    label: 'History',      minRole: 'operator'      },
-  wallboard:  { id: 'pageWallboard',  label: 'Wall Board',   minRole: 'supervisor'    },
-  dashboard:  { id: 'pageDashboard',  label: 'Dashboard',    minRole: 'manager'       },
-  targets:    { id: 'pageTargets',    label: 'Target Times', minRole: 'manager'       },
-  admin:      { id: 'pageAdmin',      label: 'Admin',        minRole: 'administrator' },
+  timer:      { id: 'pageTimer',      label: 'Timer',              minRole: 'operator'      },
+  history:    { id: 'pageHistory',    label: 'History',            minRole: 'operator'      },
+  wallboard:  { id: 'pageWallboard',  label: 'Wall Board',         minRole: 'supervisor'    },
+  wallboardc: { id: 'pageWallboardC', label: 'Wall Board Compact', minRole: 'supervisor'    },
+  dashboard:  { id: 'pageDashboard',  label: 'Dashboard',          minRole: 'manager'       },
+  targets:    { id: 'pageTargets',    label: 'Target Times',       minRole: 'manager'       },
+  admin:      { id: 'pageAdmin',      label: 'Admin',              minRole: 'administrator' },
 };
 
 function buildNav() {
@@ -148,6 +151,10 @@ function navigateTo(page) {
     if (wallboardInterval) { clearInterval(wallboardInterval); wallboardInterval = null; }
     if (wallboardTick)     { clearInterval(wallboardTick);     wallboardTick = null;     }
   }
+  if (page !== 'wallboardc') {
+    if (wallboardCInterval) { clearInterval(wallboardCInterval); wallboardCInterval = null; }
+    if (wallboardCTick)     { clearInterval(wallboardCTick);     wallboardCTick = null;     }
+  }
 
   for (const p of Object.values(PAGES)) {
     const el = document.getElementById(p.id);
@@ -165,6 +172,7 @@ function navigateTo(page) {
   if (page === 'wallboard')  loadWallboard();
   if (page === 'dashboard')  loadDashboard();
   if (page === 'targets')    loadTargetsPage();
+  if (page === 'wallboardc') loadWallboardCompact();
   if (page === 'admin')      loadAdminPage();
 }
 
@@ -1979,6 +1987,115 @@ async function openTotpSetupModal() {
   });
 }
 
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   WALL BOARD — COMPACT MODE
+   Designed for a large shopfloor TV. Maximum tiles, minimum clutter.
+   Shows: operator name, item number, elapsed time counter.
+   Colour: smart target-relative (green / amber / red) same as main wallboard.
+   No message button, no detail — just the essential status at a glance.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+async function loadWallboardCompact() {
+  if (wallboardCInterval) clearInterval(wallboardCInterval);
+  await refreshWallboardCompact();
+  wallboardCInterval = setInterval(() => {
+    if (document.visibilityState === 'visible') refreshWallboardCompact();
+  }, 300000);
+}
+
+async function refreshWallboardCompact() {
+  const container = document.getElementById('wallboardCTiles');
+  const countEl   = document.getElementById('wallboardCCount');
+  const updatedEl = document.getElementById('wallboardCUpdated');
+  if (!container) return;
+  try {
+    const timers = await GET('/timers?status=active&limit=200');
+    if (countEl)   countEl.textContent   = timers.length + ' active job' + (timers.length !== 1 ? 's' : '');
+    if (updatedEl) updatedEl.textContent = 'Updated ' + new Date().toLocaleTimeString('en-GB');
+    container.innerHTML = '';
+
+    if (timers.length === 0) {
+      container.appendChild(el('div', { className: 'wallboard-empty' },
+        el('div', { className: 'wallboard-empty-icon', textContent: '✓' }),
+        el('div', { className: 'wallboard-empty-text', textContent: 'No active jobs right now' })
+      ));
+      return;
+    }
+
+    timers.forEach(t => {
+      const elapsed = Math.max(0, Math.floor(
+        (Date.now() - new Date(t.startedAt).getTime()) / 1000
+      ));
+      const tile = el('div', { className: 'wbc-tile' });
+
+      // Smart colour — target-relative if set, fixed thresholds otherwise
+      if (t.targetSeconds) {
+        const pct = elapsed / t.targetSeconds;
+        if (pct >= 1.0)      tile.classList.add('tile-overdue');
+        else if (pct >= 0.8) tile.classList.add('tile-warning');
+      } else {
+        if (elapsed > 4 * 3600)      tile.classList.add('tile-overdue');
+        else if (elapsed > 2 * 3600) tile.classList.add('tile-warning');
+      }
+
+      tile.appendChild(el('div', { className: 'wbc-operator', textContent: t.operatorName }));
+      tile.appendChild(el('div', { className: 'wbc-item',     textContent: t.itemNumber }));
+      tile.appendChild(el('div', {
+        className: 'wbc-elapsed',
+        textContent: formatDuration(elapsed),
+        'data-startedat':     t.startedAt,
+        'data-targetseconds': t.targetSeconds ? String(t.targetSeconds) : '',
+      }));
+
+      container.appendChild(tile);
+    });
+
+    startWallboardCompactTick();
+  } catch (err) {
+    container.innerHTML = '';
+    container.appendChild(el('div', { className: 'wallboard-empty',
+      textContent: 'Could not load timers: ' + err.message }));
+  }
+}
+
+function startWallboardCompactTick() {
+  if (wallboardCTick) clearInterval(wallboardCTick);
+  wallboardCTick = setInterval(() => {
+    if (state.currentPage !== 'wallboardc') {
+      clearInterval(wallboardCTick); wallboardCTick = null; return;
+    }
+    document.querySelectorAll('.wbc-elapsed[data-startedat]').forEach(node => {
+      const startedAt = node.getAttribute('data-startedat');
+      if (!startedAt) return;
+      const elapsed = Math.max(0, Math.floor(
+        (Date.now() - new Date(startedAt).getTime()) / 1000
+      ));
+      node.textContent = formatDuration(elapsed);
+
+      const tile = node.closest('.wbc-tile');
+      if (!tile) return;
+      tile.classList.remove('tile-warning', 'tile-overdue');
+      const tgt = parseInt(node.getAttribute('data-targetseconds'), 10) || 0;
+      if (tgt) {
+        const pct = elapsed / tgt;
+        if (pct >= 1.0)      tile.classList.add('tile-overdue');
+        else if (pct >= 0.8) tile.classList.add('tile-warning');
+      } else {
+        if (elapsed > 4 * 3600)      tile.classList.add('tile-overdue');
+        else if (elapsed > 2 * 3600) tile.classList.add('tile-warning');
+      }
+    });
+  }, 1000);
+}
+
+// Resume immediately when hidden tab becomes visible
+document.addEventListener('visibilitychange', () => {
+  if (state.currentPage === 'wallboardc' && document.visibilityState === 'visible') {
+    refreshWallboardCompact();
+  }
+});
 
 /* ═══════════════════════════════════════════════════════════════════════════
    REAL-TIME MESSAGING  (SSE)

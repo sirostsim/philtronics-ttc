@@ -364,6 +364,26 @@
     </div>
   </section>
 
+  <!-- ── WALL BOARD COMPACT ───────────────────────────────────────────────── -->
+  <section id="pageWallboardC" class="page" aria-label="Wall Board Compact" hidden>
+    <div class="page-content page-content-wide">
+      <div class="wallboard-header">
+        <div>
+          <h2 class="page-heading" style="margin-bottom:4px">Wall Board</h2>
+          <div id="wallboardCCount" class="wallboard-subhead"></div>
+        </div>
+        <div class="wallboard-header-right">
+          <div id="wallboardCUpdated" class="wallboard-updated"></div>
+          <button class="btn btn-ghost" onclick="refreshWallboardCompact()" aria-label="Refresh">
+            ↻ Refresh
+          </button>
+        </div>
+      </div>
+      <div id="wallboardCTiles" class="wbc-grid" role="list"
+           aria-label="Active job timers compact view"></div>
+    </div>
+  </section>
+
   <!-- ── TARGET TIMES ─────────────────────────────────────────────────────── -->
   <section id="pageTargets" class="page" aria-label="Target Times" hidden>
     <div class="page-content">

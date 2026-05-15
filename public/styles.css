@@ -1436,3 +1436,93 @@ button.topbar-brand:focus-visible {
   color: var(--accent);
   border-color: var(--accent);
 }
+
+/* ─── Wall Board Compact ──────────────────────────────────────────────────── */
+.wbc-grid {
+  display: grid;
+  /* Smaller minimum than the full wallboard — fits ~8 across on a 1920px TV */
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.wbc-tile {
+  background: var(--bg2);
+  border: 2px solid var(--app-green, var(--green));
+  border-radius: var(--radius);
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color var(--transition), box-shadow var(--transition);
+  box-shadow: 0 0 12px rgba(34,197,94,.07);
+}
+
+/* Colour bar across top */
+.wbc-tile::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--green);
+}
+
+/* Amber — approaching or over 80% of target */
+.wbc-tile.tile-warning {
+  border-color: var(--accent);
+  box-shadow: 0 0 12px rgba(240,180,41,.12);
+}
+.wbc-tile.tile-warning::before { background: var(--accent); }
+
+/* Red — over target or over 4h */
+.wbc-tile.tile-overdue {
+  border-color: var(--red);
+  box-shadow: 0 0 16px rgba(239,68,68,.15);
+}
+.wbc-tile.tile-overdue::before { background: var(--red); }
+
+.wbc-operator {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+}
+
+.wbc-item {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--accent);
+  letter-spacing: .04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+}
+
+.wbc-elapsed {
+  font-family: var(--font-mono);
+  font-size: 28px;
+  font-weight: 400;
+  color: var(--text);
+  letter-spacing: .04em;
+  line-height: 1;
+  margin-top: 4px;
+}
+
+.wbc-tile.tile-warning .wbc-elapsed { color: var(--accent); }
+.wbc-tile.tile-overdue .wbc-elapsed { color: var(--red); }
+
+/* On very large screens, allow even smaller tiles */
+@media (min-width: 1600px) {
+  .wbc-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  }
+  .wbc-elapsed { font-size: 24px; }
+}
