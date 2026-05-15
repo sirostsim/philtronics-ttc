@@ -6,10 +6,12 @@
 
 require('dotenv').config();
 
-const path         = require('path');
-const express      = require('express');
-const cookieParser = require('cookie-parser');
+const path          = require('path');
+const express       = require('express');
+const cookieParser  = require('cookie-parser');
 const runMigrations = require('./migrations/runner');
+const { query, queryOne } = require('./db');
+const { requireAuth }     = require('./middleware/auth');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -39,10 +41,33 @@ app.use('/api/users',    require('./routes/users'));
 app.use('/api/targets',  require('./routes/targets'));
 app.use('/api/messages', require('./routes/messages'));
 
-// Item-master autocomplete
-const { query }       = require('./db');
-const { requireAuth } = require('./middleware/auth');
+// /api/me — frontend calls this directly after login
+app.get('/api/me', requireAuth, async (req, res) => {
+  try {
+    const u = req.user;
+    const active = await queryOne(
+      `SELECT id, item_number, started_at, workstation, wo_number, status FROM timers
+       WHERE operator_id = $1 AND status = 'active' LIMIT 1`,
+      [u.id]
+    );
+    const activeTimer = active ? {
+      id:          active.id,
+      itemNumber:  active.item_number,
+      startedAt:   active.started_at,
+      workstation: active.workstation,
+      woNumber:    active.wo_number,
+      status:      active.status,
+    } : null;
+    res.json({
+      id: u.id, username: u.username, fullName: u.full_name,
+      role: u.role, totpEnabled: !!u.totp_enabled, activeTimer,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not load user data.' });
+  }
+});
 
+// Item-master autocomplete
 app.get('/api/items', requireAuth, async (req, res) => {
   try {
     const q = (req.query.q || '').trim();
