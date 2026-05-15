@@ -20,6 +20,7 @@ function safeUser(u) {
   return {
     id: u.id, username: u.username, fullName: u.full_name,
     role: u.role, isActive: u.is_active,
+    totpEnabled: !!u.totp_enabled,
     createdAt: u.created_at, updatedAt: u.updated_at,
   };
 }

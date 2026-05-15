@@ -1253,3 +1253,34 @@ button.topbar-brand:focus-visible {
 }
 .wb-target-fill.over { background: var(--red); }
 .wallboard-tile.tile-warning .wb-target-fill:not(.over) { background: var(--accent); }
+
+/* ─── TOTP / 2FA ─────────────────────────────────────────────────────────── */
+.totp-step-header {
+  text-align: center;
+  margin-bottom: 20px;
+}
+.totp-step-icon {
+  font-size: 40px;
+  margin-bottom: 8px;
+  line-height: 1;
+}
+.totp-step-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.totp-step-desc {
+  font-size: 13px;
+  color: var(--text2);
+  line-height: 1.5;
+}
+
+.totp-code-input {
+  font-family: var(--font-mono);
+  font-size: 28px !important;
+  letter-spacing: .3em;
+  text-align: center;
+  padding: 14px !important;
+  width: 100%;
+}

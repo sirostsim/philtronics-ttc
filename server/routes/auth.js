@@ -65,6 +65,26 @@ router.post('/login', loginLimiter, validate(schemas.login), async (req, res) =>
       { expiresIn: process.env.JWT_EXPIRES_IN || '8h' }
     );
 
+    // Check if TOTP is required for this user's role
+    const ROLES_REQUIRING_TOTP = ['manager', 'administrator'];
+    if (ROLES_REQUIRING_TOTP.includes(user.role) && user.totp_enabled) {
+      // Issue a short-lived challenge token instead of a full session
+      // The frontend must complete TOTP verification to get a full JWT
+      const { v4: uuidv4 } = require('uuid');
+      const challengeToken = uuidv4() + '-' + uuidv4(); // long random token
+      await query(
+        `INSERT INTO totp_challenges (id, user_id, token)
+         VALUES ($1, $2, $3)`,
+        [uuidv4(), user.id, challengeToken]
+      );
+      return res.status(202).json({
+        totpRequired:   true,
+        challengeToken,
+        fullName:       user.full_name,
+      });
+    }
+
+    // No TOTP needed — issue full JWT
     // Also fetch any active timer so the frontend can restore it immediately
     const active = await queryOne(
       `SELECT id, item_number, started_at, workstation, wo_number, status FROM timers
@@ -118,7 +138,7 @@ router.get('/me', requireAuth, async (req, res) => {
     } : null;
     res.json({
       id: u.id, username: u.username, fullName: u.full_name,
-      role: u.role, activeTimer,
+      role: u.role, totpEnabled: !!u.totp_enabled, activeTimer,
     });
   } catch (err) {
     res.status(500).json({ error: 'Could not load user data.' });

@@ -32,6 +32,7 @@ app.use((req, res, next) => {
 
 // ─── API routes ───────────────────────────────────────────────────────────────
 app.use('/api/auth',    require('./routes/auth'));
+app.use('/api/totp',    require('./routes/totp'));
 app.use('/api/timers',  require('./routes/timers'));
 app.use('/api/export',  require('./routes/export'));
 app.use('/api/users',   require('./routes/users'));
