@@ -1,27 +1,42 @@
 /**
- * routes/messages.js – Real-time operator messaging via Server-Sent Events
+ * routes/messages.js – Real-time two-way messaging via Server-Sent Events
  *
- * GET  /api/messages/listen   – Any user connects, keeps SSE stream open
- * POST /api/messages/send     – Supervisor+ sends a message to an operator
- * POST /api/messages/reply    – Operator replies to a message they received
- * GET  /api/messages/online   – Returns connected user IDs (for presence dots)
+ * GET  /api/messages/listen        – Any logged-in user opens an SSE stream
+ * POST /api/messages/send          – Supervisor+ starts a conversation with an operator
+ * POST /api/messages/reply         – Either side sends a message within a conversation
+ * POST /api/messages/close         – Supervisor closes the conversation
+ * GET  /api/messages/online        – Returns connected user IDs (presence dots)
  *
- * All users (operators and supervisors) maintain an SSE connection so both
- * sides can receive push events. Operators cannot initiate — they can only
- * reply to a message they received (enforced via replyToId on the server).
+ * Conversations are ephemeral (in-memory only). If either party refreshes
+ * the page the thread is gone — acceptable for a shopfloor comms tool.
+ * Operators cannot initiate conversations, only reply within one started by
+ * a supervisor. The server enforces this by validating conversationId ownership.
  */
 
 'use strict';
 
-const express   = require('express');
+const express = require('express');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { queryOne } = require('../db');
+const crypto = require('crypto');
 
 const router = express.Router();
 
-// In-memory map of userId -> SSE response object.
-// Covers both operators and supervisors — everyone gets a connection.
+// userId -> SSE response  (all roles connect here)
 const connections = new Map();
+
+// conversationId -> { supervisorId, operatorId, supervisorName, operatorName }
+// Tracks live conversations so we can validate reply targets
+const conversations = new Map();
+
+function push(userId, payload) {
+  const conn = connections.get(userId);
+  if (conn && !conn.writableEnded) {
+    conn.write(`data: ${JSON.stringify(payload)}\n\n`);
+    return true;
+  }
+  return false;
+}
 
 // ── GET /api/messages/listen ──────────────────────────────────────────────────
 router.get('/listen', requireAuth, (req, res) => {
@@ -45,13 +60,18 @@ router.get('/listen', requireAuth, (req, res) => {
   req.on('close', () => {
     clearInterval(heartbeat);
     connections.delete(userId);
+    // Clean up any conversations this user was part of
+    for (const [id, conv] of conversations.entries()) {
+      if (conv.supervisorId === userId || conv.operatorId === userId) {
+        conversations.delete(id);
+      }
+    }
     console.log(`SSE disconnected: ${req.user.username}. Active: ${connections.size}`);
   });
 });
 
 // ── POST /api/messages/send ───────────────────────────────────────────────────
-// Supervisor+ sends a message to a specific operator.
-// The payload includes the sender's ID so the operator can address a reply back.
+// Supervisor starts a new conversation with an operator.
 router.post('/send', requireAuth, requireRole('supervisor'), async (req, res) => {
   try {
     const { operatorId, message } = req.body;
@@ -64,80 +84,117 @@ router.post('/send', requireAuth, requireRole('supervisor'), async (req, res) =>
     }
 
     const operator = await queryOne(
-      'SELECT id, full_name FROM users WHERE id = $1', [operatorId]
+      'SELECT id, full_name FROM users WHERE id = $1 AND is_active = TRUE', [operatorId]
     );
     if (!operator) return res.status(404).json({ error: 'Operator not found.' });
 
-    const payload = JSON.stringify({
-      type:       'message',
-      from:       req.user.full_name,
-      fromId:     req.user.id,         // operator needs this to address the reply
-      fromRole:   req.user.role,
-      message:    message.trim(),
-      sentAt:     new Date().toISOString(),
-      canReply:   true,
+    // Create a new conversation record
+    const conversationId = crypto.randomUUID();
+    conversations.set(conversationId, {
+      supervisorId:   req.user.id,
+      supervisorName: req.user.full_name,
+      operatorId:     operator.id,
+      operatorName:   operator.full_name,
+      startedAt:      new Date().toISOString(),
     });
 
-    const conn = connections.get(operatorId);
-    if (conn && !conn.writableEnded) {
-      conn.write(`data: ${payload}\n\n`);
-      res.json({ ok: true, delivered: true, operatorName: operator.full_name });
-    } else {
-      res.json({ ok: true, delivered: false, operatorName: operator.full_name });
-    }
+    const payload = {
+      type:           'message',
+      conversationId,
+      from:           req.user.full_name,
+      fromId:         req.user.id,
+      fromRole:       req.user.role,
+      to:             operator.full_name,
+      toId:           operator.id,
+      message:        message.trim(),
+      sentAt:         new Date().toISOString(),
+    };
+
+    const delivered = push(operatorId, payload);
+    res.json({ ok: true, delivered, conversationId, operatorName: operator.full_name });
+
   } catch (err) {
-    console.error('Send message error:', err.message);
+    console.error('Send error:', err.message);
     res.status(500).json({ error: 'Could not send message.' });
   }
 });
 
 // ── POST /api/messages/reply ──────────────────────────────────────────────────
-// Operator replies to a message they received.
-// replyToId must be a valid supervisor/manager/admin ID — operators cannot
-// cold-message anyone, only reply to someone who has already messaged them.
+// Either side sends a message within an existing conversation.
 router.post('/reply', requireAuth, async (req, res) => {
   try {
-    const { replyToId, replyToName, originalMessage, message } = req.body;
+    const { conversationId, message } = req.body;
 
-    if (!replyToId || !message || !message.trim()) {
-      return res.status(400).json({ error: 'Reply target and message are required.' });
+    if (!conversationId || !message || !message.trim()) {
+      return res.status(400).json({ error: 'Conversation ID and message are required.' });
     }
     if (message.trim().length > 500) {
-      return res.status(400).json({ error: 'Reply must be 500 characters or fewer.' });
+      return res.status(400).json({ error: 'Message must be 500 characters or fewer.' });
     }
 
-    // Verify the target is a real user and has a supervisory role.
-    // This prevents operators constructing a payload to message each other.
-    const target = await queryOne(
-      `SELECT id, full_name, role FROM users
-       WHERE id = $1 AND role IN ('supervisor','manager','administrator') AND is_active = TRUE`,
-      [replyToId]
-    );
-    if (!target) {
-      return res.status(403).json({ error: 'Replies can only be sent to supervisors or managers.' });
+    const conv = conversations.get(conversationId);
+    if (!conv) {
+      return res.status(404).json({ error: 'Conversation not found or has been closed.' });
     }
 
-    const payload = JSON.stringify({
-      type:            'reply',
-      from:            req.user.full_name,
-      fromId:          req.user.id,
-      fromRole:        req.user.role,
-      message:         message.trim(),
-      originalMessage: originalMessage || null,   // shown as context in the popup
-      replyToName:     replyToName || target.full_name,
-      sentAt:          new Date().toISOString(),
-    });
+    const userId = req.user.id;
+    const isOperator    = userId === conv.operatorId;
+    const isSupervisor  = userId === conv.supervisorId;
 
-    const conn = connections.get(replyToId);
-    if (conn && !conn.writableEnded) {
-      conn.write(`data: ${payload}\n\n`);
-      res.json({ ok: true, delivered: true });
-    } else {
-      res.json({ ok: true, delivered: false });
+    if (!isOperator && !isSupervisor) {
+      return res.status(403).json({ error: 'You are not part of this conversation.' });
     }
+
+    // Determine who receives this reply
+    const recipientId = isOperator ? conv.supervisorId : conv.operatorId;
+
+    const payload = {
+      type:           'reply',
+      conversationId,
+      from:           req.user.full_name,
+      fromId:         userId,
+      fromRole:       req.user.role,
+      message:        message.trim(),
+      sentAt:         new Date().toISOString(),
+    };
+
+    const delivered = push(recipientId, payload);
+    res.json({ ok: true, delivered });
+
   } catch (err) {
     console.error('Reply error:', err.message);
     res.status(500).json({ error: 'Could not send reply.' });
+  }
+});
+
+// ── POST /api/messages/close ──────────────────────────────────────────────────
+// Supervisor closes the conversation. Sends a close signal to the operator.
+router.post('/close', requireAuth, requireRole('supervisor'), (req, res) => {
+  try {
+    const { conversationId } = req.body;
+    if (!conversationId) return res.status(400).json({ error: 'Conversation ID required.' });
+
+    const conv = conversations.get(conversationId);
+    if (!conv) return res.json({ ok: true }); // already gone
+
+    if (conv.supervisorId !== req.user.id) {
+      return res.status(403).json({ error: 'Only the conversation owner can close it.' });
+    }
+
+    // Notify the operator that the conversation is closed
+    push(conv.operatorId, {
+      type:           'close',
+      conversationId,
+      closedBy:       req.user.full_name,
+      closedAt:       new Date().toISOString(),
+    });
+
+    conversations.delete(conversationId);
+    res.json({ ok: true });
+
+  } catch (err) {
+    console.error('Close error:', err.message);
+    res.status(500).json({ error: 'Could not close conversation.' });
   }
 });
 

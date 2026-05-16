@@ -481,6 +481,29 @@
 
 <script src="app-v2.js"></script>
 
+<!-- ═══ CHAT DRAWER ══════════════════════════════════════════════════════════ -->
+<div id="chatDrawer" class="chat-drawer" hidden aria-label="Conversation" role="dialog">
+  <div class="chat-header">
+    <div class="chat-header-info">
+      <span class="chat-header-icon">💬</span>
+      <div>
+        <div class="chat-header-name" id="chatHeaderName"></div>
+        <div class="chat-header-sub"  id="chatHeaderSub">Conversation</div>
+      </div>
+    </div>
+    <button id="chatCloseBtn" class="chat-close-btn" aria-label="Close conversation">✕</button>
+  </div>
+  <div class="chat-messages" id="chatMessages" role="log" aria-live="polite"></div>
+  <div class="chat-input-wrap">
+    <textarea id="chatInput" class="chat-input" placeholder="Type a message… (Ctrl+Enter to send)" maxlength="500" rows="2"></textarea>
+    <div class="chat-input-footer">
+      <span class="chat-char-count" id="chatCharCount">0 / 500</span>
+      <button id="chatSendBtn" class="chat-send-btn">Send</button>
+    </div>
+  </div>
+</div>
+<div id="chatOverlay" class="chat-overlay" hidden></div>
+
 <!-- ═══ FOOTER BRANDING ════════════════════════════════════════════════ -->
 <footer class="app-footer" role="contentinfo">
   <span>Powered by <strong>SRSSupport</strong></span>

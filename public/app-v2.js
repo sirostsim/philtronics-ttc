@@ -2599,201 +2599,283 @@ document.addEventListener('visibilitychange', () => {
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   REAL-TIME MESSAGING  (SSE)
-   Operators receive messages from supervisors/managers via Server-Sent Events.
-   Managers/supervisors send via the wallboard message button.
+   REAL-TIME MESSAGING  (SSE + Chat Drawer)
+   All users connect via SSE. Supervisors start conversations, operators
+   reply. Either side can continue the thread until the supervisor closes it.
    ═══════════════════════════════════════════════════════════════════════════ */
+
 let _messageStream = null;
 
 function connectMessageStream() {
-  if (_messageStream) return; // already connected
+  if (_messageStream) return;
   try {
     _messageStream = new EventSource('/api/messages/listen', { withCredentials: true });
-
     _messageStream.addEventListener('message', e => {
-      try {
-        const data = JSON.parse(e.data);
-        showMessageNotification(data);
-      } catch (_) {}
+      try { handleIncomingSSE(JSON.parse(e.data)); } catch (_) {}
     });
-
     _messageStream.addEventListener('error', () => {
-      // Connection dropped — retry after 10s (browser retries automatically
-      // but we close and reopen to ensure a fresh auth check)
       disconnectMessageStream();
-      setTimeout(() => {
-        if (state.user) connectMessageStream();
-      }, 10000);
+      setTimeout(() => { if (state.user) connectMessageStream(); }, 10000);
     });
   } catch (_) {}
 }
-
 function disconnectMessageStream() {
-  if (_messageStream) {
-    _messageStream.close();
-    _messageStream = null;
+  if (_messageStream) { _messageStream.close(); _messageStream = null; }
+}
+
+// Route incoming SSE payloads to the right handler
+function handleIncomingSSE(data) {
+  if (!data || !data.type) return;
+  switch (data.type) {
+    case 'message': openChatDrawer(data); break;  // supervisor -> operator (new conversation)
+    case 'reply':   appendChatMessage(data); break; // either -> other (ongoing)
+    case 'close':   handleConversationClosed(data); break;
+  }
+  playPing(data.type);
+}
+
+/* ─── Chat Drawer ─────────────────────────────────────────────────────────── */
+
+// Conversation state — one active conversation at a time per session
+const chat = {
+  conversationId: null,
+  isSupervisor:   false,  // true = supervisor side (they initiated)
+  otherName:      null,
+  otherRole:      null,
+};
+
+const chatDrawer  = document.getElementById('chatDrawer');
+const chatOverlay = document.getElementById('chatOverlay');
+const chatMessages= document.getElementById('chatMessages');
+const chatInput   = document.getElementById('chatInput');
+const chatSendBtn = document.getElementById('chatSendBtn');
+const chatClose   = document.getElementById('chatCloseBtn');
+const chatCharCount = document.getElementById('chatCharCount');
+const chatHeaderName= document.getElementById('chatHeaderName');
+const chatHeaderSub = document.getElementById('chatHeaderSub');
+
+function openChatDrawer(data) {
+  // Called on the operator side when a supervisor sends them a message,
+  // or on the supervisor side when they tap Message on the wallboard.
+  chat.conversationId = data.conversationId;
+  chat.isSupervisor   = hasRole('supervisor');
+  chat.otherName      = chat.isSupervisor ? data.to : data.from;
+  chat.otherRole      = chat.isSupervisor ? 'operator' : data.fromRole;
+
+  chatHeaderName.textContent = chat.otherName;
+  chatHeaderSub.textContent  = chat.isSupervisor
+    ? 'Tap \u2715 to close the conversation'
+    : 'Reply below \u2014 your supervisor can see this';
+
+  chatMessages.innerHTML = '';
+
+  // Add the opening message
+  appendChatMessage(data, true);
+
+  chatDrawer.hidden  = false;
+  chatOverlay.hidden = false;
+  chatInput.value    = '';
+  chatCharCount.textContent = '0 / 500';
+  setTimeout(() => chatInput.focus(), 80);
+}
+
+function appendChatMessage(data, isOpening = false) {
+  // If drawer isn't open yet for a reply, open it first
+  if (chatDrawer.hidden && data.conversationId) {
+    chat.conversationId = data.conversationId;
+    chat.isSupervisor   = hasRole('supervisor');
+    chat.otherName      = data.from;
+    chat.otherRole      = data.fromRole;
+    chatHeaderName.textContent = data.from;
+    chatHeaderSub.textContent  = chat.isSupervisor
+      ? 'Tap \u2715 to close the conversation'
+      : 'Reply below \u2014 your supervisor can see this';
+    chatMessages.innerHTML = '';
+    chatDrawer.hidden  = false;
+    chatOverlay.hidden = false;
+    setTimeout(() => chatInput.focus(), 80);
+  }
+
+  if (data.conversationId && data.conversationId !== chat.conversationId) return;
+
+  const isMine = data.fromId === state.user.id;
+  const bubble = el('div', { className: 'chat-bubble-wrap' + (isMine ? ' mine' : ' theirs') });
+  const bbl    = el('div', { className: 'chat-bubble' + (isMine ? ' mine' : ' theirs') });
+  bbl.appendChild(el('div', { className: 'chat-bubble-text', textContent: data.message }));
+  bbl.appendChild(el('div', { className: 'chat-bubble-time',
+    textContent: new Date(data.sentAt).toLocaleTimeString('en-GB',
+      { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit' }) }));
+  bubble.appendChild(bbl);
+  chatMessages.appendChild(bubble);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+
+  // Pulse the drawer header if it was already open and not the opening message
+  if (!isOpening && !isMine) {
+    chatDrawer.classList.add('chat-pulse');
+    setTimeout(() => chatDrawer.classList.remove('chat-pulse'), 600);
   }
 }
 
-function showMessageNotification(data) {
-  // Remove any existing notification first
-  const existing = document.getElementById('msgNotification');
-  if (existing) existing.remove();
+function handleConversationClosed(data) {
+  if (data.conversationId !== chat.conversationId) return;
+  // Show a system message then close after a moment
+  const sys = el('div', { className: 'chat-system-msg',
+    textContent: data.closedBy + ' closed the conversation.' });
+  chatMessages.appendChild(sys);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+  chatInput.disabled    = true;
+  chatSendBtn.disabled  = true;
+  setTimeout(() => closeChatDrawer(false), 2500);
+}
 
-  const isReply = data.type === 'reply';
-  const notif   = el('div', {
-    id: 'msgNotification',
-    className: 'msg-notification' + (isReply ? ' msg-reply' : ''),
-    role: 'alert',
-  });
-
-  // ── Header ─────────────────────────────────────────────────────────────────
-  const header = el('div', { className: 'msg-notif-header' });
-  header.appendChild(el('span', {
-    className:   'msg-notif-from',
-    textContent: (isReply ? '\u21a9 Reply from ' : '\u2709 Message from ') + data.from,
-  }));
-  const closeBtn = el('button', { className: 'msg-notif-close', 'aria-label': 'Dismiss', textContent: '\u2715' });
-  closeBtn.addEventListener('click', () => notif.remove());
-  header.appendChild(closeBtn);
-  notif.appendChild(header);
-
-  // ── Original message context (shown on reply popups for supervisors) ───────
-  if (isReply && data.originalMessage) {
-    const ctx = el('div', { className: 'msg-notif-context' });
-    ctx.appendChild(el('span', { className: 'msg-notif-context-label', textContent: 'Re: ' }));
-    ctx.appendChild(el('span', { textContent: data.originalMessage }));
-    notif.appendChild(ctx);
+function closeChatDrawer(sendCloseSignal = true) {
+  if (sendCloseSignal && chat.isSupervisor && chat.conversationId) {
+    // Tell the operator the conversation is closed
+    POST('/messages/close', { conversationId: chat.conversationId }).catch(() => {});
   }
+  chat.conversationId  = null;
+  chatDrawer.hidden    = true;
+  chatOverlay.hidden   = true;
+  chatInput.disabled   = false;
+  chatSendBtn.disabled = false;
+  chatMessages.innerHTML = '';
+}
 
-  // ── Message body ───────────────────────────────────────────────────────────
-  notif.appendChild(el('p', { className: 'msg-notif-body', textContent: data.message }));
-  notif.appendChild(el('div', { className: 'msg-notif-time',
-    textContent: (isReply ? 'Replied' : 'Sent') + ' at ' +
-      new Date(data.sentAt).toLocaleTimeString('en-GB',
-        { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit' }) }));
+async function sendChatMessage() {
+  const text = chatInput.value.trim();
+  if (!text || !chat.conversationId) return;
+  chatSendBtn.disabled = true;
 
-  // ── Reply area (operators only, on incoming messages that allow reply) ─────
-  // Supervisors/managers receive replies but cannot reply back to replies.
-  if (!isReply && data.canReply && !hasRole('supervisor')) {
-    const replyWrap  = el('div', { className: 'msg-notif-reply-wrap' });
-    const replyInput = el('textarea', {
-      className:   'msg-notif-reply-input',
-      placeholder: 'Type your reply\u2026',
-      maxlength:   '500',
-      rows:        '2',
-    });
-    const replyFooter = el('div', { className: 'msg-notif-reply-footer' });
-    const charCount   = el('span', { className: 'msg-notif-char', textContent: '0 / 500' });
-    replyInput.addEventListener('input', () => {
-      charCount.textContent = replyInput.value.length + ' / 500';
-    });
-    const sendBtn = el('button', { className: 'msg-notif-send', textContent: 'Send Reply' });
-    sendBtn.addEventListener('click', async () => {
-      const reply = replyInput.value.trim();
-      if (!reply) { replyInput.focus(); return; }
-      sendBtn.disabled = true; sendBtn.textContent = 'Sending\u2026';
-      try {
-        const result = await POST('/messages/reply', {
-          replyToId:       data.fromId,
-          replyToName:     data.from,
-          originalMessage: data.message,
-          message:         reply,
-        });
-        toast(result.delivered
-          ? 'Reply sent to ' + data.from
-          : data.from + ' is no longer connected \u2014 reply not delivered.',
-          result.delivered ? 'success' : '');
-        notif.remove();
-      } catch (err) {
-        toast('Could not send reply: ' + err.message, 'error');
-        sendBtn.disabled = false; sendBtn.textContent = 'Send Reply';
-      }
-    });
-    // Ctrl+Enter to send
-    replyInput.addEventListener('keydown', e => {
-      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) sendBtn.click();
-    });
-    replyFooter.appendChild(charCount);
-    replyFooter.appendChild(sendBtn);
-    replyWrap.appendChild(replyInput);
-    replyWrap.appendChild(replyFooter);
-    notif.appendChild(replyWrap);
-  }
-
-  document.body.appendChild(notif);
-
-  // Audio ping — lower tone for replies so supervisors can distinguish
   try {
-    const actx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc   = actx.createOscillator();
-    const gain  = actx.createGain();
-    osc.connect(gain); gain.connect(actx.destination);
-    osc.frequency.value = isReply ? 660 : 880;
-    gain.gain.setValueAtTime(0.15, actx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.4);
-    osc.start(actx.currentTime);
-    osc.stop(actx.currentTime + 0.4);
-  } catch (_) {}
+    let result;
+    if (chat.isSupervisor && !chatMessages.children.length) {
+      // Should not happen — supervisor always opens via openSendMessageModal
+      throw new Error('No active conversation.');
+    } else {
+      // Ongoing reply from either side
+      result = await POST('/messages/reply', {
+        conversationId: chat.conversationId,
+        message: text,
+      });
+    }
 
-  // Notifications stay until dismissed — no auto-remove timeout.
+    if (!result.delivered) {
+      toast(chat.otherName + ' is no longer connected \u2014 message not delivered.', '');
+    }
+
+    // Append own message immediately (optimistic)
+    appendChatMessage({
+      conversationId: chat.conversationId,
+      from:     state.user.fullName,
+      fromId:   state.user.id,
+      fromRole: state.user.role,
+      message:  text,
+      sentAt:   new Date().toISOString(),
+    });
+
+    chatInput.value = '';
+    chatCharCount.textContent = '0 / 500';
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    chatSendBtn.disabled = false;
+    chatInput.focus();
+  }
 }
 
-// ── Send message modal (supervisor/manager, opened from wallboard tile) ───────
-function openSendMessageModal(operatorId, operatorName) {
-  const body = el('div', {});
-  body.appendChild(el('p', {
-    textContent: 'Send a message to ' + operatorName + '. It will appear as a popup on their screen immediately.',
-    style: 'margin-bottom:14px;font-size:14px;color:var(--text2);',
-  }));
-  const textarea = el('textarea', {
-    id: 'msgText',
-    placeholder: 'Type your message here…',
-    maxlength: '500',
-    rows: '4',
-    style: 'width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:6px;' +
-           'color:var(--text);font-size:15px;padding:12px;resize:vertical;font-family:var(--font-body);',
-  });
-  body.appendChild(textarea);
-  const charCount = el('div', { style: 'font-size:11px;color:var(--text3);text-align:right;margin-top:4px;',
-    textContent: '0 / 500' });
-  textarea.addEventListener('input', () => {
-    charCount.textContent = textarea.value.length + ' / 500';
-  });
-  body.appendChild(charCount);
-  const errDiv = el('div', { className: 'error-msg', role: 'alert' });
-  body.appendChild(errDiv);
+// Wire up drawer controls
+chatSendBtn.addEventListener('click', sendChatMessage);
+chatInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendChatMessage(); }
+});
+chatInput.addEventListener('input', () => {
+  chatCharCount.textContent = chatInput.value.length + ' / 500';
+});
+chatClose.addEventListener('click', () => closeChatDrawer(true));
+chatOverlay.addEventListener('click', () => {
+  // Operators: clicking overlay dismisses without sending a close signal
+  // Supervisors: clicking overlay does NOT close — they must use the X button
+  // to ensure they deliberately end the conversation
+  if (!chat.isSupervisor) closeChatDrawer(false);
+});
 
-  const btnSend   = el('button', { className: 'btn btn-primary', textContent: '✉ Send Message' });
+// ── openSendMessageModal → now opens the chat drawer ─────────────────────────
+async function openSendMessageModal(operatorId, operatorName) {
+  const body    = el('div', {});
+  const msgArea = el('textarea', {
+    id:          'initMsgText',
+    placeholder: 'Type your opening message\u2026',
+    maxlength:   '500',
+    rows:        '4',
+    style:       'width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:15px;padding:12px;resize:vertical;font-family:var(--font-body);',
+  });
+  body.appendChild(el('p', { textContent: 'Start a conversation with ' + operatorName + '. You can continue chatting until you close the conversation.',
+    style: 'margin-bottom:14px;font-size:14px;color:var(--text2);' }));
+  body.appendChild(msgArea);
+  const charCount = el('div', { style: 'font-size:11px;color:var(--text3);text-align:right;margin-top:4px;', textContent: '0 / 500' });
+  msgArea.addEventListener('input', () => { charCount.textContent = msgArea.value.length + ' / 500'; });
+  body.appendChild(charCount);
+  const errDiv = el('div', { className: 'error-msg', role: 'alert' }); body.appendChild(errDiv);
+
+  const btnSend   = el('button', { className: 'btn btn-primary', textContent: '\uD83D\uDCAC Start Conversation' });
   const btnCancel = el('button', { className: 'btn btn-ghost',   textContent: 'Cancel' });
   btnCancel.addEventListener('click', closeModal);
-
   btnSend.addEventListener('click', async () => {
-    const message = textarea.value.trim();
+    const message = msgArea.value.trim();
     if (!message) { errDiv.textContent = 'Please type a message.'; return; }
-    btnSend.disabled = true; btnSend.textContent = 'Sending…';
+    btnSend.disabled = true; btnSend.textContent = 'Starting\u2026';
     try {
       const result = await POST('/messages/send', { operatorId, message });
       closeModal();
       if (result.delivered) {
-        toast('Message delivered to ' + result.operatorName, 'success');
+        // Open the chat drawer on the supervisor side
+        chat.conversationId = result.conversationId;
+        chat.isSupervisor   = true;
+        chat.otherName      = operatorName;
+        chatHeaderName.textContent = operatorName;
+        chatHeaderSub.textContent  = 'Tap \u2715 to close the conversation';
+        chatMessages.innerHTML = '';
+        // Append the opening message as mine
+        appendChatMessage({
+          conversationId: result.conversationId,
+          from:    state.user.fullName,
+          fromId:  state.user.id,
+          fromRole:state.user.role,
+          message,
+          sentAt:  new Date().toISOString(),
+        }, true);
+        chatDrawer.hidden  = false;
+        chatOverlay.hidden = false;
+        setTimeout(() => chatInput.focus(), 80);
       } else {
-        toast(result.operatorName + ' is not currently logged in — message not delivered.', '');
+        toast(operatorName + ' is not currently logged in \u2014 message not delivered.', '');
       }
     } catch (err) {
       errDiv.textContent = err.message;
-      btnSend.disabled = false; btnSend.textContent = '✉ Send Message';
+      btnSend.disabled = false; btnSend.textContent = '\uD83D\uDCAC Start Conversation';
     }
   });
-
-  // Allow Ctrl+Enter to send
-  textarea.addEventListener('keydown', e => {
+  msgArea.addEventListener('keydown', e => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) btnSend.click();
   });
-
-  openModal('Send Message to ' + operatorName, body, [btnCancel, btnSend]);
-  setTimeout(() => textarea.focus(), 50);
+  openModal('Message ' + operatorName, body, [btnCancel, btnSend]);
+  setTimeout(() => msgArea.focus(), 50);
 }
+
+function playPing(type) {
+  try {
+    const actx  = new (window.AudioContext || window.webkitAudioContext)();
+    const osc   = actx.createOscillator();
+    const gain  = actx.createGain();
+    osc.connect(gain); gain.connect(actx.destination);
+    osc.frequency.value = type === 'reply' ? 660 : 880;
+    gain.gain.setValueAtTime(0.12, actx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.4);
+    osc.start(actx.currentTime);
+    osc.stop(actx.currentTime + 0.4);
+  } catch (_) {}
+}
+
 
 /* ═══════════════════════════════════════════════════════════════════════════
    BOOT
