@@ -2234,3 +2234,11 @@ button.topbar-brand:focus-visible {
   text-transform: uppercase;
   letter-spacing: .06em;
 }
+
+.report-chart-wrap {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 8px;
+}

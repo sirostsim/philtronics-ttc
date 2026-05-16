@@ -13,6 +13,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -436,22 +437,31 @@
       <!-- Summary cards -->
       <div class="stat-cards" id="reportStatCards" style="margin-bottom:28px;"></div>
 
-      <!-- Item performance vs targets -->
-      <div class="report-section">
-        <h3 class="section-heading">Job Times vs Targets — by Item</h3>
-        <div id="reportItemTable" class="dash-table-wrap"></div>
-      </div>
-
-      <!-- Operator performance -->
-      <div class="report-section">
-        <h3 class="section-heading">Operator Performance</h3>
-        <div id="reportOperatorTable" class="dash-table-wrap"></div>
-      </div>
-
-      <!-- Daily trend -->
+      <!-- Daily trend chart + table -->
       <div class="report-section">
         <h3 class="section-heading">Daily Trend</h3>
-        <div id="reportTrendTable" class="dash-table-wrap"></div>
+        <div class="report-chart-wrap">
+          <canvas id="chartDailyTrend"></canvas>
+        </div>
+        <div id="reportTrendTable" class="dash-table-wrap" style="margin-top:16px;"></div>
+      </div>
+
+      <!-- On-time vs over target by item (stacked bar) -->
+      <div class="report-section">
+        <h3 class="section-heading">On-Time vs Over Target — by Item</h3>
+        <div class="report-chart-wrap">
+          <canvas id="chartItemOnTime"></canvas>
+        </div>
+        <div id="reportItemTable" class="dash-table-wrap" style="margin-top:16px;"></div>
+      </div>
+
+      <!-- Operator comparison chart + table -->
+      <div class="report-section">
+        <h3 class="section-heading">Operator Performance</h3>
+        <div class="report-chart-wrap">
+          <canvas id="chartOperator"></canvas>
+        </div>
+        <div id="reportOperatorTable" class="dash-table-wrap" style="margin-top:16px;"></div>
       </div>
 
       <!-- Overdue analysis -->
@@ -462,6 +472,7 @@
 
     </div>
   </section>
+
   <section id="pageAdmin" class="page" aria-label="User Management" hidden>
     <div class="page-content">
       <div class="page-heading-row">

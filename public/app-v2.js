@@ -2895,12 +2895,23 @@ function playPing(type) {
 }
 
 
+
 /* ═══════════════════════════════════════════════════════════════════════════
    REPORTS PAGE  (Manager / Administrator)
    ═══════════════════════════════════════════════════════════════════════════ */
 
+// Chart instances — destroyed and recreated on each report run
+const _charts = {};
+function destroyChart(key) {
+  if (_charts[key]) { _charts[key].destroy(); delete _charts[key]; }
+}
+const C = {
+  green: '#38a169', red: '#e53e3e', amber: '#d97706',
+  blue: '#4299e1', grid: 'rgba(255,255,255,0.07)', text: '#a0aec0',
+};
+const CFONT = { family: "'Barlow', sans-serif", size: 12 };
+
 function loadReportsPage() {
-  // Default: last 30 days
   const today = new Date().toISOString().slice(0, 10);
   const ago30 = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().slice(0, 10);
   if (!document.getElementById('reportFrom').value) {
@@ -2929,9 +2940,8 @@ async function runReport() {
   if (to)   { const d = new Date(to); d.setHours(23,59,59,999); params.set('to', d.toISOString()); }
   const qs = params.toString();
 
-  // Set all sections to loading
   ['reportStatCards','reportItemTable','reportOperatorTable','reportTrendTable','reportOverdueGrid']
-    .forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = '<div class="empty-state">Loading…</div>'; });
+    .forEach(id => { const n = document.getElementById(id); if (n) n.innerHTML = '<div class="empty-state">Loading\u2026</div>'; });
 
   const [stats, operators, trends, overdue] = await Promise.all([
     GET(`/export/stats?${qs}`).catch(() => null),
@@ -2941,11 +2951,117 @@ async function runReport() {
   ]);
 
   renderReportStatCards(stats);
-  renderReportItemTable(stats?.byItem || []);
-  renderReportOperatorTable(operators);
+  renderChartDailyTrend(trends);
   renderReportTrendTable(trends);
+  renderChartItemOnTime(stats?.byItem || []);
+  renderReportItemTable(stats?.byItem || []);
+  renderChartOperator(operators);
+  renderReportOperatorTable(operators);
   renderReportOverdue(overdue);
 }
+
+/* ── Charts ──────────────────────────────────────────────────────────────── */
+
+function renderChartDailyTrend(rows) {
+  destroyChart('dailyTrend');
+  const canvas = document.getElementById('chartDailyTrend');
+  if (!canvas || !rows.length) return;
+  const labels  = rows.map(r => new Date(r.day).toLocaleDateString('en-GB', { day:'2-digit', month:'short' }));
+  const jobs    = rows.map(r => r.jobs_completed);
+  const overdue = rows.map(r => r.overdue_count);
+  const avgMins = rows.map(r => r.avg_seconds ? +(r.avg_seconds / 60).toFixed(1) : 0);
+  _charts.dailyTrend = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Jobs Completed', data: jobs, backgroundColor: C.blue, borderRadius: 4, yAxisID: 'yJobs' },
+        { label: 'Over Target',    data: overdue, backgroundColor: C.red, borderRadius: 4, yAxisID: 'yJobs' },
+        { label: 'Avg Time (mins)', data: avgMins, type: 'line', borderColor: C.amber,
+          backgroundColor: 'transparent', pointBackgroundColor: C.amber, pointRadius: 3, tension: 0.3, yAxisID: 'yMins' },
+      ],
+    },
+    options: {
+      responsive: true,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { labels: { color: C.text, font: CFONT } } },
+      scales: {
+        x:     { ticks: { color: C.text, font: CFONT }, grid: { color: C.grid } },
+        yJobs: { ticks: { color: C.text, font: CFONT }, grid: { color: C.grid }, beginAtZero: true,
+                 title: { display: true, text: 'Jobs', color: C.text, font: CFONT } },
+        yMins: { position: 'right', ticks: { color: C.amber, font: CFONT }, grid: { drawOnChartArea: false },
+                 beginAtZero: true, title: { display: true, text: 'Avg Mins', color: C.amber, font: CFONT } },
+      },
+    },
+  });
+}
+
+function renderChartItemOnTime(rows) {
+  destroyChart('itemOnTime');
+  const canvas = document.getElementById('chartItemOnTime');
+  if (!canvas) return;
+  const withTarget = rows.filter(r => r.target_seconds).slice(0, 12);
+  if (!withTarget.length) { canvas.closest('.report-chart-wrap').style.display='none'; return; }
+  canvas.closest('.report-chart-wrap').style.display='';
+  const labels  = withTarget.map(r => r.item_number);
+  const over    = withTarget.map(r => Math.round(r.avg_seconds) > r.target_seconds ? r.count : 0);
+  const onTime  = withTarget.map((r, i) => r.count - over[i]);
+  _charts.itemOnTime = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'On Time',     data: onTime, backgroundColor: C.green, borderRadius: 4 },
+        { label: 'Over Target', data: over,   backgroundColor: C.red,   borderRadius: 4 },
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { labels: { color: C.text, font: CFONT } }, tooltip: { mode: 'index', intersect: false } },
+      scales: {
+        x: { stacked: true, ticks: { color: C.text, font: CFONT }, grid: { color: C.grid } },
+        y: { stacked: true, ticks: { color: C.text, font: CFONT }, grid: { color: C.grid }, beginAtZero: true,
+             title: { display: true, text: 'Jobs', color: C.text, font: CFONT } },
+      },
+    },
+  });
+}
+
+function renderChartOperator(rows) {
+  destroyChart('operator');
+  const canvas = document.getElementById('chartOperator');
+  if (!canvas || !rows.length) return;
+  const labels  = rows.map(r => r.operator_name.split(' ')[0]);
+  const jobs    = rows.map(r => r.jobs_completed);
+  const overdue = rows.map(r => r.overdue_count);
+  const avgMins = rows.map(r => r.avg_seconds ? +(r.avg_seconds / 60).toFixed(1) : 0);
+  _charts.operator = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Jobs Completed', data: jobs,    backgroundColor: C.blue, borderRadius: 4, yAxisID: 'yJobs' },
+        { label: 'Over Target',    data: overdue, backgroundColor: C.red,  borderRadius: 4, yAxisID: 'yJobs' },
+        { label: 'Avg Time (mins)', data: avgMins, type: 'line', borderColor: C.amber,
+          backgroundColor: 'transparent', pointBackgroundColor: C.amber, pointRadius: 4, yAxisID: 'yMins' },
+      ],
+    },
+    options: {
+      responsive: true,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { labels: { color: C.text, font: CFONT } } },
+      scales: {
+        x:     { ticks: { color: C.text, font: CFONT }, grid: { color: C.grid } },
+        yJobs: { ticks: { color: C.text, font: CFONT }, grid: { color: C.grid }, beginAtZero: true,
+                 title: { display: true, text: 'Jobs', color: C.text, font: CFONT } },
+        yMins: { position: 'right', ticks: { color: C.amber, font: CFONT }, grid: { drawOnChartArea: false },
+                 beginAtZero: true, title: { display: true, text: 'Avg Mins', color: C.amber, font: CFONT } },
+      },
+    },
+  });
+}
+
+/* ── Tables ──────────────────────────────────────────────────────────────── */
 
 function renderReportStatCards(stats) {
   const container = document.getElementById('reportStatCards');
@@ -2956,13 +3072,11 @@ function renderReportStatCards(stats) {
   const withTarget = byItem.filter(r => r.target_seconds);
   const overdueItems = withTarget.filter(r => Math.round(r.avg_seconds) > r.target_seconds);
   const onTimeRate = withTarget.length
-    ? Math.round(((withTarget.length - overdueItems.length) / withTarget.length) * 100)
-    : null;
-
+    ? Math.round(((withTarget.length - overdueItems.length) / withTarget.length) * 100) : null;
   [
-    { label: 'Jobs Completed',  value: totalJobs },
-    { label: 'Item Types',      value: byItem.length },
-    { label: 'On-Time Rate',    value: onTimeRate != null ? onTimeRate + '%' : '—' },
+    { label: 'Jobs Completed',    value: totalJobs },
+    { label: 'Item Types',        value: byItem.length },
+    { label: 'On-Time Rate',      value: onTimeRate != null ? onTimeRate + '%' : '\u2014' },
     { label: 'Items Over Target', value: overdueItems.length },
   ].forEach(c => {
     container.appendChild(el('div', { className: 'stat-card' },
@@ -2981,32 +3095,25 @@ function renderReportItemTable(rows) {
   }
   const table = el('table');
   table.appendChild(el('thead', {}, el('tr', {},
-    el('th', { textContent: 'Item' }),
-    el('th', { textContent: 'Jobs' }),
-    el('th', { textContent: 'Avg Actual' }),
-    el('th', { textContent: 'Min' }),
-    el('th', { textContent: 'Max' }),
-    el('th', { textContent: 'Target' }),
-    el('th', { textContent: 'Avg Delta' }),
-    el('th', { textContent: 'Status' }),
+    el('th', { textContent: 'Item' }), el('th', { textContent: 'Jobs' }),
+    el('th', { textContent: 'Avg Actual' }), el('th', { textContent: 'Min' }),
+    el('th', { textContent: 'Max' }), el('th', { textContent: 'Target' }),
+    el('th', { textContent: 'Avg Delta' }), el('th', { textContent: 'Status' }),
   )));
   const tbody = el('tbody', {});
   rows.forEach(r => {
     const hasTarget = r.target_seconds != null;
     const delta = hasTarget ? Math.round(r.avg_seconds) - r.target_seconds : null;
-    const statusText = delta == null ? '—' : delta > 0 ? '⚠ Over' : '✓ On time';
-    const statusCls  = delta == null ? '' : delta > 0 ? 'dash-over' : 'dash-under';
-    const tr = el('tr', {},
+    tbody.appendChild(el('tr', {},
       el('td', { textContent: r.item_number, className: 'perf-item' }),
       el('td', { textContent: r.count }),
       el('td', { textContent: formatDuration(Math.round(r.avg_seconds)) }),
       el('td', { textContent: formatDuration(r.min_seconds) }),
       el('td', { textContent: formatDuration(r.max_seconds) }),
-      el('td', { textContent: hasTarget ? formatHM(r.target_seconds) : '—', className: hasTarget ? '' : 'dash-no-target' }),
-      el('td', { textContent: delta == null ? '—' : (delta >= 0 ? '+' : '') + formatDuration(Math.abs(delta)), className: delta == null ? 'dash-no-target' : delta > 0 ? 'dash-over' : 'dash-under' }),
-      el('td', { textContent: statusText, className: statusCls }),
-    );
-    tbody.appendChild(tr);
+      el('td', { textContent: hasTarget ? formatHM(r.target_seconds) : '\u2014', className: hasTarget ? '' : 'dash-no-target' }),
+      el('td', { textContent: delta == null ? '\u2014' : (delta >= 0 ? '+' : '') + formatDuration(Math.abs(delta)), className: delta == null ? 'dash-no-target' : delta > 0 ? 'dash-over' : 'dash-under' }),
+      el('td', { textContent: delta == null ? '\u2014' : delta > 0 ? '\u26a0 Over' : '\u2713 On time', className: delta == null ? '' : delta > 0 ? 'dash-over' : 'dash-under' }),
+    ));
   });
   table.appendChild(tbody);
   wrap.appendChild(table);
@@ -3021,19 +3128,15 @@ function renderReportOperatorTable(rows) {
   }
   const table = el('table');
   table.appendChild(el('thead', {}, el('tr', {},
-    el('th', { textContent: 'Operator' }),
-    el('th', { textContent: 'Jobs' }),
-    el('th', { textContent: 'Avg Time' }),
-    el('th', { textContent: 'Fastest' }),
-    el('th', { textContent: 'Slowest' }),
-    el('th', { textContent: 'Over Target' }),
+    el('th', { textContent: 'Operator' }), el('th', { textContent: 'Jobs' }),
+    el('th', { textContent: 'Avg Time' }), el('th', { textContent: 'Fastest' }),
+    el('th', { textContent: 'Slowest' }), el('th', { textContent: 'Over Target' }),
     el('th', { textContent: 'Time Checks' }),
   )));
   const tbody = el('tbody', {});
   rows.forEach(r => {
-    const overduePct = r.jobs_completed > 0
-      ? Math.round((r.overdue_count / r.jobs_completed) * 100) : 0;
-    const tr = el('tr', {},
+    const overduePct = r.jobs_completed > 0 ? Math.round((r.overdue_count / r.jobs_completed) * 100) : 0;
+    tbody.appendChild(el('tr', {},
       el('td', { textContent: r.operator_name, className: 'perf-item' }),
       el('td', { textContent: r.jobs_completed }),
       el('td', { textContent: formatDuration(r.avg_seconds) }),
@@ -3041,8 +3144,7 @@ function renderReportOperatorTable(rows) {
       el('td', { textContent: formatDuration(r.max_seconds) }),
       el('td', { textContent: r.overdue_count + (overduePct ? ` (${overduePct}%)` : ''), className: r.overdue_count > 0 ? 'dash-over' : '' }),
       el('td', { textContent: r.time_check_count }),
-    );
-    tbody.appendChild(tr);
+    ));
   });
   table.appendChild(tbody);
   wrap.appendChild(table);
@@ -3057,22 +3159,18 @@ function renderReportTrendTable(rows) {
   }
   const table = el('table');
   table.appendChild(el('thead', {}, el('tr', {},
-    el('th', { textContent: 'Date' }),
-    el('th', { textContent: 'Jobs Completed' }),
-    el('th', { textContent: 'Avg Time' }),
-    el('th', { textContent: 'Over Target' }),
+    el('th', { textContent: 'Date' }), el('th', { textContent: 'Jobs Completed' }),
+    el('th', { textContent: 'Avg Time' }), el('th', { textContent: 'Over Target' }),
   )));
   const tbody = el('tbody', {});
-  // Show most recent first
   [...rows].reverse().forEach(r => {
     const date = new Date(r.day).toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
-    const tr = el('tr', {},
+    tbody.appendChild(el('tr', {},
       el('td', { textContent: date }),
       el('td', { textContent: r.jobs_completed }),
-      el('td', { textContent: r.avg_seconds ? formatDuration(r.avg_seconds) : '—' }),
+      el('td', { textContent: r.avg_seconds ? formatDuration(r.avg_seconds) : '\u2014' }),
       el('td', { textContent: r.overdue_count, className: r.overdue_count > 0 ? 'dash-over' : '' }),
-    );
-    tbody.appendChild(tr);
+    ));
   });
   table.appendChild(tbody);
   wrap.appendChild(table);
@@ -3082,18 +3180,15 @@ function renderReportOverdue(overdue) {
   const grid = document.getElementById('reportOverdueGrid');
   grid.innerHTML = '';
 
-  // By item
   const itemCard = el('div', { className: 'report-overdue-card' });
-  itemCard.appendChild(el('div', { className: 'report-overdue-title', textContent: 'Most Overdue — by Item' }));
+  itemCard.appendChild(el('div', { className: 'report-overdue-title', textContent: 'Most Overdue \u2014 by Item' }));
   if (!overdue.byItem || !overdue.byItem.length) {
     itemCard.appendChild(el('div', { className: 'empty-state', textContent: 'No overdue jobs in this period.' }));
   } else {
     const table = el('table');
     table.appendChild(el('thead', {}, el('tr', {},
-      el('th', { textContent: 'Item' }),
-      el('th', { textContent: 'Times Over' }),
-      el('th', { textContent: 'Avg Overrun' }),
-      el('th', { textContent: 'Worst Overrun' }),
+      el('th', { textContent: 'Item' }), el('th', { textContent: 'Times Over' }),
+      el('th', { textContent: 'Avg Overrun' }), el('th', { textContent: 'Worst Overrun' }),
     )));
     const tbody = el('tbody', {});
     overdue.byItem.forEach(r => {
@@ -3109,16 +3204,14 @@ function renderReportOverdue(overdue) {
   }
   grid.appendChild(itemCard);
 
-  // By operator
   const opCard = el('div', { className: 'report-overdue-card' });
-  opCard.appendChild(el('div', { className: 'report-overdue-title', textContent: 'Most Overdue — by Operator' }));
+  opCard.appendChild(el('div', { className: 'report-overdue-title', textContent: 'Most Overdue \u2014 by Operator' }));
   if (!overdue.byOperator || !overdue.byOperator.length) {
     opCard.appendChild(el('div', { className: 'empty-state', textContent: 'No overdue jobs in this period.' }));
   } else {
     const table = el('table');
     table.appendChild(el('thead', {}, el('tr', {},
-      el('th', { textContent: 'Operator' }),
-      el('th', { textContent: 'Times Over' }),
+      el('th', { textContent: 'Operator' }), el('th', { textContent: 'Times Over' }),
       el('th', { textContent: 'Avg Overrun' }),
     )));
     const tbody = el('tbody', {});
@@ -3134,6 +3227,7 @@ function renderReportOverdue(overdue) {
   }
   grid.appendChild(opCard);
 }
+
 
 
 init();
