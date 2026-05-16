@@ -2013,7 +2013,6 @@ button.topbar-brand:focus-visible {
   inset: 0;
   background: rgba(0,0,0,.35);
   z-index: 1100;
-  backdrop-filter: blur(2px);
 }
 
 .chat-drawer {
