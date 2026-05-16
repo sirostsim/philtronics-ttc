@@ -778,7 +778,7 @@ function renderUserList(users) {
       const fa2Btn = el('button', {
         className:'btn btn-ghost',
         textContent: u.totpEnabled ? 'Reset 2FA' : '2FA: Off',
-        title: u.totpEnabled ? 'Reset this user\'s 2FA' : '2FA not yet configured',
+        title: u.totpEnabled ? 'Reset this user\'s two-factor authentication (e.g. lost phone)' : '2FA not yet configured by this user',
         style: u.totpEnabled ? '' : 'color:var(--red);opacity:.7;',
       });
       if (u.totpEnabled) fa2Btn.addEventListener('click', () => confirmReset2FA(u));
@@ -815,7 +815,7 @@ function openUserModal(user) {
     body.appendChild(el('div', { className:'form-group', style:'flex-direction:row;align-items:center;gap:10px;' },
       chk, el('label', { for:'mActive', textContent:'Account Active' })));
   }
-  const errDiv  = el('div', { className:'error-msg', role:'alert' }); body.appendChild(errDiv);
+  const errDiv = el('div', { className:'error-msg', role:'alert' }); body.appendChild(errDiv);
   const btnSave   = el('button', { className:'btn btn-primary', textContent:isNew?'Create User':'Save Changes' });
   const btnCancel = el('button', { className:'btn btn-ghost',   textContent:'Cancel' });
   btnCancel.addEventListener('click', closeModal);
@@ -865,7 +865,7 @@ function openResetPasswordModal(user) {
 
 function confirmReset2FA(user) {
   const body = el('div', {});
-  body.appendChild(el('p', { textContent:'This will disable 2FA for '+user.fullName+'. They will be prompted to set it up again on next login.', style:'margin-bottom:12px;' }));
+  body.appendChild(el('p', { textContent:'This will disable two-factor authentication for '+user.fullName+' (@'+user.username+'). They will be prompted to set it up again on their next login.', style:'margin-bottom:12px;' }));
   body.appendChild(el('p', { textContent:'Only do this if they have lost access to their authenticator app.', style:'color:var(--red);font-size:13px;font-weight:600;' }));
   const errDiv = el('div', { className:'error-msg', role:'alert' }); body.appendChild(errDiv);
   const btnConfirm = el('button', { className:'btn btn-danger', textContent:'Reset 2FA' });
@@ -873,7 +873,7 @@ function confirmReset2FA(user) {
   btnCancel.addEventListener('click', closeModal);
   btnConfirm.addEventListener('click', async () => {
     btnConfirm.disabled=true;
-    try { await api('DELETE', '/totp/reset/'+user.id); toast('2FA reset for '+user.fullName,'success'); closeModal(); loadAdminPage(); }
+    try { await api('DELETE', '/totp/reset/'+user.id); toast('2FA reset for '+user.fullName+'. They will be prompted to set it up again.','success'); closeModal(); loadAdminPage(); }
     catch (err) { errDiv.textContent=err.message; btnConfirm.disabled=false; }
   });
   openModal('Reset Two-Factor Authentication', body, [btnCancel, btnConfirm]);
@@ -1030,7 +1030,7 @@ const scanner = (() => {
       setStatus('Scanning \u2014 point at a barcode or QR code');
       tryEnableTorch(); startScanLoop();
     } catch(err) {
-      if (err.name==='NotAllowedError') setStatus('Camera permission denied.','error');
+      if (err.name==='NotAllowedError') setStatus('Camera permission denied. Tap the camera icon in your browser address bar to allow access.','error');
       else if (err.name==='NotFoundError') setStatus('No camera found on this device.','error');
       else setStatus('Camera error: '+err.message,'error');
     }
@@ -1098,7 +1098,7 @@ async function loadWallboard() {
 }
 
 document.addEventListener('visibilitychange', () => {
-  if (state.currentPage==='wallboard' && document.visibilityState==='visible') refreshWallboard();
+  if (state.currentPage==='wallboard'  && document.visibilityState==='visible') refreshWallboard();
   if (state.currentPage==='wallboardc' && document.visibilityState==='visible') refreshWallboardCompact();
 });
 
@@ -1156,6 +1156,7 @@ async function refreshWallboard() {
       if (t.workstation) tile.appendChild(el('div',{className:'wb-notes',textContent:'\uD83D\uDDA5 '+t.workstation}));
       if (t.woNumber)    tile.appendChild(el('div',{className:'wb-notes',textContent:'\uD83D\uDCCB W/O: '+t.woNumber}));
       if (t.timeCheck)   tile.appendChild(el('span',{className:'badge badge-timecheck',style:'margin-top:6px;display:inline-block;',textContent:'\u2713 Time Check'}));
+
       if (t.targetSeconds) {
         const pct=elapsed/t.targetSeconds, pctCapped=Math.min(1,pct), remaining=t.targetSeconds-elapsed;
         const targetWrap=el('div',{className:'wb-target-wrap'});
@@ -1169,10 +1170,12 @@ async function refreshWallboard() {
           'data-startedat':t.startedAt,'data-targetseconds':String(t.targetSeconds)}));
         targetWrap.appendChild(bar); tile.appendChild(targetWrap);
       }
+
       if (hasRole('supervisor')) {
         tile.appendChild(el('button',{className:'wb-msg-btn',textContent:'\u2709 Message',
           'aria-label':'Send message to '+t.operatorName,onclick:()=>openSendMessageModal(t.operatorId,t.operatorName)}));
       }
+
       container.appendChild(tile);
     });
     startWallboardTick();
@@ -1434,27 +1437,29 @@ const ctxMsgBtn=document.getElementById('wbContextMsg');
 
 function openContextMenu(e, timerData) {
   if (!hasRole('supervisor')) return;
-  e.preventDefault(); _ctxTimer=timerData;
+  e.preventDefault();
+  e.stopPropagation();
+  _ctxTimer=timerData;
   ctxPause.hidden=timerData.isPaused; ctxResume.hidden=!timerData.isPaused;
   const infoEl=document.getElementById('wbContextInfo');
   if (infoEl) infoEl.textContent=timerData.operatorName+' \u2014 '+timerData.itemNumber;
   ctxMenu.hidden=false;
-  const x=Math.min(e.clientX||(e.touches&&e.touches[0]?e.touches[0].clientX:0),window.innerWidth-200);
-  const y=Math.min(e.clientY||(e.touches&&e.touches[0]?e.touches[0].clientY:0),window.innerHeight-150);
+  const x=Math.min(e.clientX||(e.touches&&e.touches[0]?e.touches[0].clientX:0),window.innerWidth-210);
+  const y=Math.min(e.clientY||(e.touches&&e.touches[0]?e.touches[0].clientY:0),window.innerHeight-160);
   ctxMenu.style.left=x+'px'; ctxMenu.style.top=y+'px';
 }
 function closeContextMenu(){ctxMenu.hidden=true;_ctxTimer=null;}
-document.addEventListener('click',e=>{if(!ctxMenu.contains(e.target))closeContextMenu();});
-document.addEventListener('keydown',e=>{if(e.key==='Escape')closeContextMenu();});
+document.addEventListener('mousedown',e=>{if(!ctxMenu.contains(e.target))closeContextMenu();});
+document.addEventListener('keydown',  e=>{if(e.key==='Escape')closeContextMenu();});
 
 ctxPause.addEventListener('click',async()=>{
   if (!_ctxTimer) return; closeContextMenu();
-  try { await POST('/pause/'+_ctxTimer.id+'/pause',{reason:'Paused by '+state.user.fullName}); toast('Timer paused for '+_ctxTimer.operatorName,''); refreshWallboard(); if(state.currentPage==='wallboardc')refreshWallboardCompact(); }
+  try { await POST('/pause/'+_ctxTimer.id+'/pause',{reason:'Paused by '+state.user.fullName}); toast('Timer paused for '+_ctxTimer.operatorName,''); await refreshWallboard(); if(state.currentPage==='wallboardc')refreshWallboardCompact(); }
   catch(err){toast(err.message,'error');}
 });
 ctxResume.addEventListener('click',async()=>{
   if (!_ctxTimer) return; closeContextMenu();
-  try { await POST('/pause/'+_ctxTimer.id+'/resume',{}); toast('Timer resumed for '+_ctxTimer.operatorName,'success'); refreshWallboard(); if(state.currentPage==='wallboardc')refreshWallboardCompact(); }
+  try { await POST('/pause/'+_ctxTimer.id+'/resume',{}); toast('Timer resumed for '+_ctxTimer.operatorName,'success'); await refreshWallboard(); if(state.currentPage==='wallboardc')refreshWallboardCompact(); }
   catch(err){toast(err.message,'error');}
 });
 ctxMsgBtn.addEventListener('click',()=>{if(!_ctxTimer)return;closeContextMenu();openSendMessageModal(_ctxTimer.operatorId,_ctxTimer.operatorName);});
@@ -1632,8 +1637,8 @@ async function refreshWallboardCompact() {
         tile.addEventListener('touchmove',()=>{if(lpt){clearTimeout(lpt);lpt=null;}});
       }
       if (!t.isPaused) {
-        if (t.targetSeconds) { const pct=elapsed/t.targetSeconds; if(pct>=1.0)tile.classList.add('tile-overdue'); else if(pct>=0.8)tile.classList.add('tile-warning'); }
-        else { if(elapsed>4*3600)tile.classList.add('tile-overdue'); else if(elapsed>2*3600)tile.classList.add('tile-warning'); }
+        if (t.targetSeconds){const pct=elapsed/t.targetSeconds;if(pct>=1.0)tile.classList.add('tile-overdue');else if(pct>=0.8)tile.classList.add('tile-warning');}
+        else{if(elapsed>4*3600)tile.classList.add('tile-overdue');else if(elapsed>2*3600)tile.classList.add('tile-warning');}
       }
       tile.appendChild(el('div',{className:'wbc-operator',textContent:t.operatorName}));
       tile.appendChild(el('div',{className:'wbc-item',textContent:t.itemNumber}));
@@ -1644,7 +1649,7 @@ async function refreshWallboardCompact() {
       container.appendChild(tile);
     });
     startWallboardCompactTick();
-  } catch(err) { container.innerHTML=''; container.appendChild(el('div',{className:'wallboard-empty',textContent:'Could not load timers: '+err.message})); }
+  } catch(err){container.innerHTML='';container.appendChild(el('div',{className:'wallboard-empty',textContent:'Could not load timers: '+err.message}));}
 }
 
 function startWallboardCompactTick() {
@@ -1662,7 +1667,7 @@ function startWallboardCompactTick() {
       const tile=node.closest('.wbc-tile'); if (!tile) return;
       tile.classList.remove('tile-warning','tile-overdue');
       const tgt=parseInt(node.getAttribute('data-targetseconds'),10)||0;
-      if (tgt){const pct=elapsed/tgt;if(pct>=1.0)tile.classList.add('tile-overdue');else if(pct>=0.8)tile.classList.add('tile-warning');}
+      if(tgt){const pct=elapsed/tgt;if(pct>=1.0)tile.classList.add('tile-overdue');else if(pct>=0.8)tile.classList.add('tile-warning');}
       else{if(elapsed>4*3600)tile.classList.add('tile-overdue');else if(elapsed>2*3600)tile.classList.add('tile-warning');}
     });
   },1000);
@@ -1694,10 +1699,10 @@ function showMessageNotification(data) {
   notif.appendChild(el('div',{className:'msg-notif-time',textContent:'Sent at '+new Date(data.sentAt).toLocaleTimeString('en-GB',{timeZone:'Europe/London',hour:'2-digit',minute:'2-digit'})}));
   document.body.appendChild(notif);
   try {
-    const ctx=new(window.AudioContext||window.webkitAudioContext)(), osc=ctx.createOscillator(), gain=ctx.createGain();
-    osc.connect(gain); gain.connect(ctx.destination); osc.frequency.value=880;
-    gain.gain.setValueAtTime(0.15,ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.4);
-    osc.start(ctx.currentTime); osc.stop(ctx.currentTime+0.4);
+    const ctx=new(window.AudioContext||window.webkitAudioContext)(),osc=ctx.createOscillator(),gain=ctx.createGain();
+    osc.connect(gain);gain.connect(ctx.destination);osc.frequency.value=880;
+    gain.gain.setValueAtTime(0.15,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.4);
+    osc.start(ctx.currentTime);osc.stop(ctx.currentTime+0.4);
   } catch(_){}
   setTimeout(()=>{if(notif.isConnected)notif.remove();},60000);
 }
@@ -1717,7 +1722,7 @@ function openSendMessageModal(operatorId, operatorName) {
   btnSend.addEventListener('click',async()=>{
     const message=textarea.value.trim();
     if (!message){errDiv.textContent='Please type a message.';return;}
-    btnSend.disabled=true; btnSend.textContent='Sending\u2026';
+    btnSend.disabled=true;btnSend.textContent='Sending\u2026';
     try {
       const result=await POST('/messages/send',{operatorId,message});
       closeModal();
