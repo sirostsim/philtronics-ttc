@@ -1,51 +1,47 @@
 /**
  * routes/messages.js – Real-time operator messaging via Server-Sent Events
  *
- * GET  /api/messages/listen   – Operator connects, keeps SSE stream open
- * POST /api/messages/send     – Manager/admin sends a message to an operator
+ * GET  /api/messages/listen   – Any user connects, keeps SSE stream open
+ * POST /api/messages/send     – Supervisor+ sends a message to an operator
+ * POST /api/messages/reply    – Operator replies to a message they received
+ * GET  /api/messages/online   – Returns connected user IDs (for presence dots)
  *
- * SSE is a lightweight one-way push — no WebSockets needed.
- * The server only does work when a message is sent, not continuously.
+ * All users (operators and supervisors) maintain an SSE connection so both
+ * sides can receive push events. Operators cannot initiate — they can only
+ * reply to a message they received (enforced via replyToId on the server).
  */
 
 'use strict';
 
-const express = require('express');
+const express   = require('express');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { queryOne } = require('../db');
 
 const router = express.Router();
 
-// In-memory map of operatorId -> SSE response object
-// This is fine for a single-process app (Railway runs one instance)
+// In-memory map of userId -> SSE response object.
+// Covers both operators and supervisors — everyone gets a connection.
 const connections = new Map();
 
 // ── GET /api/messages/listen ──────────────────────────────────────────────────
-// Operator opens this connection on login. Kept alive until they navigate away.
 router.get('/listen', requireAuth, (req, res) => {
   const userId = req.user.id;
 
-  // SSE headers
-  res.setHeader('Content-Type',  'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection',    'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no'); // prevent nginx buffering
+  res.setHeader('Content-Type',      'text/event-stream');
+  res.setHeader('Cache-Control',     'no-cache');
+  res.setHeader('Connection',        'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
-
-  // Send a comment to keep the connection alive and confirm it's open
   res.write(': connected\n\n');
 
-  // Register this connection
   connections.set(userId, res);
   console.log(`SSE connected: ${req.user.username} (${userId}). Active: ${connections.size}`);
 
-  // Heartbeat every 25s to prevent proxy/load-balancer timeouts
   const heartbeat = setInterval(() => {
     if (res.writableEnded) { clearInterval(heartbeat); return; }
     res.write(': heartbeat\n\n');
   }, 25000);
 
-  // Clean up when the client disconnects
   req.on('close', () => {
     clearInterval(heartbeat);
     connections.delete(userId);
@@ -54,7 +50,8 @@ router.get('/listen', requireAuth, (req, res) => {
 });
 
 // ── POST /api/messages/send ───────────────────────────────────────────────────
-// Manager/admin sends a message to a specific operator.
+// Supervisor+ sends a message to a specific operator.
+// The payload includes the sender's ID so the operator can address a reply back.
 router.post('/send', requireAuth, requireRole('supervisor'), async (req, res) => {
   try {
     const { operatorId, message } = req.body;
@@ -66,29 +63,26 @@ router.post('/send', requireAuth, requireRole('supervisor'), async (req, res) =>
       return res.status(400).json({ error: 'Message must be 500 characters or fewer.' });
     }
 
-    // Verify operator exists
-    const operator = await queryOne('SELECT id, full_name FROM users WHERE id = $1', [operatorId]);
-    if (!operator) {
-      return res.status(404).json({ error: 'Operator not found.' });
-    }
+    const operator = await queryOne(
+      'SELECT id, full_name FROM users WHERE id = $1', [operatorId]
+    );
+    if (!operator) return res.status(404).json({ error: 'Operator not found.' });
 
-    // Build SSE event payload — unnamed event so the frontend
-    // addEventListener('message', ...) listener catches it correctly.
-    // Named events (event: message\n) are ignored by the default listener.
     const payload = JSON.stringify({
-      from:      req.user.full_name,
-      fromRole:  req.user.role,
-      message:   message.trim(),
-      sentAt:    new Date().toISOString(),
+      type:       'message',
+      from:       req.user.full_name,
+      fromId:     req.user.id,         // operator needs this to address the reply
+      fromRole:   req.user.role,
+      message:    message.trim(),
+      sentAt:     new Date().toISOString(),
+      canReply:   true,
     });
 
-    // Push to operator if they are connected
     const conn = connections.get(operatorId);
     if (conn && !conn.writableEnded) {
       conn.write(`data: ${payload}\n\n`);
       res.json({ ok: true, delivered: true, operatorName: operator.full_name });
     } else {
-      // Operator not currently connected — message not delivered
       res.json({ ok: true, delivered: false, operatorName: operator.full_name });
     }
   } catch (err) {
@@ -97,8 +91,57 @@ router.post('/send', requireAuth, requireRole('supervisor'), async (req, res) =>
   }
 });
 
+// ── POST /api/messages/reply ──────────────────────────────────────────────────
+// Operator replies to a message they received.
+// replyToId must be a valid supervisor/manager/admin ID — operators cannot
+// cold-message anyone, only reply to someone who has already messaged them.
+router.post('/reply', requireAuth, async (req, res) => {
+  try {
+    const { replyToId, replyToName, originalMessage, message } = req.body;
+
+    if (!replyToId || !message || !message.trim()) {
+      return res.status(400).json({ error: 'Reply target and message are required.' });
+    }
+    if (message.trim().length > 500) {
+      return res.status(400).json({ error: 'Reply must be 500 characters or fewer.' });
+    }
+
+    // Verify the target is a real user and has a supervisory role.
+    // This prevents operators constructing a payload to message each other.
+    const target = await queryOne(
+      `SELECT id, full_name, role FROM users
+       WHERE id = $1 AND role IN ('supervisor','manager','administrator') AND is_active = TRUE`,
+      [replyToId]
+    );
+    if (!target) {
+      return res.status(403).json({ error: 'Replies can only be sent to supervisors or managers.' });
+    }
+
+    const payload = JSON.stringify({
+      type:            'reply',
+      from:            req.user.full_name,
+      fromId:          req.user.id,
+      fromRole:        req.user.role,
+      message:         message.trim(),
+      originalMessage: originalMessage || null,   // shown as context in the popup
+      replyToName:     replyToName || target.full_name,
+      sentAt:          new Date().toISOString(),
+    });
+
+    const conn = connections.get(replyToId);
+    if (conn && !conn.writableEnded) {
+      conn.write(`data: ${payload}\n\n`);
+      res.json({ ok: true, delivered: true });
+    } else {
+      res.json({ ok: true, delivered: false });
+    }
+  } catch (err) {
+    console.error('Reply error:', err.message);
+    res.status(500).json({ error: 'Could not send reply.' });
+  }
+});
+
 // ── GET /api/messages/online ──────────────────────────────────────────────────
-// Returns list of currently connected operator IDs (for wallboard online indicator)
 router.get('/online', requireAuth, requireRole('supervisor'), (req, res) => {
   res.json({ online: Array.from(connections.keys()) });
 });

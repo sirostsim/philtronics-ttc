@@ -2640,41 +2640,103 @@ function showMessageNotification(data) {
   const existing = document.getElementById('msgNotification');
   if (existing) existing.remove();
 
-  const notif = el('div', { id: 'msgNotification', className: 'msg-notification', role: 'alert' });
+  const isReply = data.type === 'reply';
+  const notif   = el('div', {
+    id: 'msgNotification',
+    className: 'msg-notification' + (isReply ? ' msg-reply' : ''),
+    role: 'alert',
+  });
 
+  // ── Header ─────────────────────────────────────────────────────────────────
   const header = el('div', { className: 'msg-notif-header' });
-  header.appendChild(el('span', { className: 'msg-notif-from',
-    textContent: '✉ Message from ' + data.from }));
-  const closeBtn = el('button', { className: 'msg-notif-close',
-    'aria-label': 'Dismiss message', textContent: '✕' });
+  header.appendChild(el('span', {
+    className:   'msg-notif-from',
+    textContent: (isReply ? '\u21a9 Reply from ' : '\u2709 Message from ') + data.from,
+  }));
+  const closeBtn = el('button', { className: 'msg-notif-close', 'aria-label': 'Dismiss', textContent: '\u2715' });
   closeBtn.addEventListener('click', () => notif.remove());
   header.appendChild(closeBtn);
-
   notif.appendChild(header);
-  notif.appendChild(el('p', { className: 'msg-notif-body', textContent: data.message }));
 
-  const time = el('div', { className: 'msg-notif-time',
-    textContent: 'Sent at ' + new Date(data.sentAt).toLocaleTimeString('en-GB',
-      { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit' }) });
-  notif.appendChild(time);
+  // ── Original message context (shown on reply popups for supervisors) ───────
+  if (isReply && data.originalMessage) {
+    const ctx = el('div', { className: 'msg-notif-context' });
+    ctx.appendChild(el('span', { className: 'msg-notif-context-label', textContent: 'Re: ' }));
+    ctx.appendChild(el('span', { textContent: data.originalMessage }));
+    notif.appendChild(ctx);
+  }
+
+  // ── Message body ───────────────────────────────────────────────────────────
+  notif.appendChild(el('p', { className: 'msg-notif-body', textContent: data.message }));
+  notif.appendChild(el('div', { className: 'msg-notif-time',
+    textContent: (isReply ? 'Replied' : 'Sent') + ' at ' +
+      new Date(data.sentAt).toLocaleTimeString('en-GB',
+        { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit' }) }));
+
+  // ── Reply area (operators only, on incoming messages that allow reply) ─────
+  // Supervisors/managers receive replies but cannot reply back to replies.
+  if (!isReply && data.canReply && !hasRole('supervisor')) {
+    const replyWrap  = el('div', { className: 'msg-notif-reply-wrap' });
+    const replyInput = el('textarea', {
+      className:   'msg-notif-reply-input',
+      placeholder: 'Type your reply\u2026',
+      maxlength:   '500',
+      rows:        '2',
+    });
+    const replyFooter = el('div', { className: 'msg-notif-reply-footer' });
+    const charCount   = el('span', { className: 'msg-notif-char', textContent: '0 / 500' });
+    replyInput.addEventListener('input', () => {
+      charCount.textContent = replyInput.value.length + ' / 500';
+    });
+    const sendBtn = el('button', { className: 'msg-notif-send', textContent: 'Send Reply' });
+    sendBtn.addEventListener('click', async () => {
+      const reply = replyInput.value.trim();
+      if (!reply) { replyInput.focus(); return; }
+      sendBtn.disabled = true; sendBtn.textContent = 'Sending\u2026';
+      try {
+        const result = await POST('/messages/reply', {
+          replyToId:       data.fromId,
+          replyToName:     data.from,
+          originalMessage: data.message,
+          message:         reply,
+        });
+        toast(result.delivered
+          ? 'Reply sent to ' + data.from
+          : data.from + ' is no longer connected \u2014 reply not delivered.',
+          result.delivered ? 'success' : '');
+        notif.remove();
+      } catch (err) {
+        toast('Could not send reply: ' + err.message, 'error');
+        sendBtn.disabled = false; sendBtn.textContent = 'Send Reply';
+      }
+    });
+    // Ctrl+Enter to send
+    replyInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) sendBtn.click();
+    });
+    replyFooter.appendChild(charCount);
+    replyFooter.appendChild(sendBtn);
+    replyWrap.appendChild(replyInput);
+    replyWrap.appendChild(replyFooter);
+    notif.appendChild(replyWrap);
+  }
 
   document.body.appendChild(notif);
 
-  // Also play a subtle audio ping if supported
+  // Audio ping — lower tone for replies so supervisors can distinguish
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain); gain.connect(ctx.destination);
-    osc.frequency.value = 880;
-    gain.gain.setValueAtTime(0.15, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.4);
+    const actx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc   = actx.createOscillator();
+    const gain  = actx.createGain();
+    osc.connect(gain); gain.connect(actx.destination);
+    osc.frequency.value = isReply ? 660 : 880;
+    gain.gain.setValueAtTime(0.15, actx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.4);
+    osc.start(actx.currentTime);
+    osc.stop(actx.currentTime + 0.4);
   } catch (_) {}
 
-  // Auto-dismiss after 60 seconds
-  setTimeout(() => { if (notif.isConnected) notif.remove(); }, 60000);
+  // Notifications stay until dismissed — no auto-remove timeout.
 }
 
 // ── Send message modal (supervisor/manager, opened from wallboard tile) ───────
