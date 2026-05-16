@@ -60,12 +60,9 @@ router.get('/listen', requireAuth, (req, res) => {
   req.on('close', () => {
     clearInterval(heartbeat);
     connections.delete(userId);
-    // Clean up any conversations this user was part of
-    for (const [id, conv] of conversations.entries()) {
-      if (conv.supervisorId === userId || conv.operatorId === userId) {
-        conversations.delete(id);
-      }
-    }
+    // Do NOT delete conversations here — a dropped SSE connection (e.g. brief
+    // network blip, page background, element visibility change on Android) must
+    // not destroy an active conversation. Only POST /close deletes conversations.
     console.log(`SSE disconnected: ${req.user.username}. Active: ${connections.size}`);
   });
 });
