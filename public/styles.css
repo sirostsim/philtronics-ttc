@@ -2195,3 +2195,42 @@ button.topbar-brand:focus-visible {
 @media (max-width: 480px) {
   .chat-drawer { width: 100vw; border-radius: 16px 16px 0 0; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   REPORTS PAGE
+   ═══════════════════════════════════════════════════════════════════════════ */
+.report-section {
+  margin-bottom: 36px;
+}
+.report-section .section-heading {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  margin-bottom: 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.report-overdue-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 700px) {
+  .report-overdue-grid { grid-template-columns: 1fr; }
+}
+.report-overdue-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+}
+.report-overdue-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text2);
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}

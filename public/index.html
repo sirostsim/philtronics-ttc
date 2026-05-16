@@ -410,7 +410,58 @@
     </div>
   </section>
 
-  <!-- ── ADMIN USER MANAGEMENT ──────────────────────────────────────────── -->
+  <!-- ── REPORTS PAGE ─────────────────────────────────────────────────────── -->
+  <section id="pageReports" class="page" aria-label="Reports" hidden>
+    <div class="page-content">
+      <div class="page-heading-row">
+        <h2 class="page-heading">Reports</h2>
+        <button id="btnReportExportCSV" class="btn btn-export">⬇ Export CSV</button>
+      </div>
+
+      <!-- Date range filter -->
+      <div class="filter-bar" style="margin-bottom:24px;">
+        <div class="filter-row">
+          <div class="form-group filter-group">
+            <label for="reportFrom">From</label>
+            <input id="reportFrom" type="date" />
+          </div>
+          <div class="form-group filter-group">
+            <label for="reportTo">To</label>
+            <input id="reportTo" type="date" />
+          </div>
+        </div>
+        <button id="btnReportSearch" class="btn btn-primary">Refresh</button>
+      </div>
+
+      <!-- Summary cards -->
+      <div class="stat-cards" id="reportStatCards" style="margin-bottom:28px;"></div>
+
+      <!-- Item performance vs targets -->
+      <div class="report-section">
+        <h3 class="section-heading">Job Times vs Targets — by Item</h3>
+        <div id="reportItemTable" class="dash-table-wrap"></div>
+      </div>
+
+      <!-- Operator performance -->
+      <div class="report-section">
+        <h3 class="section-heading">Operator Performance</h3>
+        <div id="reportOperatorTable" class="dash-table-wrap"></div>
+      </div>
+
+      <!-- Daily trend -->
+      <div class="report-section">
+        <h3 class="section-heading">Daily Trend</h3>
+        <div id="reportTrendTable" class="dash-table-wrap"></div>
+      </div>
+
+      <!-- Overdue analysis -->
+      <div class="report-section">
+        <h3 class="section-heading">Overdue Analysis</h3>
+        <div class="report-overdue-grid" id="reportOverdueGrid"></div>
+      </div>
+
+    </div>
+  </section>
   <section id="pageAdmin" class="page" aria-label="User Management" hidden>
     <div class="page-content">
       <div class="page-heading-row">
@@ -503,17 +554,6 @@
 <div id="chatOverlay" class="chat-overlay" hidden></div>
 
 <script src="app-v2.js"></script>
-<script>
-  document.addEventListener('DOMContentLoaded', function() {
-    document.getElementById('chatCloseBtn').addEventListener('click', function() {
-      var d = document.getElementById('chatDrawer');
-      var o = document.getElementById('chatOverlay');
-      d.hidden = true;
-      d.style.display = 'none';
-      o.hidden = true;
-    }, true);
-  });
-</script>
 
 <!-- ═══ FOOTER BRANDING ════════════════════════════════════════════════ -->
 <footer class="app-footer" role="contentinfo">
