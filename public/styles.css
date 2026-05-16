@@ -1856,3 +1856,59 @@ button.topbar-brand:focus-visible {
 }
 .wb-context-item:last-child { border-bottom: none; }
 .wb-context-item:hover { background: var(--bg3); }
+
+/* ─── Wallboard tile pause/resume button ─────────────────────────────────── */
+.wb-btn-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.wb-pause-btn {
+  flex: 1;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  color: var(--text2);
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font-body);
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+  letter-spacing: .03em;
+}
+.wb-pause-btn:hover {
+  background: rgba(59,130,246,.1);
+  border-color: #3b82f6;
+  color: #60a5fa;
+}
+.wb-pause-btn.is-paused {
+  background: rgba(59,130,246,.08);
+  border-color: #3b82f6;
+  color: #60a5fa;
+  font-weight: 800;
+}
+.wb-pause-btn.is-paused:hover {
+  background: rgba(59,130,246,.18);
+}
+.wb-pause-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+.wb-msg-btn {
+  flex: 1;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  color: var(--text2);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-body);
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+.wb-msg-btn:hover {
+  background: var(--bg2);
+  border-color: var(--accent);
+  color: var(--accent);
+}
