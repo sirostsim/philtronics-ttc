@@ -1716,3 +1716,143 @@ button.topbar-brand:focus-visible {
   .home-grid { grid-template-columns: 1fr; }
   .home-card-full { grid-column: 1; }
 }
+
+/* ─── Pause / Resume ─────────────────────────────────────────────────────── */
+
+/* Pause banner on active timer panel */
+.pause-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(59,130,246,.12);
+  border: 1px solid #3b82f6;
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  animation: pause-pulse 2s ease-in-out infinite;
+}
+.pause-banner-icon { font-size: 20px; }
+#pauseBannerText {
+  font-size: 13px;
+  font-weight: 600;
+  color: #60a5fa;
+  letter-spacing: .04em;
+}
+@keyframes pause-pulse {
+  0%,100% { opacity: 1; }
+  50%      { opacity: .6; }
+}
+
+/* Paused stopwatch */
+.stopwatch-paused {
+  color: #60a5fa !important;
+  opacity: .75;
+}
+
+/* Paused panel */
+.panel-paused .active-header { color: #60a5fa; }
+.panel-paused .active-dot    { background: #60a5fa !important; }
+
+/* Pause/Resume button */
+.btn-pause-sm {
+  background: transparent;
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  color: var(--text2);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-body);
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+  white-space: nowrap;
+}
+.btn-pause-sm:hover { border-color: #3b82f6; color: #60a5fa; }
+
+.btn-resume-sm {
+  background: rgba(59,130,246,.1);
+  border: 1px solid #3b82f6;
+  border-radius: var(--radius);
+  color: #60a5fa;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--font-body);
+  padding: 12px 14px;
+  cursor: pointer;
+  animation: pause-pulse 1.5s ease-in-out infinite;
+}
+
+/* Paused wallboard tiles — blue border, pulsing */
+.wallboard-tile.tile-paused {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 1px #3b82f6, 0 0 14px rgba(59,130,246,.15) !important;
+  animation: wb-pause-pulse 2s ease-in-out infinite;
+}
+.wallboard-tile.tile-paused::before { background: #3b82f6 !important; }
+
+.wbc-tile.tile-paused {
+  border-color: #3b82f6 !important;
+  animation: wb-pause-pulse 2s ease-in-out infinite;
+}
+.wbc-tile.tile-paused::before { background: #3b82f6 !important; }
+
+@keyframes wb-pause-pulse {
+  0%,100% { opacity: 1;   box-shadow: 0 0 0 1px #3b82f6, 0 0 14px rgba(59,130,246,.15); }
+  50%      { opacity: .75; box-shadow: 0 0 0 1px #3b82f6, 0 0 24px rgba(59,130,246,.35); }
+}
+
+/* Paused tag on wallboard tiles */
+.wb-paused-tag {
+  font-size: 11px;
+  font-weight: 700;
+  color: #60a5fa;
+  letter-spacing: .08em;
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.wbc-paused-tag {
+  font-size: 14px;
+  color: #60a5fa;
+  margin-top: 2px;
+  display: block;
+}
+
+/* Context menu */
+.wb-context-menu {
+  position: fixed;
+  z-index: 9999;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0,0,0,.25);
+  min-width: 180px;
+  overflow: hidden;
+}
+.wb-context-info {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text3);
+  padding: 8px 14px 6px;
+  border-bottom: 1px solid var(--border);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.wb-context-item {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  font-family: var(--font-body);
+  padding: 11px 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.wb-context-item:last-child { border-bottom: none; }
+.wb-context-item:hover { background: var(--bg3); }

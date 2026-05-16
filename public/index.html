@@ -217,9 +217,15 @@
 
       <!-- Active Job Panel -->
       <div id="panelActive" class="timer-panel panel-active" hidden>
+        <!-- Pause banner — shown when timer is paused -->
+        <div id="pauseBanner" class="pause-banner" hidden>
+          <span class="pause-banner-icon">⏸</span>
+          <span id="pauseBannerText">Timer paused</span>
+        </div>
+
         <div class="active-header">
           <span class="active-dot" aria-hidden="true"></span>
-          <span>ACTIVE JOB</span>
+          <span id="activeJobLabel">ACTIVE JOB</span>
         </div>
         <div class="active-item" id="activeItemDisplay" aria-label="Item number"></div>
         <div class="stopwatch" id="stopwatch" role="timer" aria-label="Elapsed time" aria-live="off">
@@ -242,6 +248,9 @@
         <div class="active-actions">
           <button id="btnStop" class="btn btn-stop btn-xl" aria-label="Stop timer">
             ■ STOP
+          </button>
+          <button id="btnPauseTimer" class="btn btn-pause-sm" aria-label="Pause timer">
+            ⏸ Pause
           </button>
           <button id="btnCancelTimer" class="btn btn-cancel-sm" aria-label="Cancel timer">
             Cancel
@@ -471,6 +480,14 @@
 </div>
 
 <script src="app-v2.js"></script>
+
+<!-- ═══ WALLBOARD CONTEXT MENU ═════════════════════════════════════════════ -->
+<div id="wbContextMenu" class="wb-context-menu" hidden role="menu">
+  <div id="wbContextInfo" class="wb-context-info"></div>
+  <button id="wbContextPause"  class="wb-context-item" role="menuitem">⏸ Pause Timer</button>
+  <button id="wbContextResume" class="wb-context-item" role="menuitem">▶ Resume Timer</button>
+  <button id="wbContextMsg"    class="wb-context-item" role="menuitem">✉ Send Message</button>
+</div>
 
 <!-- ═══ FOOTER BRANDING ════════════════════════════════════════════════ -->
 <footer class="app-footer" role="contentinfo">

@@ -9,12 +9,15 @@
    STATE
    ═══════════════════════════════════════════════════════════════════════════ */
 const state = {
-  user:                null,
-  currentPage:         null,
-  stopwatchTimer:      null,
-  activeTimerId:       null,
-  activeStartedAt:     null,
-  activeTargetSeconds: null,
+  user:                     null,
+  currentPage:              null,
+  stopwatchTimer:           null,
+  activeTimerId:            null,
+  activeStartedAt:          null,
+  activeTargetSeconds:      null,
+  activeIsPaused:           false,
+  activePausedAt:           null,
+  activeTotalPausedSeconds: 0,
 };
 
 // Wallboard interval handles — declared here so navigateTo can always access them
@@ -386,13 +389,20 @@ async function loadTimerPage() {
   }
 
   loadTodayEntries();
+  // Poll for auto-pause changes from the schedule
+  if (state.activeTimerId) startPausePoll();
+  else stopPausePoll();
 }
 
 function showStartPanel() {
   show('panelStart');
   hide('panelActive');
-  state.activeTargetSeconds = null;
+  state.activeTargetSeconds    = null;
+  state.activeIsPaused         = false;
+  state.activePausedAt         = null;
+  state.activeTotalPausedSeconds = 0;
   hide('activeTargetWrap');
+  stopPausePoll();
   const rb = document.getElementById('btnResumeTimer');
   if (rb) rb.remove();
   clearError('startError');
@@ -442,16 +452,19 @@ async function showActivePanel() {
 
     if (t) {
       // Got the timer — restore full state from server values
-      state.activeTimerId   = t.id;
-      state.activeStartedAt = t.startedAt;
+      state.activeTimerId              = t.id;
+      state.activeStartedAt            = t.startedAt;
+      state.activeIsPaused             = t.isPaused || false;
+      state.activePausedAt             = t.pausedAt || null;
+      state.activeTotalPausedSeconds   = t.totalPausedSeconds || 0;
       document.getElementById('activeItemDisplay').textContent = t.itemNumber;
       const metaParts = [`Started at ${formatLocalTime(t.startedAt)}`];
       if (t.workstation) metaParts.push('WS: ' + t.workstation);
       if (t.woNumber)    metaParts.push('W/O: ' + t.woNumber);
       document.getElementById('activeMeta').textContent = metaParts.join('  ·  ');
-      // Store and display target time
       state.activeTargetSeconds = t.targetSeconds || null;
       updateActiveTargetDisplay();
+      updatePauseUI();
     } else if (state.activeTimerId) {
       // Both fetches found nothing — timer genuinely gone
       state.activeTimerId   = null;
@@ -556,9 +569,12 @@ document.getElementById('btnStop').addEventListener('click', async () => {
   btn.disabled = true;
   try {
     const timer = await POST(`/timers/${state.activeTimerId}/stop`, {});
-    state.activeTimerId       = null;
-    state.activeStartedAt     = null;
-    state.activeTargetSeconds = null;
+    state.activeTimerId          = null;
+    state.activeStartedAt        = null;
+    state.activeTargetSeconds    = null;
+    state.activeIsPaused         = false;
+    state.activePausedAt         = null;
+    state.activeTotalPausedSeconds = 0;
     stopStopwatch();
     showStartPanel();
     refreshActiveTimerBanner();
@@ -644,9 +660,14 @@ function stopStopwatch() {
 }
 function tickStopwatch() {
   if (!state.activeStartedAt) return;
-  const elapsed = Math.max(0, Math.floor((Date.now() - new Date(state.activeStartedAt).getTime()) / 1000));
-  document.getElementById('stopwatch').textContent = formatDuration(elapsed);
-  if (state.activeTargetSeconds) updateActiveTargetDisplay(elapsed);
+  // If paused, clock is frozen at pause moment
+  const referenceMs = state.activeIsPaused && state.activePausedAt
+    ? new Date(state.activePausedAt).getTime()
+    : Date.now();
+  const rawElapsed  = Math.max(0, Math.floor((referenceMs - new Date(state.activeStartedAt).getTime()) / 1000));
+  const netElapsed  = Math.max(0, rawElapsed - state.activeTotalPausedSeconds);
+  document.getElementById('stopwatch').textContent = formatDuration(netElapsed);
+  if (state.activeTargetSeconds) updateActiveTargetDisplay(netElapsed);
 }
 
 function updateActiveTargetDisplay(elapsed) {
@@ -1559,24 +1580,48 @@ async function refreshWallboard() {
     }
 
     timers.forEach(t => {
-      const elapsed  = Math.max(0, Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000));
-      const tile     = el('div', { className: 'wallboard-tile' });
+      // Net elapsed from server (excludes paused time); fallback to local calc
+      const serverNet = t.netElapsedSeconds != null ? t.netElapsedSeconds : null;
+      const localEl   = Math.max(0, Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000)) - (t.totalPausedSeconds || 0);
+      const elapsed   = serverNet !== null ? serverNet : localEl;
+      const tile      = el('div', { className: 'wallboard-tile' + (t.isPaused ? ' tile-paused' : '') });
 
-      // Colour the tile amber if over 2 hours, red if over 4 hours
-      // Smart colouring: target-relative if set, fixed thresholds if not
-      if (t.targetSeconds) {
-        const pctNow = elapsed / t.targetSeconds;
-        if (pctNow >= 1.0)   tile.classList.add('tile-overdue');
-        else if (pctNow >= 0.8) tile.classList.add('tile-warning');
-      } else {
-        if (elapsed > 4 * 3600)      tile.classList.add('tile-overdue');
-        else if (elapsed > 2 * 3600) tile.classList.add('tile-warning');
+      // Context menu on right-click / long-press (supervisor+)
+      if (hasRole('supervisor')) {
+        tile.addEventListener('contextmenu', e => openContextMenu(e, t));
+        let lpt = null;
+        tile.addEventListener('touchstart',  e => { lpt = setTimeout(() => openContextMenu(e, t), 600); }, { passive: true });
+        tile.addEventListener('touchend',    () => { if (lpt) { clearTimeout(lpt); lpt = null; } });
+        tile.addEventListener('touchmove',   () => { if (lpt) { clearTimeout(lpt); lpt = null; } });
+      }
+
+      // Smart colouring: paused tiles are neutral; otherwise target-relative or fixed
+      if (!t.isPaused) {
+        if (t.targetSeconds) {
+          const pctNow = elapsed / t.targetSeconds;
+          if (pctNow >= 1.0)      tile.classList.add('tile-overdue');
+          else if (pctNow >= 0.8) tile.classList.add('tile-warning');
+        } else {
+          if (elapsed > 4 * 3600)      tile.classList.add('tile-overdue');
+          else if (elapsed > 2 * 3600) tile.classList.add('tile-warning');
+        }
+      }
+
+      // Pause indicator on tile
+      if (t.isPaused) {
+        const pauseTag = el('div', { className: 'wb-paused-tag', textContent: '⏸ PAUSED' });
+        if (t.pauseType === 'schedule') pauseTag.title = 'Auto-paused outside working hours';
+        tile.appendChild(pauseTag);
       }
 
       tile.appendChild(el('div', { className: 'wb-item',     textContent: t.itemNumber }));
       tile.appendChild(el('div', { className: 'wb-operator', textContent: t.operatorName }));
       tile.appendChild(el('div', { className: 'wb-elapsed',  textContent: formatDuration(elapsed),
-        'data-timerid': t.id, 'data-startedat': t.startedAt }));
+        'data-timerid':       t.id,
+        'data-startedat':     t.startedAt,
+        'data-pausedseconds': String(t.totalPausedSeconds || 0),
+        'data-ispaused':      t.isPaused ? '1' : '0',
+      }));
       tile.appendChild(el('div', { className: 'wb-started',
         textContent: 'Started ' + formatLocalTime(t.startedAt) }));
 
@@ -1638,45 +1683,47 @@ async function refreshWallboard() {
 function startWallboardTick() {
   if (wallboardTick) clearInterval(wallboardTick);
   wallboardTick = setInterval(() => {
-    // Only tick if wallboard page is visible
     if (state.currentPage !== 'wallboard') {
-      clearInterval(wallboardTick);
-      wallboardTick = null;
-      return;
+      clearInterval(wallboardTick); wallboardTick = null; return;
     }
     document.querySelectorAll('.wb-elapsed[data-startedat]').forEach(el => {
-      const startedAt = el.getAttribute('data-startedat');
+      const startedAt   = el.getAttribute('data-startedat');
+      const pausedSecs  = parseInt(el.getAttribute('data-pausedseconds') || '0', 10);
+      const isPaused    = el.getAttribute('data-ispaused') === '1';
       if (!startedAt) return;
-      const elapsed = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000));
-      el.textContent = formatDuration(elapsed);
+
+      // Paused tiles show frozen net elapsed, don't increment
+      const rawElapsed = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000));
+      const elapsed    = Math.max(0, rawElapsed - pausedSecs);
+      if (!isPaused) el.textContent = formatDuration(elapsed);
+
       const tile = el.closest('.wallboard-tile');
-      if (tile) {
-        tile.classList.remove('tile-warning', 'tile-overdue');
-        const fill = tile.querySelector('.wb-target-fill');
-        const tgt  = fill ? parseInt(fill.getAttribute('data-targetseconds'), 10) : 0;
-        if (tgt) {
-          // Target-relative colouring
-          const pct = elapsed / tgt;
-          if (pct >= 1.0)      tile.classList.add('tile-overdue');
-          else if (pct >= 0.8) tile.classList.add('tile-warning');
-          // Update progress bar
-          fill.style.width = Math.round(Math.min(1, pct) * 100) + '%';
-          fill.classList.toggle('over', pct >= 1);
-          // Update label with time remaining/overdue
-          const lbl = tile.querySelector('.wb-target-label');
-          if (lbl) {
-            const remaining = tgt - elapsed;
-            const labelText = remaining > 0
-              ? formatHM(remaining) + ' remaining'
-              : formatHM(Math.abs(remaining)) + ' overdue';
-            lbl.textContent = '🎯 Target: ' + formatHM(tgt) + '  —  ' + labelText;
-            lbl.className   = 'wb-target-label' + (remaining <= 0 ? ' overdue' : '');
-          }
-        } else {
-          // No target — fixed thresholds
-          if (elapsed > 4 * 3600)      tile.classList.add('tile-overdue');
-          else if (elapsed > 2 * 3600) tile.classList.add('tile-warning');
+      if (!tile) return;
+
+      // Skip colour logic for paused tiles
+      if (isPaused) return;
+
+      tile.classList.remove('tile-warning', 'tile-overdue');
+      const fill = tile.querySelector('.wb-target-fill');
+      const tgt  = fill ? parseInt(fill.getAttribute('data-targetseconds'), 10) : 0;
+      if (tgt) {
+        const pct = elapsed / tgt;
+        if (pct >= 1.0)      tile.classList.add('tile-overdue');
+        else if (pct >= 0.8) tile.classList.add('tile-warning');
+        fill.style.width = Math.round(Math.min(1, pct) * 100) + '%';
+        fill.classList.toggle('over', pct >= 1);
+        const lbl = tile.querySelector('.wb-target-label');
+        if (lbl) {
+          const remaining = tgt - elapsed;
+          const labelText = remaining > 0
+            ? formatHM(remaining) + ' remaining'
+            : formatHM(Math.abs(remaining)) + ' overdue';
+          lbl.textContent = '🎯 Target: ' + formatHM(tgt) + '  --  ' + labelText;
+          lbl.className   = 'wb-target-label' + (remaining <= 0 ? ' overdue' : '');
         }
+      } else {
+        if (elapsed > 4 * 3600)      tile.classList.add('tile-overdue');
+        else if (elapsed > 2 * 3600) tile.classList.add('tile-warning');
       }
     });
   }, 1000);
@@ -1998,6 +2045,173 @@ async function openTotpSetupModal() {
 
 
 
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PAUSE / RESUME
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+// Update the active panel UI to reflect current pause state
+function updatePauseUI() {
+  const isPaused  = state.activeIsPaused;
+  const banner    = document.getElementById('pauseBanner');
+  const bannerTxt = document.getElementById('pauseBannerText');
+  const pauseBtn  = document.getElementById('btnPauseTimer');
+  const label     = document.getElementById('activeJobLabel');
+  const stopwatch = document.getElementById('stopwatch');
+  const panel     = document.getElementById('panelActive');
+
+  if (banner) banner.hidden = !isPaused;
+  if (label)  label.textContent = isPaused ? 'PAUSED' : 'ACTIVE JOB';
+  if (stopwatch) stopwatch.classList.toggle('stopwatch-paused', isPaused);
+  if (panel)  panel.classList.toggle('panel-paused', isPaused);
+
+  if (pauseBtn) {
+    if (isPaused) {
+      pauseBtn.textContent = '▶ Resume';
+      pauseBtn.className   = 'btn btn-resume-sm';
+      pauseBtn.setAttribute('aria-label', 'Resume timer');
+    } else {
+      pauseBtn.textContent = '⏸ Pause';
+      pauseBtn.className   = 'btn btn-pause-sm';
+      pauseBtn.setAttribute('aria-label', 'Pause timer');
+    }
+  }
+
+  // Freeze or restart the stopwatch
+  if (isPaused) {
+    stopStopwatch();
+    // Show the frozen net elapsed
+    if (state.activeStartedAt && state.activePausedAt) {
+      const raw = Math.floor((new Date(state.activePausedAt).getTime() - new Date(state.activeStartedAt).getTime()) / 1000);
+      const net = Math.max(0, raw - state.activeTotalPausedSeconds);
+      document.getElementById('stopwatch').textContent = formatDuration(net);
+    }
+  } else {
+    startStopwatch();
+  }
+}
+
+// Pause button handler
+document.getElementById('btnPauseTimer').addEventListener('click', async () => {
+  if (!state.activeTimerId) return;
+  const btn = document.getElementById('btnPauseTimer');
+  btn.disabled = true;
+  try {
+    if (state.activeIsPaused) {
+      const t = await POST('/pause/' + state.activeTimerId + '/resume', {});
+      state.activeIsPaused           = false;
+      state.activePausedAt           = null;
+      state.activeTotalPausedSeconds = t.totalPausedSeconds || 0;
+      updatePauseUI();
+      toast('Timer resumed.', 'success');
+    } else {
+      const t = await POST('/pause/' + state.activeTimerId + '/pause', { reason: 'Manual pause' });
+      state.activeIsPaused         = true;
+      state.activePausedAt         = t.pausedAt;
+      updatePauseUI();
+      toast('Timer paused.', '');
+    }
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// Poll for pause state changes (e.g. auto-pause from schedule)
+// Runs every 30s when on the timer page — lightweight single DB call
+let pausePollInterval = null;
+
+function startPausePoll() {
+  if (pausePollInterval) clearInterval(pausePollInterval);
+  pausePollInterval = setInterval(async () => {
+    if (state.currentPage !== 'timer' || !state.activeTimerId) return;
+    try {
+      const t = await GET('/timers/' + state.activeTimerId);
+      if (!t) return;
+      const waspaused = state.activeIsPaused;
+      state.activeIsPaused           = t.isPaused || false;
+      state.activePausedAt           = t.pausedAt || null;
+      state.activeTotalPausedSeconds = t.totalPausedSeconds || 0;
+      if (waspaused !== state.activeIsPaused) {
+        updatePauseUI();
+        if (state.activeIsPaused) {
+          toast('Your timer has been automatically paused outside working hours.', '');
+        } else {
+          toast('Your timer has automatically resumed for the new working day.', 'success');
+        }
+      }
+    } catch (_) {}
+  }, 30000);
+}
+
+function stopPausePoll() {
+  if (pausePollInterval) { clearInterval(pausePollInterval); pausePollInterval = null; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   WALLBOARD CONTEXT MENU  (right-click / long-press on tile)
+   Available to Supervisors, Managers, Administrators.
+   ═══════════════════════════════════════════════════════════════════════════ */
+let _ctxTimer = null;  // timer data for the context menu target
+
+const ctxMenu    = document.getElementById('wbContextMenu');
+const ctxPause   = document.getElementById('wbContextPause');
+const ctxResume  = document.getElementById('wbContextResume');
+const ctxMsgBtn  = document.getElementById('wbContextMsg');
+
+function openContextMenu(e, timerData) {
+  if (!hasRole('supervisor')) return;
+  e.preventDefault();
+  _ctxTimer = timerData;
+
+  ctxPause.hidden  = timerData.isPaused;
+  ctxResume.hidden = !timerData.isPaused;
+  ctxMenu.hidden = false;
+
+  // Position near cursor/touch
+  const x = Math.min(e.clientX || e.touches?.[0]?.clientX || 0, window.innerWidth  - 200);
+  const y = Math.min(e.clientY || e.touches?.[0]?.clientY || 0, window.innerHeight - 140);
+  ctxMenu.style.left = x + 'px';
+  ctxMenu.style.top  = y + 'px';
+}
+
+function closeContextMenu() {
+  ctxMenu.hidden = true;
+  _ctxTimer = null;
+}
+
+document.addEventListener('click',     e => { if (!ctxMenu.contains(e.target)) closeContextMenu(); });
+document.addEventListener('keydown',   e => { if (e.key === 'Escape') closeContextMenu(); });
+
+ctxPause.addEventListener('click', async () => {
+  if (!_ctxTimer) return;
+  closeContextMenu();
+  try {
+    await POST('/pause/' + _ctxTimer.id + '/pause', { reason: 'Paused by ' + state.user.fullName });
+    toast('Timer paused for ' + _ctxTimer.operatorName, '');
+    await refreshWallboard();
+    if (state.currentPage === 'wallboardc') refreshWallboardCompact();
+  } catch (err) { toast(err.message, 'error'); }
+});
+
+ctxResume.addEventListener('click', async () => {
+  if (!_ctxTimer) return;
+  closeContextMenu();
+  try {
+    await POST('/pause/' + _ctxTimer.id + '/resume', {});
+    toast('Timer resumed for ' + _ctxTimer.operatorName, 'success');
+    await refreshWallboard();
+    if (state.currentPage === 'wallboardc') refreshWallboardCompact();
+  } catch (err) { toast(err.message, 'error'); }
+});
+
+ctxMsgBtn.addEventListener('click', () => {
+  if (!_ctxTimer) return;
+  closeContextMenu();
+  openSendMessageModal(_ctxTimer.operatorId, _ctxTimer.operatorName);
+});
+
 /* ═══════════════════════════════════════════════════════════════════════════
    HOME PAGE  (Supervisor / Manager / Administrator)
    A command-centre dashboard landing page.
@@ -2308,28 +2522,44 @@ async function refreshWallboardCompact() {
     }
 
     timers.forEach(t => {
-      const elapsed = Math.max(0, Math.floor(
-        (Date.now() - new Date(t.startedAt).getTime()) / 1000
-      ));
-      const tile = el('div', { className: 'wbc-tile' });
+      const sNet    = t.netElapsedSeconds != null ? t.netElapsedSeconds : null;
+      const localEl = Math.max(0, Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000)) - (t.totalPausedSeconds || 0);
+      const elapsed = sNet !== null ? sNet : localEl;
+      const tile    = el('div', { className: 'wbc-tile' + (t.isPaused ? ' tile-paused' : '') });
 
-      // Smart colour — target-relative if set, fixed thresholds otherwise
-      if (t.targetSeconds) {
-        const pct = elapsed / t.targetSeconds;
-        if (pct >= 1.0)      tile.classList.add('tile-overdue');
-        else if (pct >= 0.8) tile.classList.add('tile-warning');
-      } else {
-        if (elapsed > 4 * 3600)      tile.classList.add('tile-overdue');
-        else if (elapsed > 2 * 3600) tile.classList.add('tile-warning');
+      // Context menu on right-click / long-press (supervisor+)
+      if (hasRole('supervisor')) {
+        tile.addEventListener('contextmenu', e => openContextMenu(e, t));
+        let lpt = null;
+        tile.addEventListener('touchstart',  e => { lpt = setTimeout(() => openContextMenu(e, t), 600); }, { passive: true });
+        tile.addEventListener('touchend',    () => { if (lpt) { clearTimeout(lpt); lpt = null; } });
+        tile.addEventListener('touchmove',   () => { if (lpt) { clearTimeout(lpt); lpt = null; } });
+      }
+
+      // Smart colour — paused = neutral; otherwise target-relative or fixed
+      if (!t.isPaused) {
+        if (t.targetSeconds) {
+          const pct = elapsed / t.targetSeconds;
+          if (pct >= 1.0)      tile.classList.add('tile-overdue');
+          else if (pct >= 0.8) tile.classList.add('tile-warning');
+        } else {
+          if (elapsed > 4 * 3600)      tile.classList.add('tile-overdue');
+          else if (elapsed > 2 * 3600) tile.classList.add('tile-warning');
+        }
       }
 
       tile.appendChild(el('div', { className: 'wbc-operator', textContent: t.operatorName }));
       tile.appendChild(el('div', { className: 'wbc-item',     textContent: t.itemNumber }));
+      if (t.isPaused) {
+        tile.appendChild(el('div', { className: 'wbc-paused-tag', textContent: '⏸' }));
+      }
       tile.appendChild(el('div', {
         className: 'wbc-elapsed',
         textContent: formatDuration(elapsed),
-        'data-startedat':     t.startedAt,
-        'data-targetseconds': t.targetSeconds ? String(t.targetSeconds) : '',
+        'data-startedat':       t.startedAt,
+        'data-targetseconds':   t.targetSeconds ? String(t.targetSeconds) : '',
+        'data-pausedseconds':   String(t.totalPausedSeconds || 0),
+        'data-ispaused':        t.isPaused ? '1' : '0',
       }));
 
       container.appendChild(tile);

@@ -6,12 +6,10 @@
 
 require('dotenv').config();
 
-const path          = require('path');
-const express       = require('express');
-const cookieParser  = require('cookie-parser');
+const path         = require('path');
+const express      = require('express');
+const cookieParser = require('cookie-parser');
 const runMigrations = require('./migrations/runner');
-const { query, queryOne } = require('./db');
-const { requireAuth }     = require('./middleware/auth');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -34,14 +32,8 @@ app.use((req, res, next) => {
 
 // ─── API routes ───────────────────────────────────────────────────────────────
 app.use('/api/auth',     require('./routes/auth'));
-app.use('/api/totp',     require('./routes/totp'));
-app.use('/api/timers',   require('./routes/timers'));
-app.use('/api/export',   require('./routes/export'));
-app.use('/api/users',    require('./routes/users'));
-app.use('/api/targets',  require('./routes/targets'));
-app.use('/api/messages', require('./routes/messages'));
 
-// /api/me — frontend calls this directly after login
+// /api/me — the frontend calls this path directly after login
 app.get('/api/me', requireAuth, async (req, res) => {
   try {
     const u = req.user;
@@ -66,8 +58,18 @@ app.get('/api/me', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Could not load user data.' });
   }
 });
+app.use('/api/totp',     require('./routes/totp'));
+app.use('/api/timers',   require('./routes/timers'));
+app.use('/api/export',   require('./routes/export'));
+app.use('/api/users',    require('./routes/users'));
+app.use('/api/targets',  require('./routes/targets'));
+app.use('/api/messages', require('./routes/messages'));
+app.use('/api/pause',    require('./routes/pause'));
 
 // Item-master autocomplete
+const { query }       = require('./db');
+const { requireAuth } = require('./middleware/auth');
+
 app.get('/api/items', requireAuth, async (req, res) => {
   try {
     const q = (req.query.q || '').trim();
@@ -105,6 +107,8 @@ app.use((err, req, res, next) => {
 // ─── Boot: run migrations then start listening ────────────────────────────────
 runMigrations()
   .then(() => {
+    const { startSchedule } = require('./schedule');
+    startSchedule();
     app.listen(PORT, () => {
       console.log(`✅  Philtronics Time-to-Complete running on port ${PORT}`);
       console.log(`    Environment : ${process.env.NODE_ENV || 'development'}`);

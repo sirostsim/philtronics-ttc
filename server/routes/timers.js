@@ -23,26 +23,40 @@ async function writeAudit(timerId, action, performedBy, reason, details) {
 }
 
 function formatTimer(t) {
+  // Net elapsed excludes paused time -- used for display on wallboard/timer
+  const now       = Date.now();
+  const startedMs = new Date(t.started_at).getTime();
+  const pausedMs  = t.paused_at ? new Date(t.paused_at).getTime() : now;
+  const rawElapsed = Math.floor((pausedMs - startedMs) / 1000);
+  const netElapsed = Math.max(0, rawElapsed - (t.total_paused_seconds || 0));
+
   return {
-    id:              t.id,
-    itemNumber:      t.item_number,
-    operatorId:      t.operator_id,
-    operatorName:    t.operator_name,
-    startedAt:       t.started_at,
-    completedAt:     t.completed_at,
-    durationSeconds: t.duration_seconds,
-    status:          t.status,
-    timeCheck:       !!t.time_check,
-    workstation:     t.workstation,
-    woNumber:        t.wo_number,
-    notes:           t.notes,
-    createdAt:       t.created_at,
-    // Target time joined from target_times table (null if not set)
-    targetSeconds:   t.target_hours != null
-                       ? (t.target_hours * 3600) + (t.target_minutes * 60)
-                       : null,
-    targetHours:     t.target_hours   != null ? t.target_hours   : null,
-    targetMinutes:   t.target_minutes != null ? t.target_minutes : null,
+    id:                 t.id,
+    itemNumber:         t.item_number,
+    operatorId:         t.operator_id,
+    operatorName:       t.operator_name,
+    startedAt:          t.started_at,
+    completedAt:        t.completed_at,
+    durationSeconds:    t.duration_seconds,
+    status:             t.status,
+    // Pause state
+    isPaused:           !!t.paused_at,
+    pausedAt:           t.paused_at || null,
+    pauseReason:        t.pause_reason || null,
+    pauseType:          t.pause_type || null,
+    totalPausedSeconds: t.total_paused_seconds || 0,
+    netElapsedSeconds:  netElapsed,
+    // Other fields
+    timeCheck:          !!t.time_check,
+    workstation:        t.workstation,
+    woNumber:           t.wo_number,
+    notes:              t.notes,
+    createdAt:          t.created_at,
+    targetSeconds:      t.target_hours != null
+                          ? (t.target_hours * 3600) + (t.target_minutes * 60)
+                          : null,
+    targetHours:        t.target_hours   != null ? t.target_hours   : null,
+    targetMinutes:      t.target_minutes != null ? t.target_minutes : null,
   };
 }
 
@@ -96,11 +110,27 @@ router.post('/:id/stop', validate(schemas.stopTimer), async (req, res) => {
       return res.status(403).json({ error: "You cannot stop another operator's timer." });
     }
 
-    const completedAt     = new Date().toISOString();
-    const durationSeconds = Math.max(0, Math.round(
-      (Date.now() - new Date(timer.started_at).getTime()) / 1000
-    ));
     const { notes } = req.body;
+
+    // If paused, accumulate final pause period before stopping
+    if (timer.paused_at) {
+      await query(
+        `UPDATE timers SET
+           total_paused_seconds = total_paused_seconds +
+             EXTRACT(EPOCH FROM (NOW() - paused_at))::int,
+           paused_at = NULL, pause_reason = NULL, pause_type = NULL
+         WHERE id = $1`,
+        [timer.id]
+      );
+      // Reload to get updated total_paused_seconds
+      const refreshed = await queryOne('SELECT * FROM timers WHERE id = $1', [timer.id]);
+      Object.assign(timer, refreshed);
+    }
+
+    // Net duration = total elapsed minus all paused time
+    const completedAt     = new Date().toISOString();
+    const rawSeconds      = Math.round((Date.now() - new Date(timer.started_at).getTime()) / 1000);
+    const durationSeconds = Math.max(0, rawSeconds - (timer.total_paused_seconds || 0));
 
     await query(
       `UPDATE timers
