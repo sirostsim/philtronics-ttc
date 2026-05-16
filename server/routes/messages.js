@@ -72,7 +72,9 @@ router.post('/send', requireAuth, requireRole('supervisor'), async (req, res) =>
       return res.status(404).json({ error: 'Operator not found.' });
     }
 
-    // Build SSE event payload
+    // Build SSE event payload — unnamed event so the frontend
+    // addEventListener('message', ...) listener catches it correctly.
+    // Named events (event: message\n) are ignored by the default listener.
     const payload = JSON.stringify({
       from:      req.user.full_name,
       fromRole:  req.user.role,
@@ -83,7 +85,7 @@ router.post('/send', requireAuth, requireRole('supervisor'), async (req, res) =>
     // Push to operator if they are connected
     const conn = connections.get(operatorId);
     if (conn && !conn.writableEnded) {
-      conn.write(`event: message\ndata: ${payload}\n\n`);
+      conn.write(`data: ${payload}\n\n`);
       res.json({ ok: true, delivered: true, operatorName: operator.full_name });
     } else {
       // Operator not currently connected — message not delivered
