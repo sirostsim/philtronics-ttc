@@ -503,6 +503,17 @@
 <div id="chatOverlay" class="chat-overlay" hidden></div>
 
 <script src="app-v2.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('chatCloseBtn').addEventListener('click', function() {
+      var d = document.getElementById('chatDrawer');
+      var o = document.getElementById('chatOverlay');
+      d.hidden = true;
+      d.style.display = 'none';
+      o.hidden = true;
+    }, true);
+  });
+</script>
 
 <!-- ═══ FOOTER BRANDING ════════════════════════════════════════════════ -->
 <footer class="app-footer" role="contentinfo">
