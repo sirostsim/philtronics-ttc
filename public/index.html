@@ -105,12 +105,12 @@
     </div>
   </section>
 
-  <!-- ── OPERATOR TIMER ─────────────────────────────────────────────────── -->
   <!-- ── HOME PAGE ─────────────────────────────────────────────────────────── -->
   <section id="pageHome" class="page" aria-label="Home" hidden>
     <!-- Content rendered dynamically by loadHomePage() -->
   </section>
 
+  <!-- ── OPERATOR TIMER ─────────────────────────────────────────────────── -->
   <section id="pageTimer" class="page" aria-label="Timer" hidden>
     <div class="page-content">
 
@@ -418,7 +418,6 @@
         <button id="btnNewUser" class="btn btn-primary">+ New User</button>
       </div>
 
-      <!-- Admin Tools panel – always rendered, populated by renderAdminTools() -->
       <div id="adminToolsPanel" style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:20px;">
         <div style="font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:12px;">Tools</div>
         <p style="font-size:14px;color:var(--text2);margin-bottom:14px;">
@@ -479,8 +478,6 @@
   </div>
 </div>
 
-<script src="app-v2.js"></script>
-
 <!-- ═══ CHAT DRAWER ══════════════════════════════════════════════════════════ -->
 <div id="chatDrawer" class="chat-drawer" hidden aria-label="Conversation" role="dialog">
   <div class="chat-header">
@@ -503,6 +500,8 @@
   </div>
 </div>
 <div id="chatOverlay" class="chat-overlay" hidden></div>
+
+<script src="app-v2.js"></script>
 
 <!-- ═══ FOOTER BRANDING ════════════════════════════════════════════════ -->
 <footer class="app-footer" role="contentinfo">
