@@ -20,14 +20,11 @@ const state = {
   activeTotalPausedSeconds: 0,
 };
 
-// Wallboard interval handles — declared here so navigateTo can always access them
 let wallboardInterval  = null;
 let wallboardTick      = null;
 let wallboardCInterval = null;
 let wallboardCTick     = null;
 
-// Declared here to avoid temporal dead zone — hideSuggestions() is called
-// from btnStart handler before the autocomplete section further down.
 const itemInput = document.getElementById('itemNumberInput');
 const sugList   = document.getElementById('itemSuggestions');
 
@@ -58,16 +55,13 @@ const PATCH  = (path, body)  => api('PATCH', path, body);
 const DELETE = (path, body)  => api('DELETE', path, body);
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   SAFE DOM HELPERS  (XSS prevention)
+   SAFE DOM HELPERS
    ═══════════════════════════════════════════════════════════════════════════ */
 function esc(str) {
   if (str == null) return '';
   return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 function el(tag, attrs = {}, ...children) {
   const e = document.createElement(tag);
@@ -83,10 +77,7 @@ function el(tag, attrs = {}, ...children) {
   }
   return e;
 }
-function setText(id, text) {
-  const node = document.getElementById(id);
-  if (node) node.textContent = text || '';
-}
+function setText(id, text) { const node = document.getElementById(id); if (node) node.textContent = text || ''; }
 function setError(id, msg) { setText(id, msg); }
 function clearError(id)    { setText(id, ''); }
 function show(id) { const n = document.getElementById(id); if (n) n.hidden = false; }
@@ -98,10 +89,7 @@ function hide(id) { const n = document.getElementById(id); if (n) n.hidden = tru
 function toast(msg, type = '') {
   const t = el('div', { className: `toast ${type}`, role: 'status' }, msg);
   document.getElementById('toastContainer').appendChild(t);
-  setTimeout(() => {
-    t.classList.add('fade-out');
-    setTimeout(() => t.remove(), 350);
-  }, 3000);
+  setTimeout(() => { t.classList.add('fade-out'); setTimeout(() => t.remove(), 350); }, 3000);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -118,7 +106,6 @@ function openModal(title, bodyEl, footerEls = []) {
   document.getElementById('modal').hidden = false;
 }
 function closeModal() { document.getElementById('modal').hidden = true; }
-
 document.getElementById('btnModalClose').addEventListener('click', closeModal);
 document.getElementById('modal').addEventListener('click', e => {
   if (e.target === document.getElementById('modal')) closeModal();
@@ -143,10 +130,7 @@ function buildNav() {
   list.innerHTML = '';
   for (const [key, p] of Object.entries(PAGES)) {
     if (!hasRole(p.minRole)) continue;
-    const btn = el('button', {
-      textContent: p.label,
-      onclick: () => { navigateTo(key); closeNav(); },
-    });
+    const btn = el('button', { textContent: p.label, onclick: () => { navigateTo(key); closeNav(); } });
     if (state.currentPage === key) btn.classList.add('active');
     list.appendChild(el('li', {}, btn));
   }
@@ -154,25 +138,17 @@ function buildNav() {
 
 function navigateTo(page) {
   state.currentPage = page;
-
   if (page !== 'wallboard') {
     if (wallboardInterval) { clearInterval(wallboardInterval); wallboardInterval = null; }
-    if (wallboardTick)     { clearInterval(wallboardTick);     wallboardTick = null;     }
+    if (wallboardTick)     { clearInterval(wallboardTick);     wallboardTick = null; }
   }
   if (page !== 'wallboardc') {
     if (wallboardCInterval) { clearInterval(wallboardCInterval); wallboardCInterval = null; }
-    if (wallboardCTick)     { clearInterval(wallboardCTick);     wallboardCTick = null;     }
+    if (wallboardCTick)     { clearInterval(wallboardCTick);     wallboardCTick = null; }
   }
-
-  for (const p of Object.values(PAGES)) {
-    const e = document.getElementById(p.id);
-    if (e) e.hidden = true;
-  }
+  for (const p of Object.values(PAGES)) { const e = document.getElementById(p.id); if (e) e.hidden = true; }
   const target = PAGES[page];
-  if (target) {
-    const node = document.getElementById(target.id);
-    if (node) node.hidden = false;
-  }
+  if (target) { const node = document.getElementById(target.id); if (node) node.hidden = false; }
   buildNav();
   if (page === 'home')       loadHomePage();
   if (page === 'timer')      loadTimerPage();
@@ -187,10 +163,8 @@ function navigateTo(page) {
 const navDrawer  = document.getElementById('navDrawer');
 const navOverlay = document.getElementById('navOverlay');
 const btnNav     = document.getElementById('btnNav');
-
 function openNav()  { navDrawer.setAttribute('data-open',''); navOverlay.classList.remove('hidden'); btnNav.setAttribute('aria-expanded','true'); }
 function closeNav() { navDrawer.removeAttribute('data-open'); navOverlay.classList.add('hidden');    btnNav.setAttribute('aria-expanded','false'); }
-
 btnNav.addEventListener('click', () => navDrawer.hasAttribute('data-open') ? closeNav() : openNav());
 navOverlay.addEventListener('click', closeNav);
 document.getElementById('btnLogout').addEventListener('click', doLogout);
@@ -206,10 +180,7 @@ async function init() {
 function showLoginPage() {
   document.getElementById('topbar').classList.add('hidden');
   document.getElementById('pageLogin').hidden = false;
-  for (const p of Object.values(PAGES)) {
-    const e = document.getElementById(p.id);
-    if (e) e.hidden = true;
-  }
+  for (const p of Object.values(PAGES)) { const e = document.getElementById(p.id); if (e) e.hidden = true; }
 }
 
 function onLoggedIn() {
@@ -231,24 +202,17 @@ function onLoggedIn() {
 }
 
 async function doLogout() {
-  stopStopwatch();
-  disconnectMessageStream();
-  stopPausePoll();
+  stopStopwatch(); disconnectMessageStream(); stopPausePoll();
   try { await POST('/auth/logout'); } catch (_) {}
-  state.user = null;
-  closeNav();
-  showLoginPage();
-  toast('Signed out.');
+  state.user = null; closeNav(); showLoginPage(); toast('Signed out.');
 }
 
 let _totpChallengeToken = null;
 
 document.getElementById('loginForm').addEventListener('submit', async e => {
-  e.preventDefault();
-  clearError('loginError');
+  e.preventDefault(); clearError('loginError');
   const btn = document.getElementById('btnLogin');
-  btn.disabled = true;
-  btn.textContent = 'Signing in\u2026';
+  btn.disabled = true; btn.textContent = 'Signing in\u2026';
   try {
     const username = document.getElementById('loginUsername').value.trim();
     const password = document.getElementById('loginPassword').value;
@@ -262,24 +226,16 @@ document.getElementById('loginForm').addEventListener('submit', async e => {
       setTimeout(() => document.getElementById('totpCode').focus(), 50);
     } else {
       document.getElementById('loginPassword').value = '';
-      state.user = result;
-      onLoggedIn();
+      state.user = result; onLoggedIn();
     }
-  } catch (err) {
-    setError('loginError', err.message || 'Login failed.');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Sign In';
-  }
+  } catch (err) { setError('loginError', err.message || 'Login failed.'); }
+  finally { btn.disabled = false; btn.textContent = 'Sign In'; }
 });
 
 document.getElementById('btnTotpVerify').addEventListener('click', async () => {
   clearError('totpError');
   const code = document.getElementById('totpCode').value.trim();
-  if (!/^\d{6}$/.test(code)) {
-    setError('totpError', 'Please enter the 6-digit code from your authenticator app.');
-    return;
-  }
+  if (!/^\d{6}$/.test(code)) { setError('totpError', 'Please enter the 6-digit code from your authenticator app.'); return; }
   const btn = document.getElementById('btnTotpVerify');
   btn.disabled = true; btn.textContent = 'Verifying\u2026';
   try {
@@ -289,17 +245,13 @@ document.getElementById('btnTotpVerify').addEventListener('click', async () => {
     document.getElementById('totpStep').hidden = true;
     document.getElementById('loginForm').hidden = false;
     onLoggedIn();
-  } catch (err) {
-    setError('totpError', err.message || 'Verification failed.');
-  } finally {
-    btn.disabled = false; btn.textContent = 'Verify';
-  }
+  } catch (err) { setError('totpError', err.message || 'Verification failed.'); }
+  finally { btn.disabled = false; btn.textContent = 'Verify'; }
 });
 
 document.getElementById('totpCode').addEventListener('keydown', e => {
   if (e.key === 'Enter') document.getElementById('btnTotpVerify').click();
 });
-
 document.getElementById('btnTotpBack').addEventListener('click', () => {
   _totpChallengeToken = null;
   document.getElementById('totpStep').hidden  = true;
@@ -316,8 +268,7 @@ function refreshActiveTimerBanner() {
   if (state.activeTimerId) {
     const pill = el('div', { className: 'active-banner-pill' },
       el('span', { className: 'active-banner-dot' }),
-      document.createTextNode('TIMER RUNNING')
-    );
+      document.createTextNode('TIMER RUNNING'));
     banner.appendChild(pill);
   }
 }
@@ -326,56 +277,42 @@ function refreshActiveTimerBanner() {
    TIMER PAGE
    ═══════════════════════════════════════════════════════════════════════════ */
 async function loadTimerPage() {
-  clearError('startError');
-  clearError('stopError');
+  clearError('startError'); clearError('stopError');
   try {
     const me = await GET('/me');
     if (me.activeTimer) {
       state.activeTimerId   = me.activeTimer.id;
       state.activeStartedAt = me.activeTimer.startedAt;
-      hide('panelStart');
-      show('panelActive');
+      hide('panelStart'); show('panelActive');
       document.getElementById('activeItemDisplay').textContent = me.activeTimer.itemNumber || '';
       const metaParts = ['Started at ' + formatLocalTime(me.activeTimer.startedAt)];
       if (me.activeTimer.workstation) metaParts.push('WS: ' + me.activeTimer.workstation);
       if (me.activeTimer.woNumber)    metaParts.push('W/O: ' + me.activeTimer.woNumber);
       document.getElementById('activeMeta').textContent = metaParts.join('  \u00b7  ');
-      refreshActiveTimerBanner();
-      startStopwatch();
-      showActivePanel();
+      refreshActiveTimerBanner(); startStopwatch(); showActivePanel();
     } else {
-      state.activeTimerId   = null;
-      state.activeStartedAt = null;
-      refreshActiveTimerBanner();
-      showStartPanel();
-      stopStopwatch();
+      state.activeTimerId = null; state.activeStartedAt = null;
+      refreshActiveTimerBanner(); showStartPanel(); stopStopwatch();
     }
   } catch (_) {
     if (state.activeTimerId) { await showActivePanel(); startStopwatch(); }
     else showStartPanel();
   }
   loadTodayEntries();
-  if (state.activeTimerId) startPausePoll();
-  else stopPausePoll();
+  if (state.activeTimerId) startPausePoll(); else stopPausePoll();
 }
 
 function showStartPanel() {
-  show('panelStart');
-  hide('panelActive');
-  state.activeTargetSeconds    = null;
-  state.activeIsPaused         = false;
-  state.activePausedAt         = null;
-  state.activeTotalPausedSeconds = 0;
-  hide('activeTargetWrap');
-  stopPausePoll();
-  const rb = document.getElementById('btnResumeTimer');
-  if (rb) rb.remove();
+  show('panelStart'); hide('panelActive');
+  state.activeTargetSeconds = null; state.activeIsPaused = false;
+  state.activePausedAt = null; state.activeTotalPausedSeconds = 0;
+  hide('activeTargetWrap'); stopPausePoll();
+  const rb = document.getElementById('btnResumeTimer'); if (rb) rb.remove();
   clearError('startError');
 }
 
 async function showActivePanel() {
-  hide('panelStart');
-  show('panelActive');
+  hide('panelStart'); show('panelActive');
   try {
     let t = null;
     if (state.activeTimerId) {
@@ -405,8 +342,7 @@ async function showActivePanel() {
       if (t.woNumber)    metaParts.push('W/O: ' + t.woNumber);
       document.getElementById('activeMeta').textContent = metaParts.join('  \u00b7  ');
       state.activeTargetSeconds = t.targetSeconds || null;
-      updateActiveTargetDisplay();
-      updatePauseUI();
+      updateActiveTargetDisplay(); updatePauseUI();
     } else if (state.activeTimerId) {
       state.activeTimerId = null; state.activeStartedAt = null;
       refreshActiveTimerBanner(); showStartPanel(); stopStopwatch();
@@ -607,8 +543,8 @@ document.getElementById('btnExportCSV').addEventListener('click', () => {
 });
 function renderStatCards(stats) {
   const container = document.getElementById('statCards'); container.innerHTML = '';
-  [{ label:'Active Now', value:stats.activeCount },{ label:'Last 24 Hours', value:stats.total24h },
-   { label:'Last 7 Days', value:stats.total7d },{ label:'Item Types', value:stats.byItem.length }]
+  [{ label:'Active Now', value:stats.activeCount }, { label:'Last 24 Hours', value:stats.total24h },
+   { label:'Last 7 Days', value:stats.total7d },    { label:'Item Types', value:stats.byItem.length }]
   .forEach(c => container.appendChild(el('div',{className:'stat-card'},el('div',{className:'stat-label',textContent:c.label}),el('div',{className:'stat-value',textContent:c.value}))));
 }
 function renderDashTable(rows) {
@@ -895,13 +831,11 @@ async function refreshWallboard() {
         if (t.targetSeconds) { const pct=elapsed/t.targetSeconds; if(pct>=1.0)tile.classList.add('tile-overdue'); else if(pct>=0.8)tile.classList.add('tile-warning'); }
         else { if(elapsed>4*3600)tile.classList.add('tile-overdue'); else if(elapsed>2*3600)tile.classList.add('tile-warning'); }
       }
-
       if (t.isPaused) {
         const pauseTag=el('div',{className:'wb-paused-tag',textContent:'\u23f8 PAUSED'});
         if (t.pauseType==='schedule') pauseTag.title='Auto-paused outside working hours';
         tile.appendChild(pauseTag);
       }
-
       tile.appendChild(el('div',{className:'wb-item',textContent:t.itemNumber}));
       const opRow=el('div',{className:'wb-operator-row'});
       opRow.appendChild(el('span',{className:'presence-dot '+(onlineSet.has(t.operatorId)?'online':'offline'),title:onlineSet.has(t.operatorId)?'Session active':'Not connected'}));
@@ -914,7 +848,6 @@ async function refreshWallboard() {
       if (t.workstation) tile.appendChild(el('div',{className:'wb-notes',textContent:'\uD83D\uDDA5 '+t.workstation}));
       if (t.woNumber)    tile.appendChild(el('div',{className:'wb-notes',textContent:'\uD83D\uDCCB W/O: '+t.woNumber}));
       if (t.timeCheck)   tile.appendChild(el('span',{className:'badge badge-timecheck',style:'margin-top:6px;display:inline-block;',textContent:'\u2713 Time Check'}));
-
       if (t.targetSeconds) {
         const pct=elapsed/t.targetSeconds,pctCapped=Math.min(1,pct),remaining=t.targetSeconds-elapsed;
         const targetWrap=el('div',{className:'wb-target-wrap'});
@@ -928,7 +861,6 @@ async function refreshWallboard() {
           'data-startedat':t.startedAt,'data-targetseconds':String(t.targetSeconds)}));
         targetWrap.appendChild(bar);tile.appendChild(targetWrap);
       }
-
       if (hasRole('supervisor')) {
         const btnRow=el('div',{className:'wb-btn-row'});
         const pauseBtn=el('button',{className:'wb-pause-btn'+(t.isPaused?' is-paused':''),
@@ -1314,14 +1246,13 @@ function handleIncomingSSE(data) {
   if (!data || !data.type) return;
   switch (data.type) {
     case 'message':
-      // New conversation — always opens the drawer
       openChatDrawer(data);
       break;
     case 'reply':
-      // If the drawer is closed but conversation matches, reopen it
       if (chatDrawer.hidden && data.conversationId === chat.conversationId) {
-        chatDrawer.hidden  = false;
-        chatOverlay.hidden = false;
+        chatDrawer.hidden        = false;
+        chatDrawer.style.display = '';
+        chatOverlay.hidden       = false;
       }
       appendChatMessage(data);
       break;
@@ -1340,15 +1271,15 @@ const chat = {
   otherRole:      null,
 };
 
-const chatDrawer    = document.getElementById('chatDrawer');
-const chatOverlay   = document.getElementById('chatOverlay');
-const chatMessages  = document.getElementById('chatMessages');
-const chatInput     = document.getElementById('chatInput');
-const chatSendBtn   = document.getElementById('chatSendBtn');
-const chatClose     = document.getElementById('chatCloseBtn');
-const chatCharCount = document.getElementById('chatCharCount');
-const chatHeaderName= document.getElementById('chatHeaderName');
-const chatHeaderSub = document.getElementById('chatHeaderSub');
+const chatDrawer     = document.getElementById('chatDrawer');
+const chatOverlay    = document.getElementById('chatOverlay');
+const chatMessages   = document.getElementById('chatMessages');
+const chatInput      = document.getElementById('chatInput');
+const chatSendBtn    = document.getElementById('chatSendBtn');
+const chatClose      = document.getElementById('chatCloseBtn');
+const chatCharCount  = document.getElementById('chatCharCount');
+const chatHeaderName = document.getElementById('chatHeaderName');
+const chatHeaderSub  = document.getElementById('chatHeaderSub');
 
 function openChatDrawer(data) {
   chat.conversationId = data.conversationId;
@@ -1361,18 +1292,18 @@ function openChatDrawer(data) {
     : 'Reply below \u2014 your supervisor can see this';
   chatMessages.innerHTML = '';
   appendChatMessage(data, true);
-  chatDrawer.hidden  = false;
-  chatOverlay.hidden = false;
-  chatInput.value    = '';
+  chatDrawer.hidden        = false;
+  chatDrawer.style.display = '';
+  chatOverlay.hidden       = false;
+  chatInput.value          = '';
   chatCharCount.textContent = '0 / 500';
   setTimeout(() => chatInput.focus(), 80);
 }
 
 function appendChatMessage(data, isOpening = false) {
-  // Never reopen the drawer from here — only openChatDrawer() does that.
+  // Never reopen the drawer — only openChatDrawer() and handleIncomingSSE() do that.
   // If the drawer is closed and this isn't the opening message, discard.
   if (chatDrawer.hidden && !isOpening) return;
-
   if (data.conversationId && data.conversationId !== chat.conversationId) return;
 
   const isMine = data.fromId === state.user.id;
@@ -1406,16 +1337,20 @@ function handleConversationClosed(data) {
 }
 
 function closeChatDrawer(sendCloseSignal = true) {
-  // Close UI immediately — never let the server call block this
-  chatDrawer.hidden    = true;
-  chatOverlay.hidden   = true;
-  chatInput.disabled   = false;
-  chatSendBtn.disabled = false;
-  chatMessages.innerHTML = '';
-  // Fire-and-forget close signal
+  console.log('[chat] closeChatDrawer called, isSupervisor=', chat.isSupervisor, 'convId=', chat.conversationId);
+  // Close the UI first — use every available mechanism
+  chatDrawer.hidden        = true;
+  chatOverlay.hidden       = true;
+  chatDrawer.style.display = 'none';   // belt-and-braces force hide
+  chatInput.disabled       = false;
+  chatSendBtn.disabled     = false;
+  chatMessages.innerHTML   = '';
+  console.log('[chat] after close: hidden=', chatDrawer.hidden, 'display=', chatDrawer.style.display);
+
   if (sendCloseSignal && chat.isSupervisor && chat.conversationId) {
     POST('/messages/close', { conversationId: chat.conversationId }).catch(() => {});
   }
+
   chat.conversationId = null;
   chat.isSupervisor   = false;
   chat.otherName      = null;
@@ -1428,6 +1363,7 @@ async function sendChatMessage() {
   try {
     const result = await POST('/messages/reply', { conversationId: chat.conversationId, message: text });
     if (!result.delivered) toast(chat.otherName + ' is no longer connected \u2014 message not delivered.', '');
+    // Optimistic append of own message
     appendChatMessage({
       conversationId: chat.conversationId,
       from:     state.user.fullName,
@@ -1489,8 +1425,9 @@ async function openSendMessageModal(operatorId, operatorName) {
           from: state.user.fullName, fromId: state.user.id, fromRole: state.user.role,
           message, sentAt: new Date().toISOString(),
         }, true);
-        chatDrawer.hidden  = false;
-        chatOverlay.hidden = false;
+        chatDrawer.hidden        = false;
+        chatDrawer.style.display = '';
+        chatOverlay.hidden       = false;
         setTimeout(() => chatInput.focus(), 80);
       } else {
         toast(operatorName + ' is not currently logged in \u2014 message not delivered.', '');
