@@ -154,6 +154,7 @@ function buildNav() {
 
 function navigateTo(page) {
   state.currentPage = page;
+
   if (page !== 'wallboard') {
     if (wallboardInterval) { clearInterval(wallboardInterval); wallboardInterval = null; }
     if (wallboardTick)     { clearInterval(wallboardTick);     wallboardTick = null;     }
@@ -162,6 +163,7 @@ function navigateTo(page) {
     if (wallboardCInterval) { clearInterval(wallboardCInterval); wallboardCInterval = null; }
     if (wallboardCTick)     { clearInterval(wallboardCTick);     wallboardCTick = null;     }
   }
+
   for (const p of Object.values(PAGES)) {
     const e = document.getElementById(p.id);
     if (e) e.hidden = true;
@@ -185,8 +187,10 @@ function navigateTo(page) {
 const navDrawer  = document.getElementById('navDrawer');
 const navOverlay = document.getElementById('navOverlay');
 const btnNav     = document.getElementById('btnNav');
+
 function openNav()  { navDrawer.setAttribute('data-open',''); navOverlay.classList.remove('hidden'); btnNav.setAttribute('aria-expanded','true'); }
 function closeNav() { navDrawer.removeAttribute('data-open'); navOverlay.classList.add('hidden');    btnNav.setAttribute('aria-expanded','false'); }
+
 btnNav.addEventListener('click', () => navDrawer.hasAttribute('data-open') ? closeNav() : openNav());
 navOverlay.addEventListener('click', closeNav);
 document.getElementById('btnLogout').addEventListener('click', doLogout);
@@ -227,17 +231,24 @@ function onLoggedIn() {
 }
 
 async function doLogout() {
-  stopStopwatch(); disconnectMessageStream(); stopPausePoll();
+  stopStopwatch();
+  disconnectMessageStream();
+  stopPausePoll();
   try { await POST('/auth/logout'); } catch (_) {}
-  state.user = null; closeNav(); showLoginPage(); toast('Signed out.');
+  state.user = null;
+  closeNav();
+  showLoginPage();
+  toast('Signed out.');
 }
 
 let _totpChallengeToken = null;
 
 document.getElementById('loginForm').addEventListener('submit', async e => {
-  e.preventDefault(); clearError('loginError');
+  e.preventDefault();
+  clearError('loginError');
   const btn = document.getElementById('btnLogin');
-  btn.disabled = true; btn.textContent = 'Signing in\u2026';
+  btn.disabled = true;
+  btn.textContent = 'Signing in\u2026';
   try {
     const username = document.getElementById('loginUsername').value.trim();
     const password = document.getElementById('loginPassword').value;
@@ -251,16 +262,24 @@ document.getElementById('loginForm').addEventListener('submit', async e => {
       setTimeout(() => document.getElementById('totpCode').focus(), 50);
     } else {
       document.getElementById('loginPassword').value = '';
-      state.user = result; onLoggedIn();
+      state.user = result;
+      onLoggedIn();
     }
-  } catch (err) { setError('loginError', err.message || 'Login failed.'); }
-  finally { btn.disabled = false; btn.textContent = 'Sign In'; }
+  } catch (err) {
+    setError('loginError', err.message || 'Login failed.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Sign In';
+  }
 });
 
 document.getElementById('btnTotpVerify').addEventListener('click', async () => {
   clearError('totpError');
   const code = document.getElementById('totpCode').value.trim();
-  if (!/^\d{6}$/.test(code)) { setError('totpError', 'Please enter the 6-digit code from your authenticator app.'); return; }
+  if (!/^\d{6}$/.test(code)) {
+    setError('totpError', 'Please enter the 6-digit code from your authenticator app.');
+    return;
+  }
   const btn = document.getElementById('btnTotpVerify');
   btn.disabled = true; btn.textContent = 'Verifying\u2026';
   try {
@@ -270,13 +289,17 @@ document.getElementById('btnTotpVerify').addEventListener('click', async () => {
     document.getElementById('totpStep').hidden = true;
     document.getElementById('loginForm').hidden = false;
     onLoggedIn();
-  } catch (err) { setError('totpError', err.message || 'Verification failed.'); }
-  finally { btn.disabled = false; btn.textContent = 'Verify'; }
+  } catch (err) {
+    setError('totpError', err.message || 'Verification failed.');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Verify';
+  }
 });
 
 document.getElementById('totpCode').addEventListener('keydown', e => {
   if (e.key === 'Enter') document.getElementById('btnTotpVerify').click();
 });
+
 document.getElementById('btnTotpBack').addEventListener('click', () => {
   _totpChallengeToken = null;
   document.getElementById('totpStep').hidden  = true;
@@ -293,7 +316,8 @@ function refreshActiveTimerBanner() {
   if (state.activeTimerId) {
     const pill = el('div', { className: 'active-banner-pill' },
       el('span', { className: 'active-banner-dot' }),
-      document.createTextNode('TIMER RUNNING'));
+      document.createTextNode('TIMER RUNNING')
+    );
     banner.appendChild(pill);
   }
 }
@@ -302,42 +326,56 @@ function refreshActiveTimerBanner() {
    TIMER PAGE
    ═══════════════════════════════════════════════════════════════════════════ */
 async function loadTimerPage() {
-  clearError('startError'); clearError('stopError');
+  clearError('startError');
+  clearError('stopError');
   try {
     const me = await GET('/me');
     if (me.activeTimer) {
       state.activeTimerId   = me.activeTimer.id;
       state.activeStartedAt = me.activeTimer.startedAt;
-      hide('panelStart'); show('panelActive');
+      hide('panelStart');
+      show('panelActive');
       document.getElementById('activeItemDisplay').textContent = me.activeTimer.itemNumber || '';
       const metaParts = ['Started at ' + formatLocalTime(me.activeTimer.startedAt)];
       if (me.activeTimer.workstation) metaParts.push('WS: ' + me.activeTimer.workstation);
       if (me.activeTimer.woNumber)    metaParts.push('W/O: ' + me.activeTimer.woNumber);
       document.getElementById('activeMeta').textContent = metaParts.join('  \u00b7  ');
-      refreshActiveTimerBanner(); startStopwatch(); showActivePanel();
+      refreshActiveTimerBanner();
+      startStopwatch();
+      showActivePanel();
     } else {
-      state.activeTimerId = null; state.activeStartedAt = null;
-      refreshActiveTimerBanner(); showStartPanel(); stopStopwatch();
+      state.activeTimerId   = null;
+      state.activeStartedAt = null;
+      refreshActiveTimerBanner();
+      showStartPanel();
+      stopStopwatch();
     }
   } catch (_) {
     if (state.activeTimerId) { await showActivePanel(); startStopwatch(); }
     else showStartPanel();
   }
   loadTodayEntries();
-  if (state.activeTimerId) startPausePoll(); else stopPausePoll();
+  if (state.activeTimerId) startPausePoll();
+  else stopPausePoll();
 }
 
 function showStartPanel() {
-  show('panelStart'); hide('panelActive');
-  state.activeTargetSeconds = null; state.activeIsPaused = false;
-  state.activePausedAt = null; state.activeTotalPausedSeconds = 0;
-  hide('activeTargetWrap'); stopPausePoll();
-  const rb = document.getElementById('btnResumeTimer'); if (rb) rb.remove();
+  show('panelStart');
+  hide('panelActive');
+  state.activeTargetSeconds    = null;
+  state.activeIsPaused         = false;
+  state.activePausedAt         = null;
+  state.activeTotalPausedSeconds = 0;
+  hide('activeTargetWrap');
+  stopPausePoll();
+  const rb = document.getElementById('btnResumeTimer');
+  if (rb) rb.remove();
   clearError('startError');
 }
 
 async function showActivePanel() {
-  hide('panelStart'); show('panelActive');
+  hide('panelStart');
+  show('panelActive');
   try {
     let t = null;
     if (state.activeTimerId) {
@@ -367,7 +405,8 @@ async function showActivePanel() {
       if (t.woNumber)    metaParts.push('W/O: ' + t.woNumber);
       document.getElementById('activeMeta').textContent = metaParts.join('  \u00b7  ');
       state.activeTargetSeconds = t.targetSeconds || null;
-      updateActiveTargetDisplay(); updatePauseUI();
+      updateActiveTargetDisplay();
+      updatePauseUI();
     } else if (state.activeTimerId) {
       state.activeTimerId = null; state.activeStartedAt = null;
       refreshActiveTimerBanner(); showStartPanel(); stopStopwatch();
@@ -796,7 +835,7 @@ const scanner = (() => {
     if (!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){toast('Camera API not available. Use Chrome on Android.','error');return;}
     if (!('BarcodeDetector' in window)){overlay.hidden=false;setStatus('Barcode scanning requires Chrome on Android or Chrome 83+ on desktop.','error');return;}
     overlay.hidden=false;active=true;setStatus('Scanning \u2014 point at a barcode or QR code');
-    try {
+    try{
       detector=new BarcodeDetector({formats:['qr_code','code_128','code_39','code_93','ean_13','ean_8','upc_a','upc_e','data_matrix','pdf417']});
       stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false});
       video.srcObject=stream;await video.play();setStatus('Scanning \u2014 point at a barcode or QR code');tryEnableTorch();startScanLoop();
@@ -1274,9 +1313,21 @@ function disconnectMessageStream() {
 function handleIncomingSSE(data) {
   if (!data || !data.type) return;
   switch (data.type) {
-    case 'message': openChatDrawer(data); break;
-    case 'reply':   appendChatMessage(data); break;
-    case 'close':   handleConversationClosed(data); break;
+    case 'message':
+      // New conversation — always opens the drawer
+      openChatDrawer(data);
+      break;
+    case 'reply':
+      // If the drawer is closed but conversation matches, reopen it
+      if (chatDrawer.hidden && data.conversationId === chat.conversationId) {
+        chatDrawer.hidden  = false;
+        chatOverlay.hidden = false;
+      }
+      appendChatMessage(data);
+      break;
+    case 'close':
+      handleConversationClosed(data);
+      break;
   }
   playPing(data.type);
 }
@@ -1318,21 +1369,12 @@ function openChatDrawer(data) {
 }
 
 function appendChatMessage(data, isOpening = false) {
-  if (chatDrawer.hidden && data.conversationId) {
-    chat.conversationId = data.conversationId;
-    chat.isSupervisor   = hasRole('supervisor');
-    chat.otherName      = data.from;
-    chat.otherRole      = data.fromRole;
-    chatHeaderName.textContent = data.from;
-    chatHeaderSub.textContent  = chat.isSupervisor
-      ? 'Tap \u2715 to close the conversation'
-      : 'Reply below \u2014 your supervisor can see this';
-    chatMessages.innerHTML = '';
-    chatDrawer.hidden  = false;
-    chatOverlay.hidden = false;
-    setTimeout(() => chatInput.focus(), 80);
-  }
+  // Never reopen the drawer from here — only openChatDrawer() does that.
+  // If the drawer is closed and this isn't the opening message, discard.
+  if (chatDrawer.hidden && !isOpening) return;
+
   if (data.conversationId && data.conversationId !== chat.conversationId) return;
+
   const isMine = data.fromId === state.user.id;
   const bubble = el('div', { className: 'chat-bubble-wrap' + (isMine ? ' mine' : ' theirs') });
   const bbl    = el('div', { className: 'chat-bubble'      + (isMine ? ' mine' : ' theirs') });
@@ -1364,7 +1406,7 @@ function handleConversationClosed(data) {
 }
 
 function closeChatDrawer(sendCloseSignal = true) {
-  // Close UI immediately — never let server call block this
+  // Close UI immediately — never let the server call block this
   chatDrawer.hidden    = true;
   chatOverlay.hidden   = true;
   chatInput.disabled   = false;
@@ -1424,7 +1466,7 @@ async function openSendMessageModal(operatorId, operatorName) {
   const charCount = el('div', { style: 'font-size:11px;color:var(--text3);text-align:right;margin-top:4px;', textContent: '0 / 500' });
   msgArea.addEventListener('input', () => { charCount.textContent = msgArea.value.length + ' / 500'; });
   body.appendChild(charCount);
-  const errDiv  = el('div', { className: 'error-msg', role: 'alert' }); body.appendChild(errDiv);
+  const errDiv = el('div', { className: 'error-msg', role: 'alert' }); body.appendChild(errDiv);
   const btnSend   = el('button', { className: 'btn btn-primary', textContent: '\uD83D\uDCAC Start Conversation' });
   const btnCancel = el('button', { className: 'btn btn-ghost',   textContent: 'Cancel' });
   btnCancel.addEventListener('click', closeModal);
