@@ -1618,15 +1618,15 @@ async function refreshWallboard() {
         tile.appendChild(pauseTag);
       }
 
-      // Raised hand indicator — badge + lower button, top-right corner
+      // Raised hand — full-width banner at top of tile with Lower button on right
       if (t.handRaised) {
         tile.classList.add('tile-hand-raised');
-        const handCorner = el('div', { className: 'wb-hand-corner' });
-        handCorner.appendChild(el('span', { className: 'wb-hand-tag', textContent: '✋ Needs Attention' }));
+        const handBanner = el('div', { className: 'wb-hand-banner' });
+        handBanner.appendChild(el('span', { className: 'wb-hand-banner-text', textContent: '✋ Needs Attention' }));
         if (hasRole('supervisor')) {
           const lowerBtn = el('button', {
             className: 'wb-hand-lower-btn',
-            textContent: 'Lower',
+            textContent: 'Lower ✕',
             'aria-label': 'Lower hand for ' + t.operatorName,
           });
           lowerBtn.addEventListener('click', async e => {
@@ -1638,9 +1638,9 @@ async function refreshWallboard() {
               await refreshWallboard();
             } catch (err) { toast(err.message, 'error'); lowerBtn.disabled = false; }
           });
-          handCorner.appendChild(lowerBtn);
+          handBanner.appendChild(lowerBtn);
         }
-        tile.appendChild(handCorner);
+        tile.appendChild(handBanner);
       }
 
       tile.appendChild(el('div', { className: 'wb-item',     textContent: t.itemNumber }));

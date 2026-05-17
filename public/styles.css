@@ -2324,34 +2324,14 @@ button.topbar-brand:focus-visible {
   50%       { box-shadow: 0 0 0 6px rgba(139,92,246,.25); }
 }
 
-.wb-hand-tag {
-  font-size: 12px;
-  font-weight: 700;
-  color: #a78bfa;
-  letter-spacing: .04em;
-  margin-bottom: 4px;
-}
+/* wb-hand-tag moved to corner layout */
 
 .wbc-hand-tag {
   font-size: 16px;
   margin-top: 2px;
 }
 
-/* Lower hand button on wallboard */
-.wb-lower-hand-btn {
-  flex: 1;
-  background: rgba(139,92,246,.12);
-  border: 1px solid #7c3aed;
-  border-radius: 4px;
-  color: #a78bfa;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 6px 4px;
-  cursor: pointer;
-  font-family: var(--font-body, 'Barlow', sans-serif);
-  white-space: nowrap;
-}
-.wb-lower-hand-btn:hover { background: rgba(139,92,246,.22); }
+/* wb-lower-hand-btn replaced by wb-hand-lower-btn */
 
 /* Home page hand raised row highlight */
 .home-active-row.hand-raised {
@@ -2413,39 +2393,38 @@ button.topbar-brand:focus-visible {
   background: rgba(139,92,246,.12) !important;
 }
 
-/* Wallboard tile — raised hand corner badge + lower button */
-.wb-hand-corner {
-  position: absolute;
-  top: 8px;
-  right: 8px;
+/* Wallboard tile — raised hand full-width banner */
+.wb-hand-banner {
   display: flex;
   align-items: center;
-  gap: 5px;
-  z-index: 2;
+  justify-content: space-between;
+  background: rgba(139,92,246,.18);
+  border: 1px solid rgba(139,92,246,.4);
+  border-radius: 6px;
+  padding: 5px 8px 5px 10px;
+  margin-bottom: 8px;
+  gap: 8px;
 }
-.wb-hand-tag {
-  font-size: 10px;
+.wb-hand-banner-text {
+  font-size: 11px;
   font-weight: 700;
-  color: #a78bfa;
+  color: #c4b5fd;
   letter-spacing: .03em;
-  background: rgba(139,92,246,.15);
-  border: 1px solid rgba(139,92,246,.35);
-  border-radius: 4px;
-  padding: 2px 7px;
   white-space: nowrap;
 }
 .wb-hand-lower-btn {
-  background: rgba(139,92,246,.2);
+  background: rgba(139,92,246,.25);
   border: 1px solid #7c3aed;
   border-radius: 4px;
   color: #c4b5fd;
   font-size: 10px;
   font-weight: 700;
-  padding: 2px 8px;
+  padding: 3px 8px;
   cursor: pointer;
   font-family: var(--font-body, 'Barlow', sans-serif);
   white-space: nowrap;
   transition: background .15s;
+  flex-shrink: 0;
 }
-.wb-hand-lower-btn:hover { background: rgba(139,92,246,.35); }
+.wb-hand-lower-btn:hover { background: rgba(139,92,246,.4); }
 .wb-hand-lower-btn:disabled { opacity: .5; cursor: default; }
