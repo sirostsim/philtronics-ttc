@@ -439,29 +439,53 @@
 
       <!-- Daily trend chart + table -->
       <div class="report-section">
-        <h3 class="section-heading">Daily Trend</h3>
-        <div class="report-chart-wrap">
-          <canvas id="chartDailyTrend"></canvas>
+        <div class="report-section-header">
+          <h3 class="section-heading">Daily Trend</h3>
+          <div class="report-tabs">
+            <button class="report-tab active" onclick="switchReportTab(this,'trendChart','trendTable')">📈 Chart</button>
+            <button class="report-tab" onclick="switchReportTab(this,'trendTable','trendChart')">📋 Table</button>
+          </div>
         </div>
-        <div id="reportTrendTable" class="dash-table-wrap" style="margin-top:16px;"></div>
+        <div id="trendChart">
+          <div class="report-chart-wrap"><canvas id="chartDailyTrend"></canvas></div>
+        </div>
+        <div id="trendTable" hidden>
+          <div id="reportTrendTable" class="dash-table-wrap"></div>
+        </div>
       </div>
 
-      <!-- On-time vs over target by item (stacked bar) -->
+      <!-- On-time vs over target by item -->
       <div class="report-section">
-        <h3 class="section-heading">On-Time vs Over Target — by Item</h3>
-        <div class="report-chart-wrap">
-          <canvas id="chartItemOnTime"></canvas>
+        <div class="report-section-header">
+          <h3 class="section-heading">On-Time vs Over Target — by Item</h3>
+          <div class="report-tabs">
+            <button class="report-tab active" onclick="switchReportTab(this,'itemChart','itemTable')">📈 Chart</button>
+            <button class="report-tab" onclick="switchReportTab(this,'itemTable','itemChart')">📋 Table</button>
+          </div>
         </div>
-        <div id="reportItemTable" class="dash-table-wrap" style="margin-top:16px;"></div>
+        <div id="itemChart">
+          <div class="report-chart-wrap"><canvas id="chartItemOnTime"></canvas></div>
+        </div>
+        <div id="itemTable" hidden>
+          <div id="reportItemTable" class="dash-table-wrap"></div>
+        </div>
       </div>
 
       <!-- Operator comparison chart + table -->
       <div class="report-section">
-        <h3 class="section-heading">Operator Performance</h3>
-        <div class="report-chart-wrap">
-          <canvas id="chartOperator"></canvas>
+        <div class="report-section-header">
+          <h3 class="section-heading">Operator Performance</h3>
+          <div class="report-tabs">
+            <button class="report-tab active" onclick="switchReportTab(this,'operatorChart','operatorTable')">📈 Chart</button>
+            <button class="report-tab" onclick="switchReportTab(this,'operatorTable','operatorChart')">📋 Table</button>
+          </div>
         </div>
-        <div id="reportOperatorTable" class="dash-table-wrap" style="margin-top:16px;"></div>
+        <div id="operatorChart">
+          <div class="report-chart-wrap"><canvas id="chartOperator"></canvas></div>
+        </div>
+        <div id="operatorTable" hidden>
+          <div id="reportOperatorTable" class="dash-table-wrap"></div>
+        </div>
       </div>
 
       <!-- Overdue analysis -->

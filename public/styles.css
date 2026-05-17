@@ -2242,3 +2242,37 @@ button.topbar-brand:focus-visible {
   padding: 20px;
   margin-bottom: 8px;
 }
+
+.report-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.report-section-header .section-heading {
+  margin-bottom: 0;
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.report-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px;
+}
+.report-tab {
+  background: none;
+  border: none;
+  border-radius: 4px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text3);
+  cursor: pointer;
+  transition: all .15s;
+  font-family: var(--font-body, 'Barlow', sans-serif);
+}
+.report-tab:hover { color: var(--text); background: var(--bg3); }
+.report-tab.active { background: var(--accent); color: #0f1117; }

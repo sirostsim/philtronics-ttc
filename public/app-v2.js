@@ -2943,6 +2943,16 @@ async function runReport() {
   ['reportStatCards','reportItemTable','reportOperatorTable','reportTrendTable','reportOverdueGrid']
     .forEach(id => { const n = document.getElementById(id); if (n) n.innerHTML = '<div class="empty-state">Loading\u2026</div>'; });
 
+  // Reset all tabs back to chart view
+  [['trendChart','trendTable'],['itemChart','itemTable'],['operatorChart','operatorTable']].forEach(([show,hide]) => {
+    const showEl = document.getElementById(show), hideEl = document.getElementById(hide);
+    if (showEl) showEl.hidden = false;
+    if (hideEl) hideEl.hidden = true;
+  });
+  document.querySelectorAll('.report-tab').forEach((t,i) => {
+    t.classList.toggle('active', i % 2 === 0);
+  });
+
   const [stats, operators, trends, overdue] = await Promise.all([
     GET(`/export/stats?${qs}`).catch(() => null),
     GET(`/export/report/operators?${qs}`).catch(() => []),
@@ -2951,16 +2961,48 @@ async function runReport() {
   ]);
 
   renderReportStatCards(stats);
-  renderChartDailyTrend(trends);
+  _lastTrends    = trends;
+  _lastByItem    = stats?.byItem || [];
+  _lastOperators = operators;
   renderReportTrendTable(trends);
-  renderChartItemOnTime(stats?.byItem || []);
   renderReportItemTable(stats?.byItem || []);
-  renderChartOperator(operators);
   renderReportOperatorTable(operators);
   renderReportOverdue(overdue);
+
+  // Defer chart rendering until after the DOM has painted —
+  // canvas elements need to be visible with real dimensions first
+  requestAnimationFrame(() => {
+    setTimeout(() => {
+      renderChartDailyTrend(trends);
+      renderChartItemOnTime(stats?.byItem || []);
+      renderChartOperator(operators);
+    }, 50);
+  });
 }
 
-/* ── Charts ──────────────────────────────────────────────────────────────── */
+function switchReportTab(btn, showId, hideId) {
+  // Update button states
+  const tabs = btn.closest('.report-tabs').querySelectorAll('.report-tab');
+  tabs.forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  // Show/hide panels
+  document.getElementById(showId).hidden = false;
+  document.getElementById(hideId).hidden = true;
+  // If switching to a chart panel, redraw — canvas may have been zero-sized when hidden
+  const canvasMap = {
+    trendChart:    () => renderChartDailyTrend(_lastTrends),
+    itemChart:     () => renderChartItemOnTime(_lastByItem),
+    operatorChart: () => renderChartOperator(_lastOperators),
+  };
+  if (canvasMap[showId]) {
+    requestAnimationFrame(() => setTimeout(canvasMap[showId], 30));
+  }
+}
+
+// Cache last data so tabs can redraw charts on demand
+let _lastTrends = [], _lastByItem = [], _lastOperators = [];
+
+
 
 function renderChartDailyTrend(rows) {
   destroyChart('dailyTrend');
