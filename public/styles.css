@@ -2412,3 +2412,40 @@ button.topbar-brand:focus-visible {
 .home-lower-all-btn:hover {
   background: rgba(139,92,246,.12) !important;
 }
+
+/* Wallboard tile — raised hand corner badge + lower button */
+.wb-hand-corner {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  z-index: 2;
+}
+.wb-hand-tag {
+  font-size: 10px;
+  font-weight: 700;
+  color: #a78bfa;
+  letter-spacing: .03em;
+  background: rgba(139,92,246,.15);
+  border: 1px solid rgba(139,92,246,.35);
+  border-radius: 4px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+.wb-hand-lower-btn {
+  background: rgba(139,92,246,.2);
+  border: 1px solid #7c3aed;
+  border-radius: 4px;
+  color: #c4b5fd;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-family: var(--font-body, 'Barlow', sans-serif);
+  white-space: nowrap;
+  transition: background .15s;
+}
+.wb-hand-lower-btn:hover { background: rgba(139,92,246,.35); }
+.wb-hand-lower-btn:disabled { opacity: .5; cursor: default; }

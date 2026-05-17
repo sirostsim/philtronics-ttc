@@ -1618,10 +1618,29 @@ async function refreshWallboard() {
         tile.appendChild(pauseTag);
       }
 
-      // Raised hand indicator
+      // Raised hand indicator — badge + lower button, top-right corner
       if (t.handRaised) {
         tile.classList.add('tile-hand-raised');
-        tile.appendChild(el('div', { className: 'wb-hand-tag', textContent: '✋ Needs Attention' }));
+        const handCorner = el('div', { className: 'wb-hand-corner' });
+        handCorner.appendChild(el('span', { className: 'wb-hand-tag', textContent: '✋ Needs Attention' }));
+        if (hasRole('supervisor')) {
+          const lowerBtn = el('button', {
+            className: 'wb-hand-lower-btn',
+            textContent: 'Lower',
+            'aria-label': 'Lower hand for ' + t.operatorName,
+          });
+          lowerBtn.addEventListener('click', async e => {
+            e.stopPropagation();
+            lowerBtn.disabled = true;
+            try {
+              await POST('/timers/' + t.id + '/lower-hand', {});
+              toast('Hand lowered for ' + t.operatorName, 'success');
+              await refreshWallboard();
+            } catch (err) { toast(err.message, 'error'); lowerBtn.disabled = false; }
+          });
+          handCorner.appendChild(lowerBtn);
+        }
+        tile.appendChild(handCorner);
       }
 
       tile.appendChild(el('div', { className: 'wb-item',     textContent: t.itemNumber }));
@@ -1703,24 +1722,6 @@ async function refreshWallboard() {
           'aria-label': 'Send message to ' + t.operatorName,
           onclick: () => openSendMessageModal(t.operatorId, t.operatorName),
         }));
-
-        // Lower hand button — only shown when hand is raised
-        if (t.handRaised) {
-          const lowerBtn = el('button', {
-            className: 'wb-lower-hand-btn',
-            textContent: '✋ Lower Hand',
-            'aria-label': 'Lower hand for ' + t.operatorName,
-          });
-          lowerBtn.addEventListener('click', async () => {
-            lowerBtn.disabled = true;
-            try {
-              await POST('/timers/' + t.id + '/lower-hand', {});
-              toast('Hand lowered for ' + t.operatorName, 'success');
-              await refreshWallboard();
-            } catch (err) { toast(err.message, 'error'); lowerBtn.disabled = false; }
-          });
-          btnRow.appendChild(lowerBtn);
-        }
 
         tile.appendChild(btnRow);
       }
