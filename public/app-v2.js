@@ -3143,7 +3143,7 @@ function renderChartDailyTrend(rows) {
   destroyChart('dailyTrend');
   const canvas = document.getElementById('chartDailyTrend');
   if (!canvas || !rows.length) return;
-  canvas.width  = canvas.offsetWidth  || canvas.parentElement.offsetWidth  || 600;
+  canvas.width  = 600;
   canvas.height = 300;
   const labels  = rows.map(r => new Date(r.day).toLocaleDateString('en-GB', { day:'2-digit', month:'short' }));
   const jobs    = rows.map(r => r.jobs_completed);
@@ -3161,7 +3161,7 @@ function renderChartDailyTrend(rows) {
       ],
     },
     options: {
-      responsive: true, maintainAspectRatio: false,
+      responsive: false,
       interaction: { mode: 'index', intersect: false },
       plugins: { legend: { labels: { color: C.text, font: CFONT } } },
       scales: {
@@ -3182,7 +3182,7 @@ function renderChartItemOnTime(rows) {
   const withTarget = rows.filter(r => r.target_seconds).slice(0, 12);
   if (!withTarget.length) { canvas.closest('.report-chart-wrap').style.display='none'; return; }
   canvas.closest('.report-chart-wrap').style.display='';
-  canvas.width  = canvas.offsetWidth || canvas.parentElement.offsetWidth || 600;
+  canvas.width  = 600;
   canvas.height = 300;
   const labels  = withTarget.map(r => r.item_number);
   const over    = withTarget.map(r => Math.round(r.avg_seconds) > r.target_seconds ? r.count : 0);
@@ -3197,7 +3197,7 @@ function renderChartItemOnTime(rows) {
       ],
     },
     options: {
-      responsive: true, maintainAspectRatio: false,
+      responsive: false,
       plugins: { legend: { labels: { color: C.text, font: CFONT } }, tooltip: { mode: 'index', intersect: false } },
       scales: {
         x: { stacked: true, ticks: { color: C.text, font: CFONT }, grid: { color: C.grid } },
@@ -3212,7 +3212,7 @@ function renderChartOperator(rows) {
   destroyChart('operator');
   const canvas = document.getElementById('chartOperator');
   if (!canvas || !rows.length) return;
-  canvas.width  = canvas.offsetWidth || canvas.parentElement.offsetWidth || 600;
+  canvas.width  = 600;
   canvas.height = 300;
   const labels  = rows.map(r => r.operator_name.split(' ')[0]);
   const jobs    = rows.map(r => r.jobs_completed);
@@ -3230,7 +3230,7 @@ function renderChartOperator(rows) {
       ],
     },
     options: {
-      responsive: true, maintainAspectRatio: false,
+      responsive: false,
       interaction: { mode: 'index', intersect: false },
       plugins: { legend: { labels: { color: C.text, font: CFONT } } },
       scales: {
