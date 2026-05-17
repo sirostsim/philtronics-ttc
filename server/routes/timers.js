@@ -57,6 +57,7 @@ function formatTimer(t) {
                           : null,
     targetHours:        t.target_hours   != null ? t.target_hours   : null,
     targetMinutes:      t.target_minutes != null ? t.target_minutes : null,
+    handRaised:         !!t.hand_raised,
   };
 }
 
@@ -326,6 +327,54 @@ router.delete('/:id', async (req, res) => {
   } catch (err) {
     console.error('Delete timer error:', err.message);
     res.status(500).json({ error: 'Could not delete timer.' });
+  }
+});
+
+
+// ─── POST /api/timers/:id/raise-hand ─────────────────────────────────────────
+// Operator raises their hand on their active timer. Supervisors+ can also lower
+// anyone's hand via the lower-hand route.
+router.post('/:id/raise-hand', async (req, res) => {
+  try {
+    const timer = await queryOne('SELECT * FROM timers WHERE id = $1', [req.params.id]);
+    if (!timer) return res.status(404).json({ error: 'Timer not found.' });
+    if (timer.status !== 'active') return res.status(409).json({ error: 'Timer is not active.' });
+
+    // Only the operator who owns the timer can raise their own hand
+    if (timer.operator_id !== req.user.id) {
+      return res.status(403).json({ error: 'You can only raise your own hand.' });
+    }
+
+    await query('UPDATE timers SET hand_raised = TRUE WHERE id = $1', [timer.id]);
+    await writeAudit(timer.id, 'hand_raised', req.user.id, null, null);
+
+    res.json({ ok: true, handRaised: true });
+  } catch (err) {
+    console.error('Raise hand error:', err.message);
+    res.status(500).json({ error: 'Could not raise hand.' });
+  }
+});
+
+// ─── POST /api/timers/:id/lower-hand ─────────────────────────────────────────
+// Operator lowers their own hand, or supervisor+ lowers anyone's hand.
+router.post('/:id/lower-hand', async (req, res) => {
+  try {
+    const timer = await queryOne('SELECT * FROM timers WHERE id = $1', [req.params.id]);
+    if (!timer) return res.status(404).json({ error: 'Timer not found.' });
+    if (timer.status !== 'active') return res.status(409).json({ error: 'Timer is not active.' });
+
+    const isSupervisorPlus = ['supervisor', 'manager', 'administrator'].includes(req.user.role);
+    if (timer.operator_id !== req.user.id && !isSupervisorPlus) {
+      return res.status(403).json({ error: 'You do not have permission to lower this hand.' });
+    }
+
+    await query('UPDATE timers SET hand_raised = FALSE WHERE id = $1', [timer.id]);
+    await writeAudit(timer.id, 'hand_lowered', req.user.id, null, null);
+
+    res.json({ ok: true, handRaised: false });
+  } catch (err) {
+    console.error('Lower hand error:', err.message);
+    res.status(500).json({ error: 'Could not lower hand.' });
   }
 });
 

@@ -18,6 +18,7 @@ const state = {
   activeIsPaused:           false,
   activePausedAt:           null,
   activeTotalPausedSeconds: 0,
+  activeHandRaised:         false,
 };
 
 // Wallboard interval handles — declared here so navigateTo can always access them
@@ -406,6 +407,7 @@ function showStartPanel() {
   state.activeIsPaused         = false;
   state.activePausedAt         = null;
   state.activeTotalPausedSeconds = 0;
+  state.activeHandRaised       = false;
   hide('activeTargetWrap');
   stopPausePoll();
   const rb = document.getElementById('btnResumeTimer');
@@ -462,6 +464,7 @@ async function showActivePanel() {
       state.activeIsPaused             = t.isPaused || false;
       state.activePausedAt             = t.pausedAt || null;
       state.activeTotalPausedSeconds   = t.totalPausedSeconds || 0;
+      state.activeHandRaised           = t.handRaised || false;
       document.getElementById('activeItemDisplay').textContent = t.itemNumber;
       const metaParts = [`Started at ${formatLocalTime(t.startedAt)}`];
       if (t.workstation) metaParts.push('WS: ' + t.workstation);
@@ -470,6 +473,7 @@ async function showActivePanel() {
       state.activeTargetSeconds = t.targetSeconds || null;
       updateActiveTargetDisplay();
       updatePauseUI();
+      updateHandUI();
     } else if (state.activeTimerId) {
       // Both fetches found nothing — timer genuinely gone
       state.activeTimerId   = null;
@@ -581,6 +585,7 @@ document.getElementById('btnStop').addEventListener('click', async () => {
     state.activePausedAt         = null;
     state.activeTotalPausedSeconds = 0;
     stopStopwatch();
+    state.activeHandRaised       = false;
     showStartPanel();
     refreshActiveTimerBanner();
     loadTodayEntries();
@@ -1613,6 +1618,12 @@ async function refreshWallboard() {
         tile.appendChild(pauseTag);
       }
 
+      // Raised hand indicator
+      if (t.handRaised) {
+        tile.classList.add('tile-hand-raised');
+        tile.appendChild(el('div', { className: 'wb-hand-tag', textContent: '✋ Needs Attention' }));
+      }
+
       tile.appendChild(el('div', { className: 'wb-item',     textContent: t.itemNumber }));
       const opRow = el('div', { className: 'wb-operator-row' });
       opRow.appendChild(el('span', {
@@ -1692,6 +1703,24 @@ async function refreshWallboard() {
           'aria-label': 'Send message to ' + t.operatorName,
           onclick: () => openSendMessageModal(t.operatorId, t.operatorName),
         }));
+
+        // Lower hand button — only shown when hand is raised
+        if (t.handRaised) {
+          const lowerBtn = el('button', {
+            className: 'wb-lower-hand-btn',
+            textContent: '✋ Lower Hand',
+            'aria-label': 'Lower hand for ' + t.operatorName,
+          });
+          lowerBtn.addEventListener('click', async () => {
+            lowerBtn.disabled = true;
+            try {
+              await POST('/timers/' + t.id + '/lower-hand', {});
+              toast('Hand lowered for ' + t.operatorName, 'success');
+              await refreshWallboard();
+            } catch (err) { toast(err.message, 'error'); lowerBtn.disabled = false; }
+          });
+          btnRow.appendChild(lowerBtn);
+        }
 
         tile.appendChild(btnRow);
       }
@@ -2180,6 +2209,42 @@ function stopPausePoll() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   RAISE / LOWER HAND
+   ═══════════════════════════════════════════════════════════════════════════ */
+function updateHandUI() {
+  const btn = document.getElementById('btnRaiseHand');
+  if (!btn) return;
+  if (state.activeHandRaised) {
+    btn.textContent = '✋ Lower Hand';
+    btn.className   = 'btn btn-hand-raised-sm';
+    btn.setAttribute('aria-label', 'Lower hand');
+  } else {
+    btn.textContent = '✋ Raise Hand';
+    btn.className   = 'btn btn-hand-sm';
+    btn.setAttribute('aria-label', 'Raise hand');
+  }
+}
+
+document.getElementById('btnRaiseHand').addEventListener('click', async () => {
+  if (!state.activeTimerId) return;
+  const btn = document.getElementById('btnRaiseHand');
+  btn.disabled = true;
+  try {
+    if (state.activeHandRaised) {
+      await POST(`/timers/${state.activeTimerId}/lower-hand`, {});
+      state.activeHandRaised = false;
+      toast('Hand lowered.', '');
+    } else {
+      await POST(`/timers/${state.activeTimerId}/raise-hand`, {});
+      state.activeHandRaised = true;
+      toast('Hand raised \u2014 a supervisor will be with you shortly.', 'success');
+    }
+    updateHandUI();
+  } catch (err) { toast(err.message, 'error'); }
+  finally { btn.disabled = false; }
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
    WALLBOARD TILE PAUSE / RESUME
    Inline button on each wallboard tile — works reliably on touch screens.
    Compact wallboard is display-only and has no pause button.
@@ -2284,14 +2349,15 @@ function renderHomeActiveJobs(timers) {
     const isOver    = t.targetSeconds ? elapsed >= t.targetSeconds : elapsed > 4 * 3600;
     const isWarning = !isOver && (t.targetSeconds ? elapsed / t.targetSeconds >= 0.8 : elapsed > 2 * 3600);
 
-    const row = el('div', { className: 'home-active-row' + (isOver ? ' over' : isWarning ? ' warn' : '') });
+    const row = el('div', { className: 'home-active-row' + (isOver ? ' over' : isWarning ? ' warn' : '') + (t.handRaised ? ' hand-raised' : '') });
 
     // Status dot
     row.appendChild(el('span', { className: 'home-active-dot' + (isOver ? ' dot-red' : isWarning ? ' dot-amber' : ' dot-green') }));
 
     // Operator + item
     const info = el('div', { className: 'home-active-info' });
-    info.appendChild(el('span', { className: 'home-active-name', textContent: t.operatorName }));
+    const nameText = t.operatorName + (t.handRaised ? ' ✋' : '');
+    info.appendChild(el('span', { className: 'home-active-name', textContent: nameText }));
     info.appendChild(el('span', { className: 'home-active-item', textContent: t.itemNumber }));
     if (t.workstation) info.appendChild(el('span', { className: 'home-active-ws', textContent: '🖥 ' + t.workstation }));
     row.appendChild(info);
@@ -2512,7 +2578,7 @@ async function refreshWallboardCompact() {
       const sNet    = t.netElapsedSeconds != null ? t.netElapsedSeconds : null;
       const localEl = Math.max(0, Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000)) - (t.totalPausedSeconds || 0);
       const elapsed = sNet !== null ? sNet : localEl;
-      const tile    = el('div', { className: 'wbc-tile' + (t.isPaused ? ' tile-paused' : '') });
+      const tile    = el('div', { className: 'wbc-tile' + (t.isPaused ? ' tile-paused' : '') + (t.handRaised ? ' tile-hand-raised' : '') });
 
       // Smart colour — paused = neutral; otherwise target-relative or fixed
       if (!t.isPaused) {
@@ -2536,6 +2602,9 @@ async function refreshWallboardCompact() {
       tile.appendChild(el('div', { className: 'wbc-item',     textContent: t.itemNumber }));
       if (t.isPaused) {
         tile.appendChild(el('div', { className: 'wbc-paused-tag', textContent: '⏸' }));
+      }
+      if (t.handRaised) {
+        tile.appendChild(el('div', { className: 'wbc-hand-tag', textContent: '✋' }));
       }
       tile.appendChild(el('div', {
         className: 'wbc-elapsed',
