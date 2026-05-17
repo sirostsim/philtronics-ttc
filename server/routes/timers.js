@@ -9,6 +9,7 @@ const { v4: uuidv4 } = require('uuid');
 const { query, queryOne } = require('../db');
 const { requireAuth, hasRole } = require('../middleware/auth');
 const { validate, schemas }    = require('../middleware/validate');
+const { pushToRole }           = require('./messages');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -366,6 +367,16 @@ router.post('/:id/raise-hand', async (req, res) => {
 
     await query('UPDATE timers SET hand_raised = TRUE WHERE id = $1', [timer.id]);
     await writeAudit(timer.id, 'hand_raised', req.user.id, null, null);
+
+    // Notify all connected supervisors, managers and administrators
+    pushToRole('supervisor', {
+      type:          'hand_raised',
+      timerId:       timer.id,
+      operatorName:  req.user.full_name,
+      itemNumber:    timer.item_number,
+      workstation:   timer.workstation || null,
+      raisedAt:      new Date().toISOString(),
+    });
 
     res.json({ ok: true, handRaised: true });
   } catch (err) {

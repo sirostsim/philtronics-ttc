@@ -2240,6 +2240,46 @@ function updateHandUI() {
   }
 }
 
+function showHandRaisedPopup(data) {
+  // Remove any existing hand-raised popups first
+  document.querySelectorAll('.hand-raised-popup').forEach(p => p.remove());
+
+  const popup = el('div', { className: 'hand-raised-popup', role: 'alertdialog', 'aria-modal': 'true', 'aria-label': 'Operator needs attention' });
+
+  const icon = el('div', { className: 'hrp-icon', textContent: '✋' });
+  const body = el('div', { className: 'hrp-body' });
+  const title = el('div', { className: 'hrp-title', textContent: 'Operator Needs Attention' });
+  const name  = el('div', { className: 'hrp-name',  textContent: data.operatorName });
+  const meta  = el('div', { className: 'hrp-meta' });
+
+  if (data.itemNumber)  meta.appendChild(el('span', { textContent: '📦 ' + data.itemNumber }));
+  if (data.workstation) meta.appendChild(el('span', { textContent: '🖥 ' + data.workstation }));
+
+  const time = el('div', { className: 'hrp-time',
+    textContent: 'Raised at ' + new Date(data.raisedAt).toLocaleTimeString('en-GB',
+      { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
+
+  body.appendChild(title);
+  body.appendChild(name);
+  if (meta.children.length) body.appendChild(meta);
+  body.appendChild(time);
+
+  const closeBtn = el('button', { className: 'hrp-close', textContent: '✕', 'aria-label': 'Dismiss' });
+  closeBtn.addEventListener('click', () => popup.remove());
+
+  popup.appendChild(icon);
+  popup.appendChild(body);
+  popup.appendChild(closeBtn);
+  document.body.appendChild(popup);
+
+  // Play an urgent double ping
+  playPing('message');
+  setTimeout(() => playPing('message'), 400);
+
+  // Auto-dismiss after 30 seconds if not manually closed
+  setTimeout(() => { if (popup.isConnected) popup.remove(); }, 30000);
+}
+
 document.getElementById('btnRaiseHand').addEventListener('click', async () => {
   if (!state.activeTimerId) return;
   const btn = document.getElementById('btnRaiseHand');
@@ -2748,11 +2788,9 @@ function handleIncomingSSE(data) {
   if (!data || !data.type) return;
   switch (data.type) {
     case 'message':
-      // New conversation — always opens the drawer
       openChatDrawer(data);
       break;
     case 'reply':
-      // Only reopen if there is an active non-null conversation and the ID truly matches
       if (chat.conversationId && data.conversationId && chatDrawer.hidden && data.conversationId === chat.conversationId) {
         chatDrawer.hidden        = false;
         chatDrawer.style.display = '';
@@ -2763,6 +2801,9 @@ function handleIncomingSSE(data) {
     case 'close':
       handleConversationClosed(data);
       break;
+    case 'hand_raised':
+      if (hasRole('supervisor')) showHandRaisedPopup(data);
+      return; // no ping for hand_raised — the popup is notification enough
   }
   playPing(data.type);
 }

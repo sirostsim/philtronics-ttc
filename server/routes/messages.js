@@ -38,6 +38,23 @@ function push(userId, payload) {
   return false;
 }
 
+// Push a payload to all connected users who have a given role or above.
+// Used by other routes (e.g. raise-hand notification).
+function pushToRole(minRole, payload) {
+  const ROLE_LEVEL = { operator: 1, supervisor: 2, manager: 3, administrator: 4 };
+  const minLevel = ROLE_LEVEL[minRole] || 99;
+  let count = 0;
+  for (const [userId, conn] of connections.entries()) {
+    if (conn._userRole && (ROLE_LEVEL[conn._userRole] || 0) >= minLevel) {
+      if (!conn.writableEnded) {
+        conn.write(`data: ${JSON.stringify(payload)}\n\n`);
+        count++;
+      }
+    }
+  }
+  return count;
+}
+
 // ── GET /api/messages/listen ──────────────────────────────────────────────────
 router.get('/listen', requireAuth, (req, res) => {
   const userId = req.user.id;
@@ -50,6 +67,7 @@ router.get('/listen', requireAuth, (req, res) => {
   res.write(': connected\n\n');
 
   connections.set(userId, res);
+  res._userRole = req.user.role; // store role for pushToRole()
   console.log(`SSE connected: ${req.user.username} (${userId}). Active: ${connections.size}`);
 
   const heartbeat = setInterval(() => {
@@ -201,3 +219,4 @@ router.get('/online', requireAuth, requireRole('supervisor'), (req, res) => {
 });
 
 module.exports = router;
+module.exports.pushToRole = pushToRole;
