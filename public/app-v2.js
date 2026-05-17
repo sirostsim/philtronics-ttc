@@ -3043,6 +3043,8 @@ function loadReportsPage() {
     document.getElementById('reportTo').value   = today;
   }
   runReport();
+  // If charts were already pending from a previous fetch, try rendering now
+  setTimeout(renderPendingCharts, 400);
 }
 
 document.getElementById('btnReportSearch').addEventListener('click', runReport);
@@ -3095,15 +3097,10 @@ async function runReport() {
 
   // Defer chart rendering until after the DOM has painted —
   // canvas elements need to be visible with real dimensions first
-  requestAnimationFrame(() => {
-    setTimeout(() => {
-      renderChartDailyTrend(trends);
-      renderChartItemOnTime(stats?.byItem || []);
-      renderChartOperator(operators);
-      // Force a window resize event so Chart.js recalculates canvas dimensions
-      window.dispatchEvent(new Event('resize'));
-    }, 250);
-  });
+  // Render charts after a short delay to ensure the section is fully visible
+  // and the canvas elements have real dimensions
+  _pendingChartData = { trends, byItem: stats?.byItem || [], operators };
+  setTimeout(renderPendingCharts, 300);
 }
 
 function switchReportTab(btn, showId, hideId) {
@@ -3127,6 +3124,18 @@ function switchReportTab(btn, showId, hideId) {
 
 // Cache last data so tabs can redraw charts on demand
 let _lastTrends = [], _lastByItem = [], _lastOperators = [];
+let _pendingChartData = null;
+
+function renderPendingCharts() {
+  if (!_pendingChartData) return;
+  const section = document.getElementById('pageReports');
+  if (!section || section.hidden) return; // page not visible — skip
+  const { trends, byItem, operators } = _pendingChartData;
+  _pendingChartData = null;
+  renderChartDailyTrend(trends);
+  renderChartItemOnTime(byItem);
+  renderChartOperator(operators);
+}
 
 
 
@@ -3134,6 +3143,8 @@ function renderChartDailyTrend(rows) {
   destroyChart('dailyTrend');
   const canvas = document.getElementById('chartDailyTrend');
   if (!canvas || !rows.length) return;
+  canvas.width  = canvas.offsetWidth  || canvas.parentElement.offsetWidth  || 600;
+  canvas.height = 300;
   const labels  = rows.map(r => new Date(r.day).toLocaleDateString('en-GB', { day:'2-digit', month:'short' }));
   const jobs    = rows.map(r => r.jobs_completed);
   const overdue = rows.map(r => r.overdue_count);
@@ -3171,6 +3182,8 @@ function renderChartItemOnTime(rows) {
   const withTarget = rows.filter(r => r.target_seconds).slice(0, 12);
   if (!withTarget.length) { canvas.closest('.report-chart-wrap').style.display='none'; return; }
   canvas.closest('.report-chart-wrap').style.display='';
+  canvas.width  = canvas.offsetWidth || canvas.parentElement.offsetWidth || 600;
+  canvas.height = 300;
   const labels  = withTarget.map(r => r.item_number);
   const over    = withTarget.map(r => Math.round(r.avg_seconds) > r.target_seconds ? r.count : 0);
   const onTime  = withTarget.map((r, i) => r.count - over[i]);
@@ -3199,6 +3212,8 @@ function renderChartOperator(rows) {
   destroyChart('operator');
   const canvas = document.getElementById('chartOperator');
   if (!canvas || !rows.length) return;
+  canvas.width  = canvas.offsetWidth || canvas.parentElement.offsetWidth || 600;
+  canvas.height = 300;
   const labels  = rows.map(r => r.operator_name.split(' ')[0]);
   const jobs    = rows.map(r => r.jobs_completed);
   const overdue = rows.map(r => r.overdue_count);
