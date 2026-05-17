@@ -2241,6 +2241,14 @@ button.topbar-brand:focus-visible {
   border-radius: 10px;
   padding: 20px;
   margin-bottom: 8px;
+  position: relative;
+  height: 320px;
+}
+.report-chart-wrap canvas {
+  position: absolute;
+  inset: 20px;
+  width: calc(100% - 40px) !important;
+  height: calc(100% - 40px) !important;
 }
 
 .report-section-header {
