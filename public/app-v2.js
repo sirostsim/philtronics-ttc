@@ -2188,10 +2188,12 @@ function startPausePoll() {
     try {
       const t = await GET('/timers/' + state.activeTimerId);
       if (!t) return;
-      const waspaused = state.activeIsPaused;
+      const waspaused    = state.activeIsPaused;
+      const wasHandRaised = state.activeHandRaised;
       state.activeIsPaused           = t.isPaused || false;
       state.activePausedAt           = t.pausedAt || null;
       state.activeTotalPausedSeconds = t.totalPausedSeconds || 0;
+      state.activeHandRaised         = t.handRaised || false;
       if (waspaused !== state.activeIsPaused) {
         updatePauseUI();
         if (state.activeIsPaused) {
@@ -2199,6 +2201,11 @@ function startPausePoll() {
         } else {
           toast('Your timer has automatically resumed for the new working day.', 'success');
         }
+      }
+      // Sync hand state if a supervisor lowered it remotely
+      if (wasHandRaised !== state.activeHandRaised) {
+        updateHandUI();
+        if (!state.activeHandRaised) toast('Your hand has been lowered by a supervisor.', '');
       }
     } catch (_) {}
   }, 30000);
@@ -2269,7 +2276,7 @@ async function loadHomePage() {
   ]);
 
   renderHomeActiveJobs(activeTimers);
-  renderHomeTodayStats(stats);
+  renderHomeTodayStats(stats, activeTimers);
   if (hasRole('manager')) renderHomePerformance(stats);
   if (hasRole('administrator')) renderHomeUsers(users);
   renderHomeQuickActions();
@@ -2396,7 +2403,7 @@ function renderHomeActiveJobs(timers) {
   body.appendChild(grid);
 }
 
-function renderHomeTodayStats(stats) {
+function renderHomeTodayStats(stats, activeTimers = []) {
   const card = document.getElementById('homeTodayStats');
   if (!card) return;
   const body = card.querySelector('.home-card-body');
@@ -2405,11 +2412,12 @@ function renderHomeTodayStats(stats) {
     body.appendChild(el('div', { className: 'empty-state', textContent: 'Could not load stats.' }));
     return;
   }
+  const raisedCount = activeTimers.filter(t => t.handRaised).length;
   const items = [
-    { icon: '▶', label: 'Active Now',    value: stats.activeCount, cls: 'stat-active' },
-    { icon: '✓', label: 'Completed Today', value: stats.total24h,  cls: 'stat-done'   },
-    { icon: '📅', label: 'This Week',     value: stats.total7d,    cls: ''             },
-    { icon: '📦', label: 'Item Types',    value: stats.byItem?.length || 0, cls: '' },
+    { icon: '▶',  label: 'Active Now',      value: stats.activeCount,          cls: 'stat-active' },
+    { icon: '✓',  label: 'Completed Today',  value: stats.total24h,             cls: 'stat-done'   },
+    { icon: '📅', label: 'This Week',        value: stats.total7d,              cls: ''            },
+    { icon: '📦', label: 'Item Types',       value: stats.byItem?.length || 0,  cls: ''            },
   ];
   const grid = el('div', { className: 'home-stats-grid' });
   items.forEach(s => {
@@ -2420,6 +2428,40 @@ function renderHomeTodayStats(stats) {
     grid.appendChild(item);
   });
   body.appendChild(grid);
+
+  // Raised hands tile — always shown to supervisors+, highlighted when non-zero
+  if (hasRole('supervisor')) {
+    const handTile = el('div', { className: 'home-hand-tile' + (raisedCount > 0 ? ' active' : '') });
+    const handLeft = el('div', { className: 'home-hand-left' });
+    handLeft.appendChild(el('div', { className: 'home-hand-icon', textContent: '✋' }));
+    const handInfo = el('div', {});
+    handInfo.appendChild(el('div', { className: 'home-hand-value', textContent: raisedCount }));
+    handInfo.appendChild(el('div', { className: 'home-hand-label', textContent: raisedCount === 1 ? 'Raised Hand' : 'Raised Hands' }));
+    handLeft.appendChild(handInfo);
+    handTile.appendChild(handLeft);
+
+    if (raisedCount > 0) {
+      const lowerBtn = el('button', {
+        className: 'btn btn-ghost btn-sm home-lower-all-btn',
+        textContent: '✋ Lower All',
+      });
+      lowerBtn.addEventListener('click', async () => {
+        lowerBtn.disabled = true;
+        lowerBtn.textContent = 'Lowering…';
+        try {
+          const result = await POST('/timers/lower-all-hands', {});
+          toast(result.message, 'success');
+          loadHomePage();
+        } catch (err) {
+          toast(err.message, 'error');
+          lowerBtn.disabled = false;
+          lowerBtn.textContent = '✋ Lower All';
+        }
+      });
+      handTile.appendChild(lowerBtn);
+    }
+    body.appendChild(handTile);
+  }
 }
 
 function renderHomePerformance(stats) {

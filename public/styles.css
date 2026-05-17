@@ -2358,3 +2358,57 @@ button.topbar-brand:focus-visible {
   border-left: 2px solid #a78bfa;
   background: rgba(139,92,246,.06);
 }
+
+/* Home page raised hands tile */
+.home-hand-tile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 14px 16px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  transition: all .2s;
+}
+.home-hand-tile.active {
+  background: rgba(139,92,246,.08);
+  border-color: #7c3aed;
+  animation: hand-tile-pulse 1.8s ease-in-out infinite;
+}
+.home-hand-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.home-hand-icon {
+  font-size: 28px;
+  line-height: 1;
+}
+.home-hand-value {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1;
+  font-family: var(--font-mono);
+}
+.home-hand-tile.active .home-hand-value {
+  color: #a78bfa;
+}
+.home-hand-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  margin-top: 2px;
+}
+.home-lower-all-btn {
+  white-space: nowrap;
+  border-color: #7c3aed !important;
+  color: #a78bfa !important;
+}
+.home-lower-all-btn:hover {
+  background: rgba(139,92,246,.12) !important;
+}

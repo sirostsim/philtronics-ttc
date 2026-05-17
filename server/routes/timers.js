@@ -331,7 +331,26 @@ router.delete('/:id', async (req, res) => {
 });
 
 
-// ─── POST /api/timers/:id/raise-hand ─────────────────────────────────────────
+// ─── POST /api/timers/lower-all-hands ────────────────────────────────────────
+// Supervisor+ lowers all raised hands in one action.
+router.post('/lower-all-hands', async (req, res) => {
+  try {
+    if (!hasRole(req.user, 'supervisor')) {
+      return res.status(403).json({ error: 'Supervisors and above only.' });
+    }
+    const result = await query(
+      `UPDATE timers SET hand_raised = FALSE
+       WHERE status = 'active' AND hand_raised = TRUE
+       RETURNING id`,
+      []
+    );
+    const count = result.rows.length;
+    res.json({ ok: true, count, message: `${count} hand${count !== 1 ? 's' : ''} lowered.` });
+  } catch (err) {
+    console.error('Lower all hands error:', err.message);
+    res.status(500).json({ error: 'Could not lower all hands.' });
+  }
+});
 // Operator raises their hand on their active timer. Supervisors+ can also lower
 // anyone's hand via the lower-hand route.
 router.post('/:id/raise-hand', async (req, res) => {
