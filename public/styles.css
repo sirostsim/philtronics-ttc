@@ -2532,6 +2532,6 @@ button.topbar-brand:focus-visible {
   border-radius: 20px;
   margin-top: 4px;
 }
-.dept-production { background: rgba(66,153,225,.15); color: #60a5fa; border: 1px solid rgba(66,153,225,.3); }
-.dept-stores      { background: rgba(56,161,105,.15); color: #4ade80; border: 1px solid rgba(56,161,105,.3); }
-.dept-testinsp    { background: rgba(159,122,234,.15); color: #c084fc; border: 1px solid rgba(159,122,234,.3); }
+.dept-prod      { background: rgba(66,153,225,.15); color: #60a5fa; border: 1px solid rgba(66,153,225,.3); }
+.dept-stores    { background: rgba(56,161,105,.15); color: #4ade80; border: 1px solid rgba(56,161,105,.3); }
+.dept-testinsp  { background: rgba(159,122,234,.15); color: #c084fc; border: 1px solid rgba(159,122,234,.3); }

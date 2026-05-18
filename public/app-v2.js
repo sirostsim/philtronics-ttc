@@ -149,19 +149,19 @@ document.getElementById('modal').addEventListener('click', e => {
    NAVIGATION
    ═══════════════════════════════════════════════════════════════════════════ */
 const DEPARTMENTS = ['Production', 'Stores', 'Test and Inspection'];
-const DEPT_SLUGS  = { 'Production': 'production', 'Stores': 'stores', 'Test and Inspection': 'testinsp' };
+const DEPT_SLUGS  = { 'Production': 'prod', 'Stores': 'stores', 'Test and Inspection': 'testinsp' };
 
 const PAGES = {
   home:           { id: 'pageHome',             label: 'Home',                          minRole: 'supervisor'  },
   timer:          { id: 'pageTimer',             label: 'Timer',                         minRole: 'operator'    },
   history:        { id: 'pageHistory',           label: 'History',                       minRole: 'operator'    },
   // Department wallboards — shown/hidden based on role + department
-  'wb-production':{ id: 'page-production-wb',   label: '📋 Wall Board — Production',    minRole: 'supervisor', dept: 'Production'       },
-  'wb-stores':    { id: 'page-stores-wb',        label: '📋 Wall Board — Stores',        minRole: 'supervisor', dept: 'Stores'           },
-  'wb-testinsp':  { id: 'page-testinsp-wb',      label: '📋 Wall Board — Test & Insp',   minRole: 'supervisor', dept: 'Test and Inspection' },
-  'wbc-production':{ id: 'page-production-wbc',  label: '📺 Compact — Production',       minRole: 'supervisor', dept: 'Production'       },
-  'wbc-stores':   { id: 'page-stores-wbc',       label: '📺 Compact — Stores',           minRole: 'supervisor', dept: 'Stores'           },
-  'wbc-testinsp': { id: 'page-testinsp-wbc',     label: '📺 Compact — Test & Insp',      minRole: 'supervisor', dept: 'Test and Inspection' },
+  'wb-prod':   { id: 'page-production-wb',   label: '📋 Wall Board — Production',    minRole: 'supervisor', dept: 'Production'          },
+  'wb-stores': { id: 'page-stores-wb',        label: '📋 Wall Board — Stores',        minRole: 'supervisor', dept: 'Stores'              },
+  'wb-testinsp':{ id: 'page-testinsp-wb',     label: '📋 Wall Board — Test & Insp',   minRole: 'supervisor', dept: 'Test and Inspection' },
+  'wbc-prod':  { id: 'page-production-wbc',   label: '📺 Compact — Production',       minRole: 'supervisor', dept: 'Production'          },
+  'wbc-stores':{ id: 'page-stores-wbc',       label: '📺 Compact — Stores',           minRole: 'supervisor', dept: 'Stores'              },
+  'wbc-testinsp':{ id: 'page-testinsp-wbc',   label: '📺 Compact — Test & Insp',      minRole: 'supervisor', dept: 'Test and Inspection' },
   dashboard:      { id: 'pageDashboard',         label: 'Dashboard',                     minRole: 'manager'     },
   targets:        { id: 'pageTargets',           label: 'Target Times',                  minRole: 'manager'     },
   reports:        { id: 'pageReports',           label: 'Reports',                       minRole: 'manager'     },
