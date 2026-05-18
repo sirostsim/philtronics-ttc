@@ -1010,7 +1010,7 @@ function renderUserList(users) {
     const meta = el('div', { className: 'user-meta' });
     meta.appendChild(el('span', { textContent: '@' + u.username }));
     meta.appendChild(el('span', { className: `badge role-${u.role}`, textContent: u.role }));
-    meta.appendChild(el('span', { className: `badge dept-badge dept-${DEPT_SLUGS[u.department] || 'production'}`, textContent: u.department || 'Production' }));
+    meta.appendChild(el('span', { className: `badge dept-badge dept-${DEPT_SLUGS[u.department] || 'prod'}`, textContent: u.department || 'Production' }));
     if (!u.isActive) meta.appendChild(el('span', { className: 'badge badge-cancelled', textContent: 'disabled' }));
     info.appendChild(meta);
     card.appendChild(info);
@@ -2005,7 +2005,7 @@ function renderHomeQuickActions() {
   const card = document.getElementById('homeQuickActions'); if (!card) return;
   const body = card.querySelector('.home-card-body'); body.innerHTML = '';
   const dept = state.user?.department || 'Production';
-  const slug = DEPT_SLUGS[dept] || 'production';
+  const slug = DEPT_SLUGS[dept] || 'prod';
   // For supervisors: show their department wallboards only
   // For managers/admins: show all departments
   const wbActions = hasRole('manager')
@@ -2042,7 +2042,7 @@ function renderHomeQuickActions() {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 function deptIds(dept) {
-  const slug = DEPT_SLUGS[dept] || 'production';
+  const slug = DEPT_SLUGS[dept] || 'prod';
   return {
     tilesId:   `wallboard-${slug}-tiles`,
     countId:   `wallboard-${slug}-count`,
@@ -2051,7 +2051,7 @@ function deptIds(dept) {
   };
 }
 function deptCIds(dept) {
-  const slug = DEPT_SLUGS[dept] || 'production';
+  const slug = DEPT_SLUGS[dept] || 'prod';
   return {
     tilesId:   `wallboardC-${slug}-tiles`,
     countId:   `wallboardC-${slug}-count`,
