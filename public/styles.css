@@ -2031,6 +2031,8 @@ button.topbar-brand:focus-visible {
   overflow: hidden;
   transition: box-shadow .2s;
 }
+/* Ensure hidden attribute isn't overridden by display:flex */
+.chat-drawer[hidden] { display: none !important; }
 .chat-drawer.chat-pulse {
   box-shadow: 0 -8px 40px rgba(240,180,41,.35);
 }
