@@ -2656,8 +2656,6 @@ function loadReportsPage() {
     document.getElementById('reportTo').value   = today;
   }
   runReport();
-  // If charts were already pending from a previous fetch, try rendering now
-  setTimeout(renderPendingCharts, 400);
 }
 
 document.getElementById('btnReportSearch').addEventListener('click', runReport);
@@ -2713,7 +2711,7 @@ async function runReport() {
   // Render charts after a short delay to ensure the section is fully visible
   // and the canvas elements have real dimensions
   _pendingChartData = { trends, byItem: stats?.byItem || [], operators };
-  setTimeout(renderPendingCharts, 300);
+  setTimeout(renderPendingCharts, 600);
 }
 
 function switchReportTab(btn, showId, hideId) {
@@ -2741,8 +2739,6 @@ let _pendingChartData = null;
 
 function renderPendingCharts() {
   if (!_pendingChartData) return;
-  const section = document.getElementById('pageReports');
-  if (!section || section.hidden) return; // page not visible — skip
   const { trends, byItem, operators } = _pendingChartData;
   _pendingChartData = null;
   renderChartDailyTrend(trends);
