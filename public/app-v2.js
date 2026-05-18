@@ -22,7 +22,7 @@ const state = {
 };
 
 // Wallboard interval handles — declared here so navigateTo can always access them
-let wallboardInterval  = null;
+let wallboardInterval  = null; // kept for legacy — managed via _wbIntervals now
 let wallboardTick      = null;
 let wallboardCInterval = null;
 let wallboardCTick     = null;
@@ -148,22 +148,40 @@ document.getElementById('modal').addEventListener('click', e => {
 /* ═══════════════════════════════════════════════════════════════════════════
    NAVIGATION
    ═══════════════════════════════════════════════════════════════════════════ */
+const DEPARTMENTS = ['Production', 'Stores', 'Test and Inspection'];
+const DEPT_SLUGS  = { 'Production': 'production', 'Stores': 'stores', 'Test and Inspection': 'testinsp' };
+
 const PAGES = {
-  home:       { id: 'pageHome',       label: 'Home',               minRole: 'supervisor'    },
-  timer:      { id: 'pageTimer',      label: 'Timer',              minRole: 'operator'      },
-  history:    { id: 'pageHistory',    label: 'History',            minRole: 'operator'      },
-  wallboard:  { id: 'pageWallboard',  label: 'Wall Board',         minRole: 'supervisor'    },
-  wallboardc: { id: 'pageWallboardC', label: 'Wall Board Compact', minRole: 'supervisor'    },
-  dashboard:  { id: 'pageDashboard',  label: 'Dashboard',          minRole: 'manager'       },
-  targets:    { id: 'pageTargets',    label: 'Target Times',       minRole: 'manager'       },
-  reports:    { id: 'pageReports',    label: 'Reports',            minRole: 'manager'       },
+  home:           { id: 'pageHome',             label: 'Home',                          minRole: 'supervisor'  },
+  timer:          { id: 'pageTimer',             label: 'Timer',                         minRole: 'operator'    },
+  history:        { id: 'pageHistory',           label: 'History',                       minRole: 'operator'    },
+  // Department wallboards — shown/hidden based on role + department
+  'wb-production':{ id: 'page-production-wb',   label: '📋 Wall Board — Production',    minRole: 'supervisor', dept: 'Production'       },
+  'wb-stores':    { id: 'page-stores-wb',        label: '📋 Wall Board — Stores',        minRole: 'supervisor', dept: 'Stores'           },
+  'wb-testinsp':  { id: 'page-testinsp-wb',      label: '📋 Wall Board — Test & Insp',   minRole: 'supervisor', dept: 'Test and Inspection' },
+  'wbc-production':{ id: 'page-production-wbc',  label: '📺 Compact — Production',       minRole: 'supervisor', dept: 'Production'       },
+  'wbc-stores':   { id: 'page-stores-wbc',       label: '📺 Compact — Stores',           minRole: 'supervisor', dept: 'Stores'           },
+  'wbc-testinsp': { id: 'page-testinsp-wbc',     label: '📺 Compact — Test & Insp',      minRole: 'supervisor', dept: 'Test and Inspection' },
+  dashboard:      { id: 'pageDashboard',         label: 'Dashboard',                     minRole: 'manager'     },
+  targets:        { id: 'pageTargets',           label: 'Target Times',                  minRole: 'manager'     },
+  reports:        { id: 'pageReports',           label: 'Reports',                       minRole: 'manager'     },
+  admin:          { id: 'pageAdmin',             label: 'Admin',                         minRole: 'administrator' },
 };
+
+function canSeePage(p) {
+  if (!hasRole(p.minRole)) return false;
+  // Supervisors can only see wallboards for their own department
+  if (p.dept && !hasRole('manager')) {
+    return state.user && state.user.department === p.dept;
+  }
+  return true;
+}
 
 function buildNav() {
   const list = document.getElementById('navList');
   list.innerHTML = '';
   for (const [key, p] of Object.entries(PAGES)) {
-    if (!hasRole(p.minRole)) continue;
+    if (!canSeePage(p)) continue;
     const btn = el('button', {
       textContent: p.label,
       onclick: () => { navigateTo(key); closeNav(); },
@@ -173,22 +191,25 @@ function buildNav() {
   }
 }
 
+// Active dept wallboard intervals keyed by page key
+const _wbIntervals = {};
+const _wbTicks     = {};
+
 function navigateTo(page) {
   state.currentPage = page;
 
-  // Stop wallboard intervals when leaving the wallboard page
-  if (page !== 'wallboard') {
-    if (wallboardInterval) { clearInterval(wallboardInterval); wallboardInterval = null; }
-    if (wallboardTick)     { clearInterval(wallboardTick);     wallboardTick = null;     }
+  // Stop all wallboard intervals except the one we're navigating to
+  for (const [key, intv] of Object.entries(_wbIntervals)) {
+    if (key !== page) { clearInterval(intv); delete _wbIntervals[key]; }
   }
-  if (page !== 'wallboardc') {
-    if (wallboardCInterval) { clearInterval(wallboardCInterval); wallboardCInterval = null; }
-    if (wallboardCTick)     { clearInterval(wallboardCTick);     wallboardCTick = null;     }
+  for (const [key, tick] of Object.entries(_wbTicks)) {
+    if (key !== page) { clearInterval(tick); delete _wbTicks[key]; }
   }
 
+  // Hide all pages
   for (const p of Object.values(PAGES)) {
-    const el = document.getElementById(p.id);
-    if (el) el.hidden = true;
+    const node = document.getElementById(p.id);
+    if (node) node.hidden = true;
   }
   const target = PAGES[page];
   if (target) {
@@ -196,15 +217,16 @@ function navigateTo(page) {
     if (node) node.hidden = false;
   }
   buildNav();
-  // Lazy-load page data
-  if (page === 'home')       loadHomePage();
-  if (page === 'timer')      loadTimerPage();
-  if (page === 'history')    loadHistoryPage();
-  if (page === 'wallboard')  loadWallboard();
-  if (page === 'dashboard')  loadDashboard();
-  if (page === 'targets')    loadTargetsPage();
-  if (page === 'wallboardc') loadWallboardCompact();
-  if (page === 'reports')    loadReportsPage();
+
+  if (page === 'home')           loadHomePage();
+  else if (page === 'timer')     loadTimerPage();
+  else if (page === 'history')   loadHistoryPage();
+  else if (page === 'dashboard') loadDashboard();
+  else if (page === 'targets')   loadTargetsPage();
+  else if (page === 'reports')   loadReportsPage();
+  else if (page === 'admin')     loadAdminPage();
+  else if (page.startsWith('wb-'))  loadDeptWallboard(PAGES[page].dept);
+  else if (page.startsWith('wbc-')) loadDeptWallboardCompact(PAGES[page].dept);
 }
 
 // Nav drawer toggle
@@ -988,6 +1010,7 @@ function renderUserList(users) {
     const meta = el('div', { className: 'user-meta' });
     meta.appendChild(el('span', { textContent: '@' + u.username }));
     meta.appendChild(el('span', { className: `badge role-${u.role}`, textContent: u.role }));
+    meta.appendChild(el('span', { className: `badge dept-badge dept-${DEPT_SLUGS[u.department] || 'production'}`, textContent: u.department || 'Production' }));
     if (!u.isActive) meta.appendChild(el('span', { className: 'badge badge-cancelled', textContent: 'disabled' }));
     info.appendChild(meta);
     card.appendChild(info);
@@ -1061,6 +1084,18 @@ function openUserModal(user) {
     roleSelect
   ));
 
+  // Department select
+  const deptSelect = el('select', { id: 'mDepartment', style: 'background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:16px;padding:12px 14px;width:100%;' });
+  DEPARTMENTS.forEach(d => {
+    const o = el('option', { value: d, textContent: d });
+    if ((user?.department || 'Production') === d) o.selected = true;
+    deptSelect.appendChild(o);
+  });
+  body.appendChild(el('div', { className: 'form-group' },
+    el('label', { for: 'mDepartment', textContent: 'Department *' }),
+    deptSelect
+  ));
+
   // Active toggle (edit only)
   if (!isNew) {
     const activeCheck = el('input', { type: 'checkbox', id: 'mActive' });
@@ -1080,8 +1115,9 @@ function openUserModal(user) {
 
   btnSave.addEventListener('click', async () => {
     errDiv.textContent = '';
-    const fullName = document.getElementById('mFullName').value.trim();
-    const role     = document.getElementById('mRole').value;
+    const fullName   = document.getElementById('mFullName').value.trim();
+    const role       = document.getElementById('mRole').value;
+    const department = document.getElementById('mDepartment').value;
 
     if (!fullName) { errDiv.textContent = 'Full name is required.'; return; }
 
@@ -1092,11 +1128,11 @@ function openUserModal(user) {
         const password = document.getElementById('mPassword').value;
         if (!username) { errDiv.textContent = 'Username is required.'; btnSave.disabled = false; return; }
         if (password.length < 8) { errDiv.textContent = 'Password must be at least 8 characters.'; btnSave.disabled = false; return; }
-        await POST('/users', { username, password, full_name: fullName, role });
+        await POST('/users', { username, password, full_name: fullName, role, department });
         toast('User created.', 'success');
       } else {
         const isActive = document.getElementById('mActive').checked;
-        await PATCH(`/users/${user.id}`, { full_name: fullName, role, is_active: isActive });
+        await PATCH(`/users/${user.id}`, { full_name: fullName, role, is_active: isActive, department });
         toast('User updated.', 'success');
       }
       closeModal();
@@ -1570,260 +1606,9 @@ const scanner = (() => {
   return { open, close };
 })();
 
-
 /* ═══════════════════════════════════════════════════════════════════════════
-   WALL BOARD
-   Auto-refreshes every 30 seconds. Shows live tiles for all active timers.
-   Available to Supervisor, Manager, Administrator.
+   FORMAT HELPERS
    ═══════════════════════════════════════════════════════════════════════════ */
-async function loadWallboard() {
-  if (wallboardInterval) clearInterval(wallboardInterval);
-  await refreshWallboard();
-  // Poll every 60s, but skip if tab is hidden — saves server resources
-  wallboardInterval = setInterval(() => {
-    if (document.visibilityState === 'visible') refreshWallboard();
-  }, 300000);
-}
-
-// Resume immediately when a hidden tab becomes visible again
-document.addEventListener('visibilitychange', () => {
-  if (state.currentPage === 'wallboard' && document.visibilityState === 'visible') {
-    refreshWallboard();
-  }
-});
-
-async function refreshWallboard() {
-  const container  = document.getElementById('wallboardTiles');
-  const countEl    = document.getElementById('wallboardCount');
-  const updatedEl  = document.getElementById('wallboardUpdated');
-  if (!container) return;
-
-  try {
-    const [timers, onlineData] = await Promise.all([
-      GET('/timers?status=active&limit=200'),
-      GET('/messages/online').catch(() => ({ online: [] })),
-    ]);
-    const onlineSet = new Set(onlineData.online || []);
-
-    // Update count and last-updated time
-    if (countEl)   countEl.textContent  = timers.length + ' active job' + (timers.length !== 1 ? 's' : '');
-    if (updatedEl) updatedEl.textContent = 'Updated ' + new Date().toLocaleTimeString('en-GB');
-
-    container.innerHTML = '';
-
-    if (timers.length === 0) {
-      container.appendChild(el('div', { className: 'wallboard-empty' },
-        el('div', { className: 'wallboard-empty-icon', textContent: '✓' }),
-        el('div', { className: 'wallboard-empty-text', textContent: 'No active jobs right now' })
-      ));
-      return;
-    }
-
-    timers.forEach(t => {
-      // Net elapsed from server (excludes paused time); fallback to local calc
-      const serverNet = t.netElapsedSeconds != null ? t.netElapsedSeconds : null;
-      const localEl   = Math.max(0, Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000)) - (t.totalPausedSeconds || 0);
-      const elapsed   = serverNet !== null ? serverNet : localEl;
-      const tile      = el('div', { className: 'wallboard-tile' + (t.isPaused ? ' tile-paused' : '') });
-
-      // Smart colouring: paused tiles are neutral; otherwise target-relative or fixed
-      if (!t.isPaused) {
-        if (t.targetSeconds) {
-          const pctNow = elapsed / t.targetSeconds;
-          if (pctNow >= 1.0)      tile.classList.add('tile-overdue');
-          else if (pctNow >= 0.8) tile.classList.add('tile-warning');
-        } else {
-          if (elapsed > 4 * 3600)      tile.classList.add('tile-overdue');
-          else if (elapsed > 2 * 3600) tile.classList.add('tile-warning');
-        }
-      }
-
-      // Pause indicator on tile
-      if (t.isPaused) {
-        const pauseTag = el('div', { className: 'wb-paused-tag', textContent: '⏸ PAUSED' });
-        if (t.pauseType === 'schedule') pauseTag.title = 'Auto-paused outside working hours';
-        tile.appendChild(pauseTag);
-      }
-
-      // Raised hand — full-width banner at top of tile with Lower button on right
-      if (t.handRaised) {
-        tile.classList.add('tile-hand-raised');
-        const handBanner = el('div', { className: 'wb-hand-banner' });
-        handBanner.appendChild(el('span', { className: 'wb-hand-banner-text', textContent: '✋ Needs Attention' }));
-        if (hasRole('supervisor')) {
-          const lowerBtn = el('button', {
-            className: 'wb-hand-lower-btn',
-            textContent: 'Lower ✕',
-            'aria-label': 'Lower hand for ' + t.operatorName,
-          });
-          lowerBtn.addEventListener('click', async e => {
-            e.stopPropagation();
-            lowerBtn.disabled = true;
-            try {
-              await POST('/timers/' + t.id + '/lower-hand', {});
-              toast('Hand lowered for ' + t.operatorName, 'success');
-              await refreshWallboard();
-            } catch (err) { toast(err.message, 'error'); lowerBtn.disabled = false; }
-          });
-          handBanner.appendChild(lowerBtn);
-        }
-        tile.appendChild(handBanner);
-      }
-
-      tile.appendChild(el('div', { className: 'wb-item',     textContent: t.itemNumber }));
-      const opRow = el('div', { className: 'wb-operator-row' });
-      opRow.appendChild(el('span', {
-        className: 'presence-dot ' + (onlineSet.has(t.operatorId) ? 'online' : 'offline'),
-        title: onlineSet.has(t.operatorId) ? 'Session active' : 'Not connected',
-      }));
-      opRow.appendChild(el('span', { textContent: t.operatorName }));
-      tile.appendChild(opRow);
-      tile.appendChild(el('div', { className: 'wb-elapsed',  textContent: formatDuration(elapsed),
-        'data-timerid':       t.id,
-        'data-startedat':     t.startedAt,
-        'data-pausedseconds': String(t.totalPausedSeconds || 0),
-        'data-ispaused':      t.isPaused ? '1' : '0',
-      }));
-      tile.appendChild(el('div', { className: 'wb-started',
-        textContent: 'Started ' + formatLocalTime(t.startedAt) }));
-
-      if (t.workstation) tile.appendChild(el('div', { className: 'wb-notes', textContent: '🖥 ' + t.workstation }));
-      if (t.woNumber)    tile.appendChild(el('div', { className: 'wb-notes', textContent: '📋 W/O: ' + t.woNumber }));
-      if (t.timeCheck)   tile.appendChild(el('span', { className: 'badge badge-timecheck', style: 'margin-top:6px;display:inline-block;', textContent: '✓ Time Check' }));
-      if (t.targetSeconds) {
-        const pct       = elapsed / t.targetSeconds;
-        const pctCapped = Math.min(1, pct);
-        const remaining = t.targetSeconds - elapsed;
-        const targetWrap = el('div', { className: 'wb-target-wrap' });
-        const labelText  = remaining > 0
-          ? formatHM(remaining) + ' remaining'
-          : formatHM(Math.abs(remaining)) + ' overdue';
-        const labelEl = el('div', {
-          className: 'wb-target-label' + (remaining <= 0 ? ' overdue' : ''),
-          textContent: '🎯 Target: ' + formatHM(t.targetSeconds) + '  —  ' + labelText,
-          'data-startedat':    t.startedAt,
-          'data-targetseconds': String(t.targetSeconds),
-        });
-        targetWrap.appendChild(labelEl);
-        const bar  = el('div', { className: 'wb-target-bar' });
-        const fill = el('div', {
-          className: 'wb-target-fill' + (pct >= 1 ? ' over' : ''),
-          style: 'width:' + Math.round(pctCapped * 100) + '%',
-          'data-startedat':     t.startedAt,
-          'data-targetseconds': String(t.targetSeconds),
-        });
-        bar.appendChild(fill);
-        targetWrap.appendChild(bar);
-        tile.appendChild(targetWrap);
-      }
-
-      // Action button row — supervisors and above only
-      if (hasRole('supervisor')) {
-        const btnRow = el('div', { className: 'wb-btn-row' });
-
-        // Pause / Resume toggle button
-        const pauseBtn = el('button', {
-          className: 'wb-pause-btn' + (t.isPaused ? ' is-paused' : ''),
-          textContent: t.isPaused ? '▶ Resume' : '⏸ Pause',
-          'aria-label': (t.isPaused ? 'Resume' : 'Pause') + ' timer for ' + t.operatorName,
-        });
-        pauseBtn.addEventListener('click', async () => {
-          pauseBtn.disabled = true;
-          try {
-            if (t.isPaused) {
-              await POST('/pause/' + t.id + '/resume', {});
-              toast('Timer resumed for ' + t.operatorName, 'success');
-            } else {
-              await POST('/pause/' + t.id + '/pause', { reason: 'Paused by ' + state.user.fullName });
-              toast('Timer paused for ' + t.operatorName, '');
-            }
-            await refreshWallboard();
-          } catch (err) { toast(err.message, 'error'); pauseBtn.disabled = false; }
-        });
-        btnRow.appendChild(pauseBtn);
-
-        // Message button
-        btnRow.appendChild(el('button', {
-          className: 'wb-msg-btn',
-          textContent: '✉ Message',
-          'aria-label': 'Send message to ' + t.operatorName,
-          onclick: () => openSendMessageModal(t.operatorId, t.operatorName),
-        }));
-
-        tile.appendChild(btnRow);
-      }
-
-      container.appendChild(tile);
-    });
-
-    // Tick elapsed times every second so tiles update live
-    startWallboardTick();
-
-  } catch (err) {
-    container.innerHTML = '';
-    container.appendChild(el('div', { className: 'wallboard-empty',
-      textContent: 'Could not load active timers: ' + err.message }));
-  }
-}
-
-// Live tick — updates elapsed time on each tile every second
-function startWallboardTick() {
-  if (wallboardTick) clearInterval(wallboardTick);
-  wallboardTick = setInterval(() => {
-    if (state.currentPage !== 'wallboard') {
-      clearInterval(wallboardTick); wallboardTick = null; return;
-    }
-    document.querySelectorAll('.wb-elapsed[data-startedat]').forEach(el => {
-      const startedAt   = el.getAttribute('data-startedat');
-      const pausedSecs  = parseInt(el.getAttribute('data-pausedseconds') || '0', 10);
-      const isPaused    = el.getAttribute('data-ispaused') === '1';
-      if (!startedAt) return;
-
-      // Paused tiles show frozen net elapsed, don't increment
-      const rawElapsed = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000));
-      const elapsed    = Math.max(0, rawElapsed - pausedSecs);
-      if (!isPaused) el.textContent = formatDuration(elapsed);
-
-      const tile = el.closest('.wallboard-tile');
-      if (!tile) return;
-
-      // Skip colour logic for paused tiles
-      if (isPaused) return;
-
-      tile.classList.remove('tile-warning', 'tile-overdue');
-      const fill = tile.querySelector('.wb-target-fill');
-      const tgt  = fill ? parseInt(fill.getAttribute('data-targetseconds'), 10) : 0;
-      if (tgt) {
-        const pct = elapsed / tgt;
-        if (pct >= 1.0)      tile.classList.add('tile-overdue');
-        else if (pct >= 0.8) tile.classList.add('tile-warning');
-        fill.style.width = Math.round(Math.min(1, pct) * 100) + '%';
-        fill.classList.toggle('over', pct >= 1);
-        const lbl = tile.querySelector('.wb-target-label');
-        if (lbl) {
-          const remaining = tgt - elapsed;
-          const labelText = remaining > 0
-            ? formatHM(remaining) + ' remaining'
-            : formatHM(Math.abs(remaining)) + ' overdue';
-          lbl.textContent = '🎯 Target: ' + formatHM(tgt) + '  --  ' + labelText;
-          lbl.className   = 'wb-target-label' + (remaining <= 0 ? ' overdue' : '');
-        }
-      } else {
-        if (elapsed > 4 * 3600)      tile.classList.add('tile-overdue');
-        else if (elapsed > 2 * 3600) tile.classList.add('tile-warning');
-      }
-    });
-  }, 1000);
-}
-
-
-
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   TARGET TIMES  (Manager / Administrator)
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-// Format seconds as "Xh Ym"
 function formatHM(totalSeconds) {
   if (!totalSeconds) return '—';
   const h = Math.floor(totalSeconds / 3600);
@@ -1833,148 +1618,76 @@ function formatHM(totalSeconds) {
   return h + 'h ' + m + 'm';
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   TARGET TIMES
+   ═══════════════════════════════════════════════════════════════════════════ */
 async function loadTargetTimes(containerId = 'targetTimesList') {
-  const container = document.getElementById(containerId);
-  if (!container) return;
+  const container = document.getElementById(containerId); if (!container) return;
   container.innerHTML = '<div class="empty-state">Loading...</div>';
-  try {
-    const targets = await GET('/targets');
-    renderTargetList(targets, containerId);
-  } catch (_) {
-    container.innerHTML = '<div class="empty-state">Could not load target times.</div>';
-  }
+  try { renderTargetList(await GET('/targets'), containerId); }
+  catch (_) { container.innerHTML = '<div class="empty-state">Could not load target times.</div>'; }
 }
-
 function renderTargetList(targets, containerId = 'targetTimesList') {
-  const container = document.getElementById(containerId);
-  if (!container) return;
+  const container = document.getElementById(containerId); if (!container) return;
   container.innerHTML = '';
-  if (!targets || targets.length === 0) {
-    container.appendChild(el('div', { className: 'empty-state',
-      textContent: 'No target times set yet. Click + Add Target Time to get started.' }));
-    return;
-  }
+  if (!targets || !targets.length) { container.appendChild(el('div', { className: 'empty-state', textContent: 'No target times set yet. Click + Add Target Time to get started.' })); return; }
   targets.forEach(t => {
-    const row  = el('div', { className: 'target-row' });
+    const row = el('div', { className: 'target-row' });
     const info = el('div', { className: 'target-row-info' });
     info.appendChild(el('span', { className: 'target-item-number', textContent: t.itemNumber }));
-    info.appendChild(el('span', { className: 'target-time-display',
-      textContent: formatHM(t.totalSeconds) }));
+    info.appendChild(el('span', { className: 'target-time-display', textContent: formatHM(t.totalSeconds) }));
     const actions = el('div', { className: 'target-row-actions' });
-    actions.appendChild(el('button', { className: 'btn btn-ghost btn-sm', textContent: 'Edit',
-      onclick: () => openTargetModal(t, containerId) }));
-    actions.appendChild(el('button', { className: 'btn btn-ghost btn-sm', textContent: '🗑',
-      onclick: () => confirmDeleteTarget(t, containerId) }));
-    row.appendChild(info);
-    row.appendChild(actions);
-    container.appendChild(row);
+    actions.appendChild(el('button', { className: 'btn btn-ghost btn-sm', textContent: 'Edit', onclick: () => openTargetModal(t, containerId) }));
+    actions.appendChild(el('button', { className: 'btn btn-ghost btn-sm', textContent: '\uD83D\uDDD1', onclick: () => confirmDeleteTarget(t, containerId) }));
+    row.appendChild(info); row.appendChild(actions); container.appendChild(row);
   });
 }
-
-// Dedicated Target Times page loader
-function loadTargetsPage() {
-  loadTargetTimes('targetTimesPageList');
-}
-
-// Wire up Add button on the dedicated page
-document.getElementById('btnAddTargetPage') &&
-  document.getElementById('btnAddTargetPage').addEventListener('click', () =>
-    openTargetModal(null, 'targetTimesPageList'));
-
+function loadTargetsPage() { loadTargetTimes('targetTimesPageList'); }
+document.getElementById('btnAddTargetPage') && document.getElementById('btnAddTargetPage').addEventListener('click', () => openTargetModal(null, 'targetTimesPageList'));
+document.getElementById('btnAddTarget') && document.getElementById('btnAddTarget').addEventListener('click', () => openTargetModal(null, 'targetTimesList'));
 function openTargetModal(existing, containerId = 'targetTimesList') {
-  const isNew = !existing;
-  const body  = el('div', {});
-  const itemInput = el('input', {
-    id: 'ttItemNumber', type: 'text',
-    maxlength: '40',
-    placeholder: 'e.g. PHL-1001',
-    value: existing ? existing.itemNumber : '',
-    autocapitalize: 'characters',
-  });
-  if (!isNew) itemInput.setAttribute('disabled', '');
-
-  // Scan button for item number — only shown when adding new (not editing)
-  const itemInputRow = el('div', { className: 'input-with-action' }, itemInput);
+  const isNew = !existing, body = el('div', {});
+  const ttInput = el('input', { id: 'ttItemNumber', type: 'text', maxlength: '40', placeholder: 'e.g. PHL-1001', value: existing ? existing.itemNumber : '', autocapitalize: 'characters' });
+  if (!isNew) ttInput.setAttribute('disabled', '');
+  const inputRow = el('div', { className: 'input-with-action' }, ttInput);
   if (isNew) {
-    const scanBtn = el('button', {
-      className: 'btn-scan', type: 'button',
-      'aria-label': 'Scan barcode into item number',
-    });
-    // Reuse the scanner SVG icon
-    scanBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M3 7V5a2 2 0 0 1 2-2h2"/>
-      <path d="M17 3h2a2 2 0 0 1 2 2v2"/>
-      <path d="M21 17v2a2 2 0 0 1-2 2h-2"/>
-      <path d="M7 21H5a2 2 0 0 1-2-2v-2"/>
-      <rect x="7" y="7" width="3" height="3"/>
-      <rect x="14" y="7" width="3" height="3"/>
-      <rect x="7" y="14" width="3" height="3"/>
-      <rect x="14" y="14" width="3" height="3"/>
-    </svg> Scan`;
-    scanBtn.addEventListener('click', () => scanner.open(itemInput, 'item'));
-    itemInputRow.appendChild(scanBtn);
+    const scanBtn = el('button', { className: 'btn-scan', type: 'button', 'aria-label': 'Scan barcode' });
+    scanBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><rect x="7" y="7" width="3" height="3"/><rect x="14" y="7" width="3" height="3"/><rect x="7" y="14" width="3" height="3"/><rect x="14" y="14" width="3" height="3"/></svg> Scan`;
+    scanBtn.addEventListener('click', () => scanner.open(ttInput, 'item'));
+    inputRow.appendChild(scanBtn);
   }
-
-  body.appendChild(el('div', { className: 'form-group' },
-    el('label', { for: 'ttItemNumber', textContent: 'Item Number *' }),
-    itemInputRow));
-
-  const timeRow = el('div', { className: 'form-group' });
-  timeRow.appendChild(el('label', { textContent: 'Target Time *' }));
+  body.appendChild(el('div', { className: 'form-group' }, el('label', { for: 'ttItemNumber', textContent: 'Item Number *' }), inputRow));
+  const timeRow = el('div', { className: 'form-group' }); timeRow.appendChild(el('label', { textContent: 'Target Time *' }));
   const timeInputs = el('div', { className: 'time-input-row' });
-  const hoursInput = el('input', {
-    id: 'ttHours', type: 'number', min: '0', max: '99',
-    placeholder: '0', style: 'width:70px;text-align:center;',
-    value: existing ? String(existing.hours) : '0',
-  });
-  const minsInput = el('input', {
-    id: 'ttMinutes', type: 'number', min: '0', max: '59',
-    placeholder: '0', style: 'width:70px;text-align:center;',
-    value: existing ? String(existing.minutes) : '0',
-  });
-  timeInputs.appendChild(hoursInput);
-  timeInputs.appendChild(el('span', { textContent: 'h', style: 'margin:0 6px;color:var(--text2);font-weight:600;' }));
-  timeInputs.appendChild(minsInput);
-  timeInputs.appendChild(el('span', { textContent: 'm', style: 'margin:0 6px;color:var(--text2);font-weight:600;' }));
-  timeRow.appendChild(timeInputs);
-  body.appendChild(timeRow);
-
-  const errDiv  = el('div', { className: 'error-msg', role: 'alert' });
-  body.appendChild(errDiv);
-  const btnSave   = el('button', { className: 'btn btn-primary', textContent: isNew ? 'Add Target Time' : 'Save Changes' });
-  const btnCancel = el('button', { className: 'btn btn-ghost',   textContent: 'Cancel' });
+  const hInp = el('input', { id: 'ttHours',   type: 'number', min: '0', max: '99', placeholder: '0', style: 'width:70px;text-align:center;', value: existing ? String(existing.hours)   : '0' });
+  const mInp = el('input', { id: 'ttMinutes', type: 'number', min: '0', max: '59', placeholder: '0', style: 'width:70px;text-align:center;', value: existing ? String(existing.minutes) : '0' });
+  timeInputs.appendChild(hInp); timeInputs.appendChild(el('span', { textContent: 'h', style: 'margin:0 6px;color:var(--text2);font-weight:600;' }));
+  timeInputs.appendChild(mInp); timeInputs.appendChild(el('span', { textContent: 'm', style: 'margin:0 6px;color:var(--text2);font-weight:600;' }));
+  timeRow.appendChild(timeInputs); body.appendChild(timeRow);
+  const errDiv = el('div', { className: 'error-msg', role: 'alert' }); body.appendChild(errDiv);
+  const btnSave = el('button', { className: 'btn btn-primary', textContent: isNew ? 'Add Target Time' : 'Save Changes' });
+  const btnCancel = el('button', { className: 'btn btn-ghost', textContent: 'Cancel' });
   btnCancel.addEventListener('click', closeModal);
   btnSave.addEventListener('click', async () => {
     errDiv.textContent = '';
     const itemNumber = (document.getElementById('ttItemNumber').value || '').trim().toUpperCase();
-    const hours      = parseInt(document.getElementById('ttHours').value, 10) || 0;
-    const minutes    = parseInt(document.getElementById('ttMinutes').value, 10) || 0;
+    const hours = parseInt(document.getElementById('ttHours').value, 10) || 0;
+    const minutes = parseInt(document.getElementById('ttMinutes').value, 10) || 0;
     if (!itemNumber) { errDiv.textContent = 'Item Number is required.'; return; }
     if (hours === 0 && minutes === 0) { errDiv.textContent = 'Target time must be greater than zero.'; return; }
     btnSave.disabled = true;
     try {
       await POST('/targets', { itemNumber, hours, minutes });
       toast((isNew ? 'Target time added' : 'Target time updated') + ' for ' + itemNumber, 'success');
-      closeModal();
-      // Reload both the dedicated page list and the dashboard section if present
-      loadTargetTimes(containerId);
+      closeModal(); loadTargetTimes(containerId);
       if (containerId !== 'targetTimesList') loadTargetTimes('targetTimesList');
-    } catch (err) {
-      errDiv.textContent = err.message;
-    } finally {
-      btnSave.disabled = false;
-    }
+    } catch (err) { errDiv.textContent = err.message; } finally { btnSave.disabled = false; }
   });
   openModal(isNew ? 'Add Target Time' : 'Edit Target Time', body, [btnCancel, btnSave]);
 }
-
 function confirmDeleteTarget(t, containerId = 'targetTimesList') {
-  const body = el('div', {});
-  body.appendChild(el('p', { textContent: 'Remove the target time for ' + t.itemNumber + '?',
-    style: 'margin-bottom:12px;' }));
-  const errDiv    = el('div', { className: 'error-msg', role: 'alert' });
-  body.appendChild(errDiv);
+  const body = el('div', {}); body.appendChild(el('p', { textContent: 'Remove the target time for ' + t.itemNumber + '?', style: 'margin-bottom:12px;' }));
+  const errDiv = el('div', { className: 'error-msg', role: 'alert' }); body.appendChild(errDiv);
   const btnConfirm = el('button', { className: 'btn btn-danger', textContent: 'Remove' });
   const btnCancel  = el('button', { className: 'btn btn-ghost',  textContent: 'Keep' });
   btnCancel.addEventListener('click', closeModal);
@@ -1982,513 +1695,243 @@ function confirmDeleteTarget(t, containerId = 'targetTimesList') {
     btnConfirm.disabled = true;
     try {
       await api('DELETE', '/targets/' + encodeURIComponent(t.itemNumber));
-      toast('Target time removed for ' + t.itemNumber, '');
-      closeModal();
+      toast('Target time removed for ' + t.itemNumber, ''); closeModal();
       loadTargetTimes(containerId);
       if (containerId !== 'targetTimesList') loadTargetTimes('targetTimesList');
-    } catch (err) {
-      errDiv.textContent = err.message;
-      btnConfirm.disabled = false;
-    }
+    } catch (err) { errDiv.textContent = err.message; btnConfirm.disabled = false; }
   });
   openModal('Remove Target Time', body, [btnCancel, btnConfirm]);
 }
 
-// Wire up the Add Target Time button on the dashboard
-document.getElementById('btnAddTarget') &&
-  document.getElementById('btnAddTarget').addEventListener('click', () =>
-    openTargetModal(null, 'targetTimesList'));
-
-
-
-function confirmReset2FA(user) {
-  const body = el('div', {});
-  body.appendChild(el('p', {
-    textContent: 'This will disable two-factor authentication for ' + user.fullName + ' (@' + user.username + '). ' +
-      'They will be prompted to set it up again on their next login.',
-    style: 'margin-bottom:12px;',
-  }));
-  body.appendChild(el('p', {
-    textContent: 'Only do this if they have lost access to their authenticator app.',
-    style: 'color:var(--red);font-size:13px;font-weight:600;',
-  }));
-  const errDiv    = el('div', { className: 'error-msg', role: 'alert' });
-  body.appendChild(errDiv);
-  const btnConfirm = el('button', { className: 'btn btn-danger', textContent: 'Reset 2FA' });
-  const btnCancel  = el('button', { className: 'btn btn-ghost',  textContent: 'Cancel' });
-  btnCancel.addEventListener('click', closeModal);
-  btnConfirm.addEventListener('click', async () => {
-    btnConfirm.disabled = true;
-    try {
-      await api('DELETE', '/totp/reset/' + user.id);
-      toast('2FA reset for ' + user.fullName + '. They will be prompted to set it up again.', 'success');
-      closeModal();
-      loadAdminPage();
-    } catch (err) {
-      errDiv.textContent = err.message;
-      btnConfirm.disabled = false;
-    }
-  });
-  openModal('Reset Two-Factor Authentication', body, [btnCancel, btnConfirm]);
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════
-   TOTP SETUP  (Manager / Administrator)
-   Shown automatically when a manager/admin logs in without TOTP configured.
-   Also accessible via a button in their profile area.
+   TOTP SETUP
    ═══════════════════════════════════════════════════════════════════════════ */
 const ROLES_REQUIRING_TOTP = ['manager', 'administrator'];
-
-// Called from onLoggedIn — prompts setup if TOTP required but not configured
 function checkTotpSetupRequired() {
   if (!ROLES_REQUIRING_TOTP.includes(state.user.role)) return;
-  // Only prompt if totpEnabled is EXPLICITLY false — not undefined/missing.
-  // undefined means the field wasn't returned (e.g. older login path) — don't prompt.
-  // false means the server confirmed 2FA is not yet set up — prompt.
   if (state.user.totpEnabled !== false) return;
-  // Show setup prompt after a short delay so the main UI renders first
   setTimeout(() => openTotpSetupModal(), 800);
 }
-
 async function openTotpSetupModal() {
   const body = el('div', {});
-
-  body.appendChild(el('p', {
-    textContent: 'Your role requires two-factor authentication (2FA). ' +
-      'Please scan the QR code below with an authenticator app such as ' +
-      'Google Authenticator or Microsoft Authenticator, then enter the ' +
-      '6-digit code to complete setup.',
-    style: 'margin-bottom:16px;font-size:14px;',
-  }));
-
-  // Loading state while we fetch the QR code
+  body.appendChild(el('p', { textContent: 'Your role requires two-factor authentication (2FA). Please scan the QR code below with an authenticator app such as Google Authenticator or Microsoft Authenticator, then enter the 6-digit code to complete setup.', style: 'margin-bottom:16px;font-size:14px;' }));
   const qrWrap = el('div', { style: 'text-align:center;padding:20px 0;' });
-  qrWrap.appendChild(el('div', { textContent: 'Generating QR code…', style: 'color:var(--text3);' }));
+  qrWrap.appendChild(el('div', { textContent: 'Generating QR code\u2026', style: 'color:var(--text3);' }));
   body.appendChild(qrWrap);
-
   const codeGroup = el('div', { className: 'form-group', style: 'margin-top:8px;' });
   codeGroup.appendChild(el('label', { for: 'setupTotpCode', textContent: 'Enter code from app *' }));
-  const codeInput = el('input', {
-    id: 'setupTotpCode', type: 'text', inputmode: 'numeric',
-    pattern: '\d{6}', maxlength: '6',
-    placeholder: '000000',
-    className: 'totp-code-input',
-  });
-  codeGroup.appendChild(codeInput);
-  body.appendChild(codeGroup);
-
-  const errDiv  = el('div', { className: 'error-msg', role: 'alert' });
-  body.appendChild(errDiv);
-
+  const codeInput = el('input', { id: 'setupTotpCode', type: 'text', inputmode: 'numeric', pattern: '\\d{6}', maxlength: '6', placeholder: '000000', className: 'totp-code-input' });
+  codeGroup.appendChild(codeInput); body.appendChild(codeGroup);
+  const errDiv = el('div', { className: 'error-msg', role: 'alert' }); body.appendChild(errDiv);
   const btnEnable = el('button', { className: 'btn btn-primary', textContent: 'Enable 2FA' });
   const btnSkip   = el('button', { className: 'btn btn-ghost',   textContent: 'Remind Me Later' });
-  btnSkip.addEventListener('click', () => {
-    // Set to null (not false) so we don't re-prompt during this session
-    state.user.totpEnabled = null;
-    closeModal();
-  });
-
+  btnSkip.addEventListener('click', () => { state.user.totpEnabled = null; closeModal(); });
   openModal('Set Up Two-Factor Authentication', body, [btnSkip, btnEnable]);
-
-  // Fetch QR code from server
   try {
     const setup = await POST('/totp/setup', {});
     qrWrap.innerHTML = '';
-    qrWrap.appendChild(el('img', {
-      src: setup.qrDataUrl,
-      alt: 'QR code for authenticator app',
-      style: 'width:200px;height:200px;border-radius:8px;',
-    }));
-    qrWrap.appendChild(el('p', {
-      textContent: "Can't scan? Enter this code manually: " + setup.secret,
-      style: 'font-size:11px;color:var(--text3);margin-top:8px;word-break:break-all;',
-    }));
+    qrWrap.appendChild(el('img', { src: setup.qrDataUrl, alt: 'QR code', style: 'width:200px;height:200px;border-radius:8px;' }));
+    qrWrap.appendChild(el('p', { textContent: "Can't scan? Enter this code manually: " + setup.secret, style: 'font-size:11px;color:var(--text3);margin-top:8px;word-break:break-all;' }));
     codeInput.focus();
-  } catch (err) {
-    qrWrap.innerHTML = '';
-    qrWrap.appendChild(el('p', { textContent: 'Could not load QR code: ' + err.message, style: 'color:var(--red);' }));
-  }
-
+  } catch (err) { qrWrap.innerHTML = ''; qrWrap.appendChild(el('p', { textContent: 'Could not load QR code: ' + err.message, style: 'color:var(--red);' })); }
   btnEnable.addEventListener('click', async () => {
     errDiv.textContent = '';
     const code = codeInput.value.trim();
-    if (!/^\d{6}$/.test(code)) {
-      errDiv.textContent = 'Please enter the 6-digit code from your authenticator app.';
-      return;
-    }
+    if (!/^\d{6}$/.test(code)) { errDiv.textContent = 'Please enter the 6-digit code from your authenticator app.'; return; }
     btnEnable.disabled = true;
-    try {
-      await POST('/totp/confirm', { code });
-      state.user.totpEnabled = true;
-      closeModal();
-      toast('Two-factor authentication enabled successfully.', 'success');
-    } catch (err) {
-      errDiv.textContent = err.message;
-      btnEnable.disabled = false;
-    }
+    try { await POST('/totp/confirm', { code }); state.user.totpEnabled = true; closeModal(); toast('Two-factor authentication enabled successfully.', 'success'); }
+    catch (err) { errDiv.textContent = err.message; btnEnable.disabled = false; }
   });
 }
-
-
-
-
 
 /* ═══════════════════════════════════════════════════════════════════════════
    PAUSE / RESUME
    ═══════════════════════════════════════════════════════════════════════════ */
-
-// Update the active panel UI to reflect current pause state
 function updatePauseUI() {
   const isPaused  = state.activeIsPaused;
   const banner    = document.getElementById('pauseBanner');
-  const bannerTxt = document.getElementById('pauseBannerText');
   const pauseBtn  = document.getElementById('btnPauseTimer');
   const label     = document.getElementById('activeJobLabel');
   const stopwatch = document.getElementById('stopwatch');
   const panel     = document.getElementById('panelActive');
-
-  if (banner) banner.hidden = !isPaused;
-  if (label)  label.textContent = isPaused ? 'PAUSED' : 'ACTIVE JOB';
+  if (banner)    banner.hidden = !isPaused;
+  if (label)     label.textContent = isPaused ? 'PAUSED' : 'ACTIVE JOB';
   if (stopwatch) stopwatch.classList.toggle('stopwatch-paused', isPaused);
-  if (panel)  panel.classList.toggle('panel-paused', isPaused);
-
+  if (panel)     panel.classList.toggle('panel-paused', isPaused);
   if (pauseBtn) {
-    if (isPaused) {
-      pauseBtn.textContent = '▶ Resume';
-      pauseBtn.className   = 'btn btn-resume-sm';
-      pauseBtn.setAttribute('aria-label', 'Resume timer');
-    } else {
-      pauseBtn.textContent = '⏸ Pause';
-      pauseBtn.className   = 'btn btn-pause-sm';
-      pauseBtn.setAttribute('aria-label', 'Pause timer');
-    }
+    if (isPaused) { pauseBtn.textContent = '\u25b6 Resume'; pauseBtn.className = 'btn btn-resume-sm'; pauseBtn.setAttribute('aria-label', 'Resume timer'); }
+    else          { pauseBtn.textContent = '\u23f8 Pause';  pauseBtn.className = 'btn btn-pause-sm';  pauseBtn.setAttribute('aria-label', 'Pause timer'); }
   }
-
-  // Freeze or restart the stopwatch
   if (isPaused) {
     stopStopwatch();
-    // Show the frozen net elapsed
     if (state.activeStartedAt && state.activePausedAt) {
       const raw = Math.floor((new Date(state.activePausedAt).getTime() - new Date(state.activeStartedAt).getTime()) / 1000);
-      const net = Math.max(0, raw - state.activeTotalPausedSeconds);
-      document.getElementById('stopwatch').textContent = formatDuration(net);
+      document.getElementById('stopwatch').textContent = formatDuration(Math.max(0, raw - state.activeTotalPausedSeconds));
     }
-  } else {
-    startStopwatch();
-  }
+  } else { startStopwatch(); }
 }
 
-// Pause button handler
 document.getElementById('btnPauseTimer').addEventListener('click', async () => {
   if (!state.activeTimerId) return;
-  const btn = document.getElementById('btnPauseTimer');
-  btn.disabled = true;
+  const btn = document.getElementById('btnPauseTimer'); btn.disabled = true;
   try {
     if (state.activeIsPaused) {
       const t = await POST('/pause/' + state.activeTimerId + '/resume', {});
-      state.activeIsPaused           = false;
-      state.activePausedAt           = null;
-      state.activeTotalPausedSeconds = t.totalPausedSeconds || 0;
-      updatePauseUI();
-      toast('Timer resumed.', 'success');
+      state.activeIsPaused = false; state.activePausedAt = null; state.activeTotalPausedSeconds = t.totalPausedSeconds || 0;
+      updatePauseUI(); toast('Timer resumed.', 'success');
     } else {
       const t = await POST('/pause/' + state.activeTimerId + '/pause', { reason: 'Manual pause' });
-      state.activeIsPaused         = true;
-      state.activePausedAt         = t.pausedAt;
-      updatePauseUI();
-      toast('Timer paused.', '');
+      state.activeIsPaused = true; state.activePausedAt = t.pausedAt;
+      updatePauseUI(); toast('Timer paused.', '');
     }
-  } catch (err) {
-    toast(err.message, 'error');
-  } finally {
-    btn.disabled = false;
-  }
+  } catch (err) { toast(err.message, 'error'); } finally { btn.disabled = false; }
 });
 
-// Poll for pause state changes (e.g. auto-pause from schedule)
-// Runs every 30s when on the timer page — lightweight single DB call
 let pausePollInterval = null;
-
 function startPausePoll() {
   if (pausePollInterval) clearInterval(pausePollInterval);
   pausePollInterval = setInterval(async () => {
     if (state.currentPage !== 'timer' || !state.activeTimerId) return;
     try {
-      const t = await GET('/timers/' + state.activeTimerId);
-      if (!t) return;
-      const waspaused    = state.activeIsPaused;
-      const wasHandRaised = state.activeHandRaised;
-      state.activeIsPaused           = t.isPaused || false;
-      state.activePausedAt           = t.pausedAt || null;
-      state.activeTotalPausedSeconds = t.totalPausedSeconds || 0;
-      state.activeHandRaised         = t.handRaised || false;
+      const t = await GET('/timers/' + state.activeTimerId); if (!t) return;
+      const waspaused = state.activeIsPaused, wasHandRaised = state.activeHandRaised;
+      state.activeIsPaused = t.isPaused || false; state.activePausedAt = t.pausedAt || null;
+      state.activeTotalPausedSeconds = t.totalPausedSeconds || 0; state.activeHandRaised = t.handRaised || false;
       if (waspaused !== state.activeIsPaused) {
         updatePauseUI();
-        if (state.activeIsPaused) {
-          toast('Your timer has been automatically paused outside working hours.', '');
-        } else {
-          toast('Your timer has automatically resumed for the new working day.', 'success');
-        }
+        toast(state.activeIsPaused ? 'Your timer has been automatically paused outside working hours.' : 'Your timer has automatically resumed for the new working day.', state.activeIsPaused ? '' : 'success');
       }
-      // Sync hand state if a supervisor lowered it remotely
-      if (wasHandRaised !== state.activeHandRaised) {
-        updateHandUI();
-        if (!state.activeHandRaised) toast('Your hand has been lowered by a supervisor.', '');
-      }
+      if (wasHandRaised !== state.activeHandRaised) { updateHandUI(); if (!state.activeHandRaised) toast('Your hand has been lowered by a supervisor.', ''); }
     } catch (_) {}
   }, 30000);
 }
-
-function stopPausePoll() {
-  if (pausePollInterval) { clearInterval(pausePollInterval); pausePollInterval = null; }
-}
+function stopPausePoll() { if (pausePollInterval) { clearInterval(pausePollInterval); pausePollInterval = null; } }
 
 /* ═══════════════════════════════════════════════════════════════════════════
    RAISE / LOWER HAND
    ═══════════════════════════════════════════════════════════════════════════ */
 function updateHandUI() {
-  const btn = document.getElementById('btnRaiseHand');
-  if (!btn) return;
-  if (state.activeHandRaised) {
-    btn.textContent = '✋ Lower Hand';
-    btn.className   = 'btn btn-hand-raised-sm';
-    btn.setAttribute('aria-label', 'Lower hand');
-  } else {
-    btn.textContent = '✋ Raise Hand';
-    btn.className   = 'btn btn-hand-sm';
-    btn.setAttribute('aria-label', 'Raise hand');
-  }
+  const btn = document.getElementById('btnRaiseHand'); if (!btn) return;
+  if (state.activeHandRaised) { btn.textContent = '\u270b Lower Hand'; btn.className = 'btn btn-hand-raised-sm'; btn.setAttribute('aria-label', 'Lower hand'); }
+  else                        { btn.textContent = '\u270b Raise Hand';  btn.className = 'btn btn-hand-sm';        btn.setAttribute('aria-label', 'Raise hand'); }
 }
 
 function showHandRaisedPopup(data) {
-  // Remove any existing hand-raised popups first
   document.querySelectorAll('.hand-raised-popup').forEach(p => p.remove());
-
   const popup = el('div', { className: 'hand-raised-popup', role: 'alertdialog', 'aria-modal': 'true', 'aria-label': 'Operator needs attention' });
-
-  const icon = el('div', { className: 'hrp-icon', textContent: '✋' });
-  const body = el('div', { className: 'hrp-body' });
-  const title = el('div', { className: 'hrp-title', textContent: 'Operator Needs Attention' });
-  const name  = el('div', { className: 'hrp-name',  textContent: data.operatorName });
-  const meta  = el('div', { className: 'hrp-meta' });
-
-  if (data.itemNumber)  meta.appendChild(el('span', { textContent: '📦 ' + data.itemNumber }));
-  if (data.workstation) meta.appendChild(el('span', { textContent: '🖥 ' + data.workstation }));
-
-  const time = el('div', { className: 'hrp-time',
-    textContent: 'Raised at ' + new Date(data.raisedAt).toLocaleTimeString('en-GB',
-      { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
-
-  body.appendChild(title);
-  body.appendChild(name);
+  const icon  = el('div', { className: 'hrp-icon', textContent: '\u270b' });
+  const body  = el('div', { className: 'hrp-body' });
+  body.appendChild(el('div', { className: 'hrp-title', textContent: 'Operator Needs Attention' }));
+  body.appendChild(el('div', { className: 'hrp-name',  textContent: data.operatorName }));
+  const meta = el('div', { className: 'hrp-meta' });
+  if (data.itemNumber)  meta.appendChild(el('span', { textContent: '\uD83D\uDCE6 ' + data.itemNumber }));
+  if (data.workstation) meta.appendChild(el('span', { textContent: '\uD83D\uDDA5 ' + data.workstation }));
   if (meta.children.length) body.appendChild(meta);
-  body.appendChild(time);
-
-  const closeBtn = el('button', { className: 'hrp-close', textContent: '✕', 'aria-label': 'Dismiss' });
+  body.appendChild(el('div', { className: 'hrp-time', textContent: 'Raised at ' + new Date(data.raisedAt).toLocaleTimeString('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', second: '2-digit' }) }));
+  const closeBtn = el('button', { className: 'hrp-close', textContent: '\u2715', 'aria-label': 'Dismiss' });
   closeBtn.addEventListener('click', () => popup.remove());
-
-  popup.appendChild(icon);
-  popup.appendChild(body);
-  popup.appendChild(closeBtn);
+  popup.appendChild(icon); popup.appendChild(body); popup.appendChild(closeBtn);
   document.body.appendChild(popup);
-
-  // Play an urgent double ping
-  playPing('message');
-  setTimeout(() => playPing('message'), 400);
-
-  // Auto-dismiss after 30 seconds if not manually closed
+  playPing('message'); setTimeout(() => playPing('message'), 400);
   setTimeout(() => { if (popup.isConnected) popup.remove(); }, 30000);
 }
 
 document.getElementById('btnRaiseHand').addEventListener('click', async () => {
   if (!state.activeTimerId) return;
-  const btn = document.getElementById('btnRaiseHand');
-  btn.disabled = true;
+  const btn = document.getElementById('btnRaiseHand'); btn.disabled = true;
   try {
-    if (state.activeHandRaised) {
-      await POST(`/timers/${state.activeTimerId}/lower-hand`, {});
-      state.activeHandRaised = false;
-      toast('Hand lowered.', '');
-    } else {
-      await POST(`/timers/${state.activeTimerId}/raise-hand`, {});
-      state.activeHandRaised = true;
-      toast('Hand raised \u2014 a supervisor will be with you shortly.', 'success');
-    }
+    if (state.activeHandRaised) { await POST(`/timers/${state.activeTimerId}/lower-hand`, {}); state.activeHandRaised = false; toast('Hand lowered.', ''); }
+    else                        { await POST(`/timers/${state.activeTimerId}/raise-hand`,  {}); state.activeHandRaised = true;  toast('Hand raised \u2014 a supervisor will be with you shortly.', 'success'); }
     updateHandUI();
-  } catch (err) { toast(err.message, 'error'); }
-  finally { btn.disabled = false; }
+  } catch (err) { toast(err.message, 'error'); } finally { btn.disabled = false; }
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   WALLBOARD TILE PAUSE / RESUME
-   Inline button on each wallboard tile — works reliably on touch screens.
-   Compact wallboard is display-only and has no pause button.
+   HOME PAGE
    ═══════════════════════════════════════════════════════════════════════════ */
-// (pause/resume is handled inline per tile — no shared context menu needed)
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   HOME PAGE  (Supervisor / Manager / Administrator)
-   A command-centre dashboard landing page.
-   Operators land on the Timer page instead.
-   ═══════════════════════════════════════════════════════════════════════════ */
-
 async function loadHomePage() {
-  // Render the skeleton immediately so the page feels instant
   renderHomeSkeleton();
-
-  // Fetch all data in parallel
   const [activeTimers, stats, users] = await Promise.all([
     GET('/timers?status=active&limit=200').catch(() => []),
     GET('/export/stats').catch(() => null),
     hasRole('administrator') ? GET('/users').catch(() => []) : Promise.resolve([]),
   ]);
-
   renderHomeActiveJobs(activeTimers);
   renderHomeTodayStats(stats, activeTimers);
-  if (hasRole('manager')) renderHomePerformance(stats);
+  if (hasRole('manager'))       renderHomePerformance(stats);
   if (hasRole('administrator')) renderHomeUsers(users);
   renderHomeQuickActions();
 }
 
 function renderHomeSkeleton() {
-  const page = document.getElementById('pageHome');
-  if (!page) return;
-  page.innerHTML = `
-    <div class="home-page">
-      <div class="home-greeting" id="homeGreeting"></div>
-      <div class="home-grid" id="homeGrid">
-        <div class="home-card home-card-full" id="homeActiveJobs">
-          <div class="home-card-title">Active Jobs</div>
-          <div class="home-card-body"><div class="empty-state">Loading…</div></div>
-        </div>
-        <div class="home-card" id="homeTodayStats">
-          <div class="home-card-title">Today at a Glance</div>
-          <div class="home-card-body"><div class="empty-state">Loading…</div></div>
-        </div>
-        <div class="home-card" id="homeQuickActions">
-          <div class="home-card-title">Quick Actions</div>
-          <div class="home-card-body"></div>
-        </div>
-        ${hasRole('manager') ? '<div class="home-card home-card-full" id="homePerformance"><div class="home-card-title">Performance</div><div class="home-card-body"><div class="empty-state">Loading...</div></div></div>' : ''}
-        ${hasRole('administrator') ? '<div class="home-card home-card-full" id="homeUsers"><div class="home-card-title">User Status</div><div class="home-card-body"><div class="empty-state">Loading...</div></div></div>' : ''}
-      </div>
-    </div>`;
-
-  // Greeting
+  const page = document.getElementById('pageHome'); if (!page) return;
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-  const greetEl = document.getElementById('homeGreeting');
-  if (greetEl) {
-    greetEl.innerHTML = `<span class="home-greeting-text">${greeting}, ${state.user.fullName.split(' ')[0]}</span>
-      <span class="home-greeting-date">${new Date().toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long' })}</span>`;
-  }
+  page.innerHTML = `<div class="home-page">
+    <div class="home-greeting">
+      <span class="home-greeting-text">${greeting}, ${state.user.fullName.split(' ')[0]}</span>
+      <span class="home-greeting-date">${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
+    </div>
+    <div class="home-grid" id="homeGrid">
+      <div class="home-card home-card-full" id="homeActiveJobs"><div class="home-card-title">Active Jobs</div><div class="home-card-body"><div class="empty-state">Loading...</div></div></div>
+      <div class="home-card" id="homeTodayStats"><div class="home-card-title">Today at a Glance</div><div class="home-card-body"><div class="empty-state">Loading...</div></div></div>
+      <div class="home-card" id="homeQuickActions"><div class="home-card-title">Quick Actions</div><div class="home-card-body"></div></div>
+      ${hasRole('manager') ? '<div class="home-card home-card-full" id="homePerformance"><div class="home-card-title">Performance</div><div class="home-card-body"><div class="empty-state">Loading...</div></div></div>' : ''}
+      ${hasRole('administrator') ? '<div class="home-card home-card-full" id="homeUsers"><div class="home-card-title">User Status</div><div class="home-card-body"><div class="empty-state">Loading...</div></div></div>' : ''}
+    </div>
+  </div>`;
 }
 
 function renderHomeActiveJobs(timers) {
-  const card = document.getElementById('homeActiveJobs');
-  if (!card) return;
-  const body = card.querySelector('.home-card-body');
-  body.innerHTML = '';
-
-  const titleEl = card.querySelector('.home-card-title');
-  if (titleEl) titleEl.textContent = `Active Jobs  (${timers.length})`;
-
-  if (!timers.length) {
-    body.appendChild(el('div', { className: 'empty-state', textContent: 'No jobs currently running.' }));
-    return;
-  }
-
-  // Sort overdue first, then by elapsed desc
+  const card = document.getElementById('homeActiveJobs'); if (!card) return;
+  const body = card.querySelector('.home-card-body'); body.innerHTML = '';
+  const titleEl = card.querySelector('.home-card-title'); if (titleEl) titleEl.textContent = `Active Jobs  (${timers.length})`;
+  if (!timers.length) { body.appendChild(el('div', { className: 'empty-state', textContent: 'No jobs currently running.' })); return; }
   const now = Date.now();
   timers.sort((a, b) => {
-    const elA = now - new Date(a.startedAt).getTime();
-    const elB = now - new Date(b.startedAt).getTime();
-    const overdueA = a.targetSeconds ? elA / 1000 > a.targetSeconds : elA > 4 * 3600000;
-    const overdueB = b.targetSeconds ? elB / 1000 > b.targetSeconds : elB > 4 * 3600000;
-    if (overdueA !== overdueB) return overdueA ? -1 : 1;
-    return elB - elA;
+    const elA = now - new Date(a.startedAt).getTime(), elB = now - new Date(b.startedAt).getTime();
+    const ovA = a.targetSeconds ? elA / 1000 > a.targetSeconds : elA > 4 * 3600000;
+    const ovB = b.targetSeconds ? elB / 1000 > b.targetSeconds : elB > 4 * 3600000;
+    if (ovA !== ovB) return ovA ? -1 : 1; return elB - elA;
   });
-
   const grid = el('div', { className: 'home-active-grid' });
-
   timers.forEach(t => {
-    // Use server-calculated net elapsed (excludes all paused time) — same
-    // source as the wallboard and timer screen so all three stay in sync.
-    // Fall back to local calc if the field is missing.
-    const referenceMs = t.isPaused && t.pausedAt
-      ? new Date(t.pausedAt).getTime()
-      : now;
-    const localEl = Math.max(0, Math.floor((referenceMs - new Date(t.startedAt).getTime()) / 1000)) - (t.totalPausedSeconds || 0);
-    const elapsed  = t.netElapsedSeconds != null ? t.netElapsedSeconds : localEl;
-
-    const isOver    = t.targetSeconds ? elapsed >= t.targetSeconds : elapsed > 4 * 3600;
-    const isWarning = !isOver && (t.targetSeconds ? elapsed / t.targetSeconds >= 0.8 : elapsed > 2 * 3600);
-
-    const row = el('div', { className: 'home-active-row' + (isOver ? ' over' : isWarning ? ' warn' : '') + (t.handRaised ? ' hand-raised' : '') });
-
-    // Status dot
-    row.appendChild(el('span', { className: 'home-active-dot' + (isOver ? ' dot-red' : isWarning ? ' dot-amber' : ' dot-green') }));
-
-    // Operator + item
+    const refMs   = t.isPaused && t.pausedAt ? new Date(t.pausedAt).getTime() : now;
+    const localEl = Math.max(0, Math.floor((refMs - new Date(t.startedAt).getTime()) / 1000)) - (t.totalPausedSeconds || 0);
+    const elapsed = t.netElapsedSeconds != null ? t.netElapsedSeconds : localEl;
+    const isOver  = t.targetSeconds ? elapsed >= t.targetSeconds : elapsed > 4 * 3600;
+    const isWarn  = !isOver && (t.targetSeconds ? elapsed / t.targetSeconds >= 0.8 : elapsed > 2 * 3600);
+    const row = el('div', { className: 'home-active-row' + (isOver ? ' over' : isWarn ? ' warn' : '') + (t.handRaised ? ' hand-raised' : '') });
+    row.appendChild(el('span', { className: 'home-active-dot' + (isOver ? ' dot-red' : isWarn ? ' dot-amber' : ' dot-green') }));
     const info = el('div', { className: 'home-active-info' });
-    const nameText = t.operatorName + (t.handRaised ? ' ✋' : '');
-    info.appendChild(el('span', { className: 'home-active-name', textContent: nameText }));
+    info.appendChild(el('span', { className: 'home-active-name', textContent: t.operatorName + (t.handRaised ? ' \u270b' : '') }));
     info.appendChild(el('span', { className: 'home-active-item', textContent: t.itemNumber }));
-    if (t.workstation) info.appendChild(el('span', { className: 'home-active-ws', textContent: '🖥 ' + t.workstation }));
+    if (t.workstation) info.appendChild(el('span', { className: 'home-active-ws', textContent: '\uD83D\uDDA5 ' + t.workstation }));
     row.appendChild(info);
-
-    // Elapsed + target
     const timeInfo = el('div', { className: 'home-active-time' });
-    timeInfo.appendChild(el('span', {
-      className: 'home-active-elapsed' + (isOver ? ' text-red' : isWarning ? ' text-amber' : ''),
-      textContent: formatDuration(elapsed),
-    }));
+    timeInfo.appendChild(el('span', { className: 'home-active-elapsed' + (isOver ? ' text-red' : isWarn ? ' text-amber' : ''), textContent: formatDuration(elapsed) }));
     if (t.targetSeconds) {
-      const remaining = t.targetSeconds - elapsed;
-      timeInfo.appendChild(el('span', {
-        className: 'home-active-target' + (isOver ? ' text-red' : ''),
-        textContent: isOver
-          ? '⚠ ' + formatHM(Math.abs(remaining)) + ' overdue'
-          : '🎯 ' + formatHM(remaining) + ' left',
-      }));
+      const rem = t.targetSeconds - elapsed;
+      timeInfo.appendChild(el('span', { className: 'home-active-target' + (isOver ? ' text-red' : ''),
+        textContent: isOver ? '\u26a0 ' + formatHM(Math.abs(rem)) + ' overdue' : '\uD83C\uDFAF ' + formatHM(rem) + ' left' }));
     }
     row.appendChild(timeInfo);
-
-    // Message button (supervisor+)
-    if (hasRole('supervisor')) {
-      const msgBtn = el('button', {
-        className: 'btn btn-ghost btn-sm home-msg-btn',
-        textContent: '✉',
-        title: 'Message ' + t.operatorName,
-        onclick: () => openSendMessageModal(t.operatorId, t.operatorName),
-      });
-      row.appendChild(msgBtn);
-    }
-
+    if (hasRole('supervisor')) row.appendChild(el('button', { className: 'btn btn-ghost btn-sm home-msg-btn', textContent: '\u2709', title: 'Message ' + t.operatorName, onclick: () => openSendMessageModal(t.operatorId, t.operatorName) }));
     grid.appendChild(row);
   });
-
   body.appendChild(grid);
 }
 
 function renderHomeTodayStats(stats, activeTimers = []) {
-  const card = document.getElementById('homeTodayStats');
-  if (!card) return;
-  const body = card.querySelector('.home-card-body');
-  body.innerHTML = '';
-  if (!stats) {
-    body.appendChild(el('div', { className: 'empty-state', textContent: 'Could not load stats.' }));
-    return;
-  }
+  const card = document.getElementById('homeTodayStats'); if (!card) return;
+  const body = card.querySelector('.home-card-body'); body.innerHTML = '';
+  if (!stats) { body.appendChild(el('div', { className: 'empty-state', textContent: 'Could not load stats.' })); return; }
   const raisedCount = activeTimers.filter(t => t.handRaised).length;
-  const items = [
-    { icon: '▶',  label: 'Active Now',      value: stats.activeCount,          cls: 'stat-active' },
-    { icon: '✓',  label: 'Completed Today',  value: stats.total24h,             cls: 'stat-done'   },
-    { icon: '📅', label: 'This Week',        value: stats.total7d,              cls: ''            },
-    { icon: '📦', label: 'Item Types',       value: stats.byItem?.length || 0,  cls: ''            },
-  ];
   const grid = el('div', { className: 'home-stats-grid' });
-  items.forEach(s => {
+  [{ icon: '\u25b6', label: 'Active Now', value: stats.activeCount, cls: 'stat-active' },
+   { icon: '\u2713', label: 'Completed Today', value: stats.total24h, cls: 'stat-done' },
+   { icon: '\uD83D\uDCC5', label: 'This Week', value: stats.total7d, cls: '' },
+   { icon: '\uD83D\uDCE6', label: 'Item Types', value: stats.byItem?.length || 0, cls: '' }].forEach(s => {
     const item = el('div', { className: 'home-stat-item' });
     item.appendChild(el('div', { className: 'home-stat-icon ' + s.cls, textContent: s.icon }));
     item.appendChild(el('div', { className: 'home-stat-value', textContent: s.value }));
@@ -2496,35 +1939,20 @@ function renderHomeTodayStats(stats, activeTimers = []) {
     grid.appendChild(item);
   });
   body.appendChild(grid);
-
-  // Raised hands tile — always shown to supervisors+, highlighted when non-zero
   if (hasRole('supervisor')) {
     const handTile = el('div', { className: 'home-hand-tile' + (raisedCount > 0 ? ' active' : '') });
     const handLeft = el('div', { className: 'home-hand-left' });
-    handLeft.appendChild(el('div', { className: 'home-hand-icon', textContent: '✋' }));
+    handLeft.appendChild(el('div', { className: 'home-hand-icon', textContent: '\u270b' }));
     const handInfo = el('div', {});
     handInfo.appendChild(el('div', { className: 'home-hand-value', textContent: raisedCount }));
     handInfo.appendChild(el('div', { className: 'home-hand-label', textContent: raisedCount === 1 ? 'Raised Hand' : 'Raised Hands' }));
-    handLeft.appendChild(handInfo);
-    handTile.appendChild(handLeft);
-
+    handLeft.appendChild(handInfo); handTile.appendChild(handLeft);
     if (raisedCount > 0) {
-      const lowerBtn = el('button', {
-        className: 'btn btn-ghost btn-sm home-lower-all-btn',
-        textContent: '✋ Lower All',
-      });
+      const lowerBtn = el('button', { className: 'btn btn-ghost btn-sm home-lower-all-btn', textContent: '\u270b Lower All' });
       lowerBtn.addEventListener('click', async () => {
-        lowerBtn.disabled = true;
-        lowerBtn.textContent = 'Lowering…';
-        try {
-          const result = await POST('/timers/lower-all-hands', {});
-          toast(result.message, 'success');
-          loadHomePage();
-        } catch (err) {
-          toast(err.message, 'error');
-          lowerBtn.disabled = false;
-          lowerBtn.textContent = '✋ Lower All';
-        }
+        lowerBtn.disabled = true; lowerBtn.textContent = 'Lowering\u2026';
+        try { const r = await POST('/timers/lower-all-hands', {}); toast(r.message, 'success'); loadHomePage(); }
+        catch (err) { toast(err.message, 'error'); lowerBtn.disabled = false; lowerBtn.textContent = '\u270b Lower All'; }
       });
       handTile.appendChild(lowerBtn);
     }
@@ -2533,154 +1961,143 @@ function renderHomeTodayStats(stats, activeTimers = []) {
 }
 
 function renderHomePerformance(stats) {
-  const card = document.getElementById('homePerformance');
-  if (!card || !stats || !stats.byItem || !stats.byItem.length) {
-    if (card) card.querySelector('.home-card-body').innerHTML =
-      '<div class="empty-state">No completed jobs today.</div>';
-    return;
-  }
-  const body = card.querySelector('.home-card-body');
-  body.innerHTML = '';
-
-  // Show top 10 by count, with target delta
-  const rows = stats.byItem.slice(0, 10);
+  const card = document.getElementById('homePerformance'); if (!card) return;
+  const body = card.querySelector('.home-card-body'); body.innerHTML = '';
+  if (!stats || !stats.byItem || !stats.byItem.length) { body.appendChild(el('div', { className: 'empty-state', textContent: 'No completed jobs today.' })); return; }
   const table = el('table', { className: 'home-perf-table' });
-  const thead = el('thead', {}, el('tr', {},
-    el('th', { textContent: 'Item' }),
-    el('th', { textContent: 'Jobs' }),
-    el('th', { textContent: 'Avg Time' }),
-    el('th', { textContent: 'Target' }),
-    el('th', { textContent: 'Delta' }),
-  ));
+  table.appendChild(el('thead', {}, el('tr', {}, el('th', { textContent: 'Item' }), el('th', { textContent: 'Jobs' }), el('th', { textContent: 'Avg Time' }), el('th', { textContent: 'Target' }), el('th', { textContent: 'Delta' }))));
   const tbody = el('tbody', {});
-  rows.forEach(r => {
-    const hasTarget = r.target_seconds != null;
-    const delta     = hasTarget ? Math.round(r.avg_seconds) - r.target_seconds : null;
-    const tr = el('tr', {},
-      el('td', { className: 'perf-item', textContent: r.item_number }),
-      el('td', { textContent: r.count }),
-      el('td', { textContent: formatDuration(Math.round(r.avg_seconds)) }),
-      el('td', { textContent: hasTarget ? formatHM(r.target_seconds) : '—', className: hasTarget ? '' : 'dash-no-target' }),
-    );
-    const deltaCell = el('td', {
-      textContent: delta === null ? '—' : (delta >= 0 ? '+' : '') + formatDuration(Math.abs(delta)),
-      className:   delta === null ? 'dash-no-target' : delta > 0 ? 'dash-over' : 'dash-under',
-    });
-    tr.appendChild(deltaCell);
+  stats.byItem.slice(0, 10).forEach(r => {
+    const hasTarget = r.target_seconds != null, delta = hasTarget ? Math.round(r.avg_seconds) - r.target_seconds : null;
+    const tr = el('tr', {}, el('td', { className: 'perf-item', textContent: r.item_number }), el('td', { textContent: r.count }), el('td', { textContent: formatDuration(Math.round(r.avg_seconds)) }), el('td', { textContent: hasTarget ? formatHM(r.target_seconds) : '\u2014', className: hasTarget ? '' : 'dash-no-target' }));
+    tr.appendChild(el('td', { textContent: delta === null ? '\u2014' : (delta >= 0 ? '+' : '') + formatDuration(Math.abs(delta)), className: delta === null ? 'dash-no-target' : delta > 0 ? 'dash-over' : 'dash-under' }));
     tbody.appendChild(tr);
   });
-  table.appendChild(thead);
-  table.appendChild(tbody);
-  body.appendChild(table);
-
-  // Export shortcut
-  const exportBtn = el('button', {
-    className: 'btn btn-ghost btn-sm',
-    textContent: '\u2b07 Export Today CSV',
-    style: 'margin-top:12px;',
-    onclick: () => {
-      const today = new Date(); today.setHours(0,0,0,0);
-      window.location.href = `/api/export/csv?from=${today.toISOString()}`;
-    },
-  });
-  body.appendChild(exportBtn);
+  table.appendChild(tbody); body.appendChild(table);
+  body.appendChild(el('button', { className: 'btn btn-ghost btn-sm', textContent: '\u2b07 Export Today CSV', style: 'margin-top:12px;',
+    onclick: () => { const t = new Date(); t.setHours(0,0,0,0); window.location.href = `/api/export/csv?from=${t.toISOString()}`; } }));
 }
 
 function renderHomeUsers(users) {
-  const card = document.getElementById('homeUsers');
-  if (!card || !users.length) return;
-  const body = card.querySelector('.home-card-body');
-  body.innerHTML = '';
-
-  const active   = users.filter(u => u.isActive);
-  const disabled = users.filter(u => !u.isActive);
-  const need2fa  = active.filter(u => ['manager','administrator'].includes(u.role) && !u.totpEnabled);
-
+  const card = document.getElementById('homeUsers'); if (!card || !users.length) return;
+  const body = card.querySelector('.home-card-body'); body.innerHTML = '';
+  const active  = users.filter(u => u.isActive), disabled = users.filter(u => !u.isActive);
+  const need2fa = active.filter(u => ['manager','administrator'].includes(u.role) && !u.totpEnabled);
   const summary = el('div', { className: 'home-user-summary' });
-  [
-    { label: 'Active Accounts',  value: active.length,   cls: '' },
-    { label: 'Disabled',         value: disabled.length, cls: disabled.length ? 'text-amber' : '' },
-    { label: '2FA Not Configured', value: need2fa.length, cls: need2fa.length ? 'text-red' : 'text-green' },
-  ].forEach(s => {
+  [{ label: 'Active Accounts', value: active.length, cls: '' },
+   { label: 'Disabled', value: disabled.length, cls: disabled.length ? 'text-amber' : '' },
+   { label: '2FA Not Configured', value: need2fa.length, cls: need2fa.length ? 'text-red' : 'text-green' }].forEach(s => {
     const item = el('div', { className: 'home-user-stat' });
     item.appendChild(el('span', { className: 'home-user-stat-val ' + s.cls, textContent: s.value }));
     item.appendChild(el('span', { className: 'home-user-stat-lbl', textContent: s.label }));
     summary.appendChild(item);
   });
   body.appendChild(summary);
-
   if (need2fa.length) {
     const warn = el('div', { className: 'home-2fa-warn' });
-    warn.appendChild(el('span', { textContent: '⚠ Users without 2FA: ' }));
+    warn.appendChild(el('span', { textContent: '\u26a0 Users without 2FA: ' }));
     warn.appendChild(el('span', { textContent: need2fa.map(u => u.fullName).join(', '), style: 'font-weight:600;' }));
     body.appendChild(warn);
   }
 }
 
 function renderHomeQuickActions() {
-  const card = document.getElementById('homeQuickActions');
-  if (!card) return;
-  const body = card.querySelector('.home-card-body');
-  body.innerHTML = '';
+  const card = document.getElementById('homeQuickActions'); if (!card) return;
+  const body = card.querySelector('.home-card-body'); body.innerHTML = '';
+  const dept = state.user?.department || 'Production';
+  const slug = DEPT_SLUGS[dept] || 'production';
+  // For supervisors: show their department wallboards only
+  // For managers/admins: show all departments
+  const wbActions = hasRole('manager')
+    ? DEPARTMENTS.flatMap(d => {
+        const s = DEPT_SLUGS[d];
+        return [
+          { label: '\uD83D\uDCCB ' + d, page: 'wb-' + s, role: 'supervisor' },
+          { label: '\uD83D\uDCFA Compact — ' + d, page: 'wbc-' + s, role: 'supervisor' },
+        ];
+      })
+    : [
+        { label: '\uD83D\uDCCB Wall Board', page: 'wb-' + slug, role: 'supervisor' },
+        { label: '\uD83D\uDCFA Compact Board', page: 'wbc-' + slug, role: 'supervisor' },
+      ];
 
   const actions = [
-    { label: '📋 Wall Board',       page: 'wallboard',  role: 'supervisor'    },
-    { label: '📺 Compact Board',    page: 'wallboardc', role: 'supervisor'    },
-    { label: '📊 Dashboard',        page: 'dashboard',  role: 'manager'       },
-    { label: '📈 Reports',          page: 'reports',    role: 'manager'       },
-    { label: '🎯 Target Times',     page: 'targets',    role: 'manager'       },
-    { label: '🕐 History',          page: 'history',    role: 'operator'      },
-    { label: '👥 User Management',  page: 'admin',      role: 'administrator' },
+    ...wbActions,
+    { label: '\uD83D\uDCCA Dashboard',       page: 'dashboard', role: 'manager'       },
+    { label: '\uD83D\uDCC8 Reports',          page: 'reports',   role: 'manager'       },
+    { label: '\uD83C\uDFAF Target Times',     page: 'targets',   role: 'manager'       },
+    { label: '\uD83D\uDD50 History',          page: 'history',   role: 'operator'      },
+    { label: '\uD83D\uDC65 User Management',  page: 'admin',     role: 'administrator' },
   ];
-
-  actions
-    .filter(a => hasRole(a.role))
-    .forEach(a => {
-      const btn = el('button', {
-        className: 'home-action-btn',
-        textContent: a.label,
-        onclick: () => { navigateTo(a.page); closeNav(); },
-      });
-      body.appendChild(btn);
-    });
+  actions.filter(a => hasRole(a.role)).forEach(a => {
+    body.appendChild(el('button', { className: 'home-action-btn', textContent: a.label, onclick: () => { navigateTo(a.page); closeNav(); } }));
+  });
 }
 
+
 /* ═══════════════════════════════════════════════════════════════════════════
-   WALL BOARD — COMPACT MODE
-   Designed for a large shopfloor TV. Maximum tiles, minimum clutter.
-   Shows: operator name, item number, elapsed time counter.
-   Colour: smart target-relative (green / amber / red) same as main wallboard.
-   No message button, no detail — just the essential status at a glance.
+   DEPARTMENT WALLBOARDS
+   Each wallboard is parameterised by department name.
+   Supervisors see only their own department; managers/admins see all.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-async function loadWallboardCompact() {
-  if (wallboardCInterval) clearInterval(wallboardCInterval);
-  await refreshWallboardCompact();
-  wallboardCInterval = setInterval(() => {
-    if (document.visibilityState === 'visible') refreshWallboardCompact();
+function deptIds(dept) {
+  const slug = DEPT_SLUGS[dept] || 'production';
+  return {
+    tilesId:   `wallboard-${slug}-tiles`,
+    countId:   `wallboard-${slug}-count`,
+    updatedId: `wallboard-${slug}-updated`,
+    pageKey:   `wb-${slug}`,
+  };
+}
+function deptCIds(dept) {
+  const slug = DEPT_SLUGS[dept] || 'production';
+  return {
+    tilesId:   `wallboardC-${slug}-tiles`,
+    countId:   `wallboardC-${slug}-count`,
+    updatedId: `wallboardC-${slug}-updated`,
+    pageKey:   `wbc-${slug}`,
+  };
+}
+
+document.addEventListener('visibilitychange', () => {
+  const p = state.currentPage;
+  if (!p || !document.visibilityState === 'visible') return;
+  if (p.startsWith('wb-'))  { const dept = PAGES[p]?.dept; if (dept) refreshDeptWallboard(dept); }
+  if (p.startsWith('wbc-')) { const dept = PAGES[p]?.dept; if (dept) refreshDeptWallboardCompact(dept); }
+});
+
+async function loadDeptWallboard(dept) {
+  const { pageKey } = deptIds(dept);
+  if (_wbIntervals[pageKey]) clearInterval(_wbIntervals[pageKey]);
+  await refreshDeptWallboard(dept);
+  _wbIntervals[pageKey] = setInterval(() => {
+    if (document.visibilityState === 'visible') refreshDeptWallboard(dept);
   }, 300000);
 }
 
-async function refreshWallboardCompact() {
-  const container = document.getElementById('wallboardCTiles');
-  const countEl   = document.getElementById('wallboardCCount');
-  const updatedEl = document.getElementById('wallboardCUpdated');
+async function refreshDeptWallboard(dept) {
+  const { tilesId, countId, updatedId, pageKey } = deptIds(dept);
+  const container = document.getElementById(tilesId);
+  const countEl   = document.getElementById(countId);
+  const updatedEl = document.getElementById(updatedId);
   if (!container) return;
+
   try {
+    const deptParam = hasRole('manager') ? `&department=${encodeURIComponent(dept)}` : '';
     const [timers, onlineData] = await Promise.all([
-      GET('/timers?status=active&limit=200'),
+      GET(`/timers?status=active&limit=200${deptParam}`),
       GET('/messages/online').catch(() => ({ online: [] })),
     ]);
     const onlineSet = new Set(onlineData.online || []);
-    if (countEl)   countEl.textContent   = timers.length + ' active job' + (timers.length !== 1 ? 's' : '');
+    if (countEl)   countEl.textContent  = timers.length + ' active job' + (timers.length !== 1 ? 's' : '');
     if (updatedEl) updatedEl.textContent = 'Updated ' + new Date().toLocaleTimeString('en-GB');
     container.innerHTML = '';
 
-    if (timers.length === 0) {
+    if (!timers.length) {
       container.appendChild(el('div', { className: 'wallboard-empty' },
-        el('div', { className: 'wallboard-empty-icon', textContent: '✓' }),
-        el('div', { className: 'wallboard-empty-text', textContent: 'No active jobs right now' })
-      ));
+        el('div', { className: 'wallboard-empty-icon', textContent: '\u2713' }),
+        el('div', { className: 'wallboard-empty-text', textContent: 'No active jobs right now' })));
       return;
     }
 
@@ -2688,9 +2105,8 @@ async function refreshWallboardCompact() {
       const sNet    = t.netElapsedSeconds != null ? t.netElapsedSeconds : null;
       const localEl = Math.max(0, Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000)) - (t.totalPausedSeconds || 0);
       const elapsed = sNet !== null ? sNet : localEl;
-      const tile    = el('div', { className: 'wbc-tile' + (t.isPaused ? ' tile-paused' : '') + (t.handRaised ? ' tile-hand-raised' : '') });
+      const tile    = el('div', { className: 'wallboard-tile' + (t.isPaused ? ' tile-paused' : '') });
 
-      // Smart colour — paused = neutral; otherwise target-relative or fixed
       if (!t.isPaused) {
         if (t.targetSeconds) {
           const pct = elapsed / t.targetSeconds;
@@ -2702,6 +2118,29 @@ async function refreshWallboardCompact() {
         }
       }
 
+      if (t.isPaused) {
+        const pauseTag = el('div', { className: 'wb-paused-tag', textContent: '\u23f8 PAUSED' });
+        if (t.pauseType === 'schedule') pauseTag.title = 'Auto-paused outside working hours';
+        tile.appendChild(pauseTag);
+      }
+
+      if (t.handRaised) {
+        tile.classList.add('tile-hand-raised');
+        const handBanner = el('div', { className: 'wb-hand-banner' });
+        handBanner.appendChild(el('span', { className: 'wb-hand-banner-text', textContent: '\u270b Needs Attention' }));
+        if (hasRole('supervisor')) {
+          const lowerBtn = el('button', { className: 'wb-hand-lower-btn', textContent: 'Lower \u2715', 'aria-label': 'Lower hand for ' + t.operatorName });
+          lowerBtn.addEventListener('click', async e => {
+            e.stopPropagation(); lowerBtn.disabled = true;
+            try { await POST('/timers/' + t.id + '/lower-hand', {}); toast('Hand lowered for ' + t.operatorName, 'success'); await refreshDeptWallboard(dept); }
+            catch (err) { toast(err.message, 'error'); lowerBtn.disabled = false; }
+          });
+          handBanner.appendChild(lowerBtn);
+        }
+        tile.appendChild(handBanner);
+      }
+
+      tile.appendChild(el('div', { className: 'wb-item', textContent: t.itemNumber }));
       const opRow = el('div', { className: 'wb-operator-row' });
       opRow.appendChild(el('span', {
         className: 'presence-dot ' + (onlineSet.has(t.operatorId) ? 'online' : 'offline'),
@@ -2709,54 +2148,190 @@ async function refreshWallboardCompact() {
       }));
       opRow.appendChild(el('span', { textContent: t.operatorName }));
       tile.appendChild(opRow);
-      tile.appendChild(el('div', { className: 'wbc-item',     textContent: t.itemNumber }));
-      if (t.isPaused) {
-        tile.appendChild(el('div', { className: 'wbc-paused-tag', textContent: '⏸' }));
-      }
-      if (t.handRaised) {
-        tile.appendChild(el('div', { className: 'wbc-hand-tag', textContent: '✋' }));
-      }
       tile.appendChild(el('div', {
-        className: 'wbc-elapsed',
-        textContent: formatDuration(elapsed),
-        'data-startedat':       t.startedAt,
-        'data-targetseconds':   t.targetSeconds ? String(t.targetSeconds) : '',
-        'data-pausedseconds':   String(t.totalPausedSeconds || 0),
-        'data-ispaused':        t.isPaused ? '1' : '0',
+        className: 'wb-elapsed', textContent: formatDuration(elapsed),
+        'data-timerid': t.id, 'data-startedat': t.startedAt,
+        'data-pausedseconds': String(t.totalPausedSeconds || 0), 'data-ispaused': t.isPaused ? '1' : '0',
       }));
+      tile.appendChild(el('div', { className: 'wb-started', textContent: 'Started ' + formatLocalTime(t.startedAt) }));
+      if (t.workstation) tile.appendChild(el('div', { className: 'wb-notes', textContent: '\uD83D\uDDA5 ' + t.workstation }));
+      if (t.woNumber)    tile.appendChild(el('div', { className: 'wb-notes', textContent: '\uD83D\uDCCB W/O: ' + t.woNumber }));
+      if (t.timeCheck)   tile.appendChild(el('span', { className: 'badge badge-timecheck', style: 'margin-top:6px;display:inline-block;', textContent: '\u2713 Time Check' }));
 
+      if (t.targetSeconds) {
+        const pct = elapsed / t.targetSeconds, pctCapped = Math.min(1, pct), remaining = t.targetSeconds - elapsed;
+        const targetWrap = el('div', { className: 'wb-target-wrap' });
+        const labelText  = remaining > 0 ? formatHM(remaining) + ' remaining' : formatHM(Math.abs(remaining)) + ' overdue';
+        targetWrap.appendChild(el('div', {
+          className: 'wb-target-label' + (remaining <= 0 ? ' overdue' : ''),
+          textContent: '\uD83C\uDFAF Target: ' + formatHM(t.targetSeconds) + '  \u2014  ' + labelText,
+          'data-startedat': t.startedAt, 'data-targetseconds': String(t.targetSeconds),
+        }));
+        const bar = el('div', { className: 'wb-target-bar' });
+        bar.appendChild(el('div', {
+          className: 'wb-target-fill' + (pct >= 1 ? ' over' : ''),
+          style: 'width:' + Math.round(pctCapped * 100) + '%',
+          'data-startedat': t.startedAt, 'data-targetseconds': String(t.targetSeconds),
+        }));
+        targetWrap.appendChild(bar); tile.appendChild(targetWrap);
+      }
+
+      if (hasRole('supervisor')) {
+        const btnRow = el('div', { className: 'wb-btn-row' });
+        const pauseBtn = el('button', {
+          className: 'wb-pause-btn' + (t.isPaused ? ' is-paused' : ''),
+          textContent: t.isPaused ? '\u25b6 Resume' : '\u23f8 Pause',
+          'aria-label': (t.isPaused ? 'Resume' : 'Pause') + ' timer for ' + t.operatorName,
+        });
+        pauseBtn.addEventListener('click', async () => {
+          pauseBtn.disabled = true;
+          try {
+            if (t.isPaused) { await POST('/pause/' + t.id + '/resume', {}); toast('Timer resumed for ' + t.operatorName, 'success'); }
+            else            { await POST('/pause/' + t.id + '/pause', { reason: 'Paused by ' + state.user.fullName }); toast('Timer paused for ' + t.operatorName, ''); }
+            await refreshDeptWallboard(dept);
+          } catch (err) { toast(err.message, 'error'); pauseBtn.disabled = false; }
+        });
+        btnRow.appendChild(pauseBtn);
+        btnRow.appendChild(el('button', {
+          className: 'wb-msg-btn', textContent: '\u2709 Message',
+          'aria-label': 'Send message to ' + t.operatorName,
+          onclick: () => openSendMessageModal(t.operatorId, t.operatorName),
+        }));
+        tile.appendChild(btnRow);
+      }
       container.appendChild(tile);
     });
 
-    startWallboardCompactTick();
+    startDeptWallboardTick(dept, pageKey);
   } catch (err) {
     container.innerHTML = '';
-    container.appendChild(el('div', { className: 'wallboard-empty',
-      textContent: 'Could not load timers: ' + err.message }));
+    container.appendChild(el('div', { className: 'wallboard-empty', textContent: 'Could not load active timers: ' + err.message }));
   }
 }
 
-function startWallboardCompactTick() {
-  if (wallboardCTick) clearInterval(wallboardCTick);
-  wallboardCTick = setInterval(() => {
-    if (state.currentPage !== 'wallboardc') {
-      clearInterval(wallboardCTick); wallboardCTick = null; return;
-    }
-    document.querySelectorAll('.wbc-elapsed[data-startedat]').forEach(node => {
+function startDeptWallboardTick(dept, pageKey) {
+  if (_wbTicks[pageKey]) clearInterval(_wbTicks[pageKey]);
+  const tilesId = deptIds(dept).tilesId;
+  _wbTicks[pageKey] = setInterval(() => {
+    if (state.currentPage !== pageKey) { clearInterval(_wbTicks[pageKey]); delete _wbTicks[pageKey]; return; }
+    document.getElementById(tilesId)?.querySelectorAll('.wb-elapsed[data-startedat]').forEach(node => {
       const startedAt  = node.getAttribute('data-startedat');
       const pausedSecs = parseInt(node.getAttribute('data-pausedseconds') || '0', 10);
       const isPaused   = node.getAttribute('data-ispaused') === '1';
       if (!startedAt) return;
+      const rawElapsed = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000));
+      const elapsed    = Math.max(0, rawElapsed - pausedSecs);
+      if (!isPaused) node.textContent = formatDuration(elapsed);
+      const tile = node.closest('.wallboard-tile');
+      if (!tile || isPaused) return;
+      tile.classList.remove('tile-warning', 'tile-overdue');
+      const fill = tile.querySelector('.wb-target-fill');
+      const tgt  = fill ? parseInt(fill.getAttribute('data-targetseconds'), 10) : 0;
+      if (tgt) {
+        const pct = elapsed / tgt;
+        if (pct >= 1.0)      tile.classList.add('tile-overdue');
+        else if (pct >= 0.8) tile.classList.add('tile-warning');
+        fill.style.width = Math.round(Math.min(1, pct) * 100) + '%';
+        fill.classList.toggle('over', pct >= 1);
+        const lbl = tile.querySelector('.wb-target-label');
+        if (lbl) {
+          const rem = tgt - elapsed;
+          lbl.textContent = '\uD83C\uDFAF Target: ' + formatHM(tgt) + '  \u2014  ' + (rem > 0 ? formatHM(rem) + ' remaining' : formatHM(Math.abs(rem)) + ' overdue');
+          lbl.className   = 'wb-target-label' + (rem <= 0 ? ' overdue' : '');
+        }
+      } else {
+        if (elapsed > 4 * 3600)      tile.classList.add('tile-overdue');
+        else if (elapsed > 2 * 3600) tile.classList.add('tile-warning');
+      }
+    });
+  }, 1000);
+}
 
-      // Paused tiles: clock is frozen, don't increment
-      if (isPaused) return;
+async function loadDeptWallboardCompact(dept) {
+  const { pageKey } = deptCIds(dept);
+  if (_wbIntervals[pageKey]) clearInterval(_wbIntervals[pageKey]);
+  await refreshDeptWallboardCompact(dept);
+  _wbIntervals[pageKey] = setInterval(() => {
+    if (document.visibilityState === 'visible') refreshDeptWallboardCompact(dept);
+  }, 300000);
+}
 
+async function refreshDeptWallboardCompact(dept) {
+  const { tilesId, countId, updatedId, pageKey } = deptCIds(dept);
+  const container = document.getElementById(tilesId);
+  const countEl   = document.getElementById(countId);
+  const updatedEl = document.getElementById(updatedId);
+  if (!container) return;
+  try {
+    const deptParam = hasRole('manager') ? `&department=${encodeURIComponent(dept)}` : '';
+    const [timers, onlineData] = await Promise.all([
+      GET(`/timers?status=active&limit=200${deptParam}`),
+      GET('/messages/online').catch(() => ({ online: [] })),
+    ]);
+    const onlineSet = new Set(onlineData.online || []);
+    if (countEl)   countEl.textContent  = timers.length + ' active job' + (timers.length !== 1 ? 's' : '');
+    if (updatedEl) updatedEl.textContent = 'Updated ' + new Date().toLocaleTimeString('en-GB');
+    container.innerHTML = '';
+    if (!timers.length) {
+      container.appendChild(el('div', { className: 'wallboard-empty' },
+        el('div', { className: 'wallboard-empty-icon', textContent: '\u2713' }),
+        el('div', { className: 'wallboard-empty-text', textContent: 'No active jobs right now' })));
+      return;
+    }
+    timers.forEach(t => {
+      const sNet    = t.netElapsedSeconds != null ? t.netElapsedSeconds : null;
+      const localEl = Math.max(0, Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000)) - (t.totalPausedSeconds || 0);
+      const elapsed = sNet !== null ? sNet : localEl;
+      const tile    = el('div', { className: 'wbc-tile' + (t.isPaused ? ' tile-paused' : '') + (t.handRaised ? ' tile-hand-raised' : '') });
+      if (!t.isPaused) {
+        if (t.targetSeconds) {
+          const pct = elapsed / t.targetSeconds;
+          if (pct >= 1.0)      tile.classList.add('tile-overdue');
+          else if (pct >= 0.8) tile.classList.add('tile-warning');
+        } else {
+          if (elapsed > 4 * 3600)      tile.classList.add('tile-overdue');
+          else if (elapsed > 2 * 3600) tile.classList.add('tile-warning');
+        }
+      }
+      const opRow = el('div', { className: 'wb-operator-row' });
+      opRow.appendChild(el('span', {
+        className: 'presence-dot ' + (onlineSet.has(t.operatorId) ? 'online' : 'offline'),
+        title: onlineSet.has(t.operatorId) ? 'Session active' : 'Not connected',
+      }));
+      opRow.appendChild(el('span', { textContent: t.operatorName }));
+      tile.appendChild(opRow);
+      tile.appendChild(el('div', { className: 'wbc-item', textContent: t.itemNumber }));
+      if (t.isPaused)   tile.appendChild(el('div', { className: 'wbc-paused-tag', textContent: '\u23f8' }));
+      if (t.handRaised) tile.appendChild(el('div', { className: 'wbc-hand-tag',   textContent: '\u270b' }));
+      tile.appendChild(el('div', {
+        className: 'wbc-elapsed', textContent: formatDuration(elapsed),
+        'data-startedat':     t.startedAt,
+        'data-targetseconds': t.targetSeconds ? String(t.targetSeconds) : '',
+        'data-pausedseconds': String(t.totalPausedSeconds || 0),
+        'data-ispaused':      t.isPaused ? '1' : '0',
+      }));
+      container.appendChild(tile);
+    });
+    startDeptWallboardCompactTick(dept, pageKey, tilesId);
+  } catch (err) {
+    container.innerHTML = '';
+    container.appendChild(el('div', { className: 'wallboard-empty', textContent: 'Could not load timers: ' + err.message }));
+  }
+}
+
+function startDeptWallboardCompactTick(dept, pageKey, tilesId) {
+  if (_wbTicks[pageKey]) clearInterval(_wbTicks[pageKey]);
+  _wbTicks[pageKey] = setInterval(() => {
+    if (state.currentPage !== pageKey) { clearInterval(_wbTicks[pageKey]); delete _wbTicks[pageKey]; return; }
+    document.getElementById(tilesId)?.querySelectorAll('.wbc-elapsed[data-startedat]').forEach(node => {
+      const startedAt  = node.getAttribute('data-startedat');
+      const pausedSecs = parseInt(node.getAttribute('data-pausedseconds') || '0', 10);
+      const isPaused   = node.getAttribute('data-ispaused') === '1';
+      if (!startedAt || isPaused) return;
       const rawElapsed = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000));
       const elapsed    = Math.max(0, rawElapsed - pausedSecs);
       node.textContent = formatDuration(elapsed);
-
-      const tile = node.closest('.wbc-tile');
-      if (!tile) return;
+      const tile = node.closest('.wbc-tile'); if (!tile) return;
       tile.classList.remove('tile-warning', 'tile-overdue');
       const tgt = parseInt(node.getAttribute('data-targetseconds'), 10) || 0;
       if (tgt) {
@@ -2771,12 +2346,6 @@ function startWallboardCompactTick() {
   }, 1000);
 }
 
-// Resume immediately when hidden tab becomes visible
-document.addEventListener('visibilitychange', () => {
-  if (state.currentPage === 'wallboardc' && document.visibilityState === 'visible') {
-    refreshWallboardCompact();
-  }
-});
 
 /* ═══════════════════════════════════════════════════════════════════════════
    REAL-TIME MESSAGING  (SSE + Chat Drawer)

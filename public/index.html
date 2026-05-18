@@ -316,25 +316,115 @@
   </section>
 
   <!-- ── WALL BOARD ───────────────────────────────────────────────────────── -->
-  <section id="pageWallboard" class="page" aria-label="Wall Board" hidden>
+
+  <!-- ── WALL BOARD: Production ─────────────────────────────────────────── -->
+  <section id="page-production-wb" class="page" aria-label="Wall Board — Production" hidden>
     <div class="page-content page-content-wide">
       <div class="wallboard-header">
         <div>
           <h2 class="page-heading" style="margin-bottom:4px">Wall Board</h2>
-          <div id="wallboardCount" class="wallboard-subhead"></div>
+          <div class="dept-badge dept-production">Production</div>
+          <div id="wallboard-prod-count" class="wallboard-subhead"></div>
         </div>
         <div class="wallboard-header-right">
-          <div id="wallboardUpdated" class="wallboard-updated"></div>
-          <button id="btnWallboardRefresh" class="btn btn-ghost"
-                  onclick="refreshWallboard()" aria-label="Refresh wall board">
-            ↻ Refresh
-          </button>
+          <div id="wallboard-prod-updated" class="wallboard-updated"></div>
+          <button class="btn btn-ghost" onclick="refreshDeptWallboard('Production')" aria-label="Refresh">↻ Refresh</button>
         </div>
       </div>
-      <div id="wallboardTiles" class="wallboard-tiles" role="list"
-           aria-label="Active job timers"></div>
+      <div id="wallboard-prod-tiles" class="wallboard-tiles" role="list" aria-label="Active job timers — Production"></div>
     </div>
   </section>
+
+  <!-- ── WALL BOARD COMPACT: Production ──────────────────────────────────── -->
+  <section id="page-production-wbc" class="page" aria-label="Wall Board Compact — Production" hidden>
+    <div class="page-content page-content-wide">
+      <div class="wallboard-header">
+        <div>
+          <h2 class="page-heading" style="margin-bottom:4px">Wall Board Compact</h2>
+          <div class="dept-badge dept-production">Production</div>
+          <div id="wallboardC-prod-count" class="wallboard-subhead"></div>
+        </div>
+        <div class="wallboard-header-right">
+          <div id="wallboardC-prod-updated" class="wallboard-updated"></div>
+          <button class="btn btn-ghost" onclick="refreshDeptWallboardCompact('Production')" aria-label="Refresh">↻ Refresh</button>
+        </div>
+      </div>
+      <div id="wallboardC-prod-tiles" class="wbc-grid" role="list" aria-label="Active job timers compact — Production"></div>
+    </div>
+  </section>
+
+  <!-- ── WALL BOARD: Stores ─────────────────────────────────────────── -->
+  <section id="page-stores-wb" class="page" aria-label="Wall Board — Stores" hidden>
+    <div class="page-content page-content-wide">
+      <div class="wallboard-header">
+        <div>
+          <h2 class="page-heading" style="margin-bottom:4px">Wall Board</h2>
+          <div class="dept-badge dept-stores">Stores</div>
+          <div id="wallboard-stores-count" class="wallboard-subhead"></div>
+        </div>
+        <div class="wallboard-header-right">
+          <div id="wallboard-stores-updated" class="wallboard-updated"></div>
+          <button class="btn btn-ghost" onclick="refreshDeptWallboard('Stores')" aria-label="Refresh">↻ Refresh</button>
+        </div>
+      </div>
+      <div id="wallboard-stores-tiles" class="wallboard-tiles" role="list" aria-label="Active job timers — Stores"></div>
+    </div>
+  </section>
+
+  <!-- ── WALL BOARD COMPACT: Stores ──────────────────────────────────── -->
+  <section id="page-stores-wbc" class="page" aria-label="Wall Board Compact — Stores" hidden>
+    <div class="page-content page-content-wide">
+      <div class="wallboard-header">
+        <div>
+          <h2 class="page-heading" style="margin-bottom:4px">Wall Board Compact</h2>
+          <div class="dept-badge dept-stores">Stores</div>
+          <div id="wallboardC-stores-count" class="wallboard-subhead"></div>
+        </div>
+        <div class="wallboard-header-right">
+          <div id="wallboardC-stores-updated" class="wallboard-updated"></div>
+          <button class="btn btn-ghost" onclick="refreshDeptWallboardCompact('Stores')" aria-label="Refresh">↻ Refresh</button>
+        </div>
+      </div>
+      <div id="wallboardC-stores-tiles" class="wbc-grid" role="list" aria-label="Active job timers compact — Stores"></div>
+    </div>
+  </section>
+
+  <!-- ── WALL BOARD: Test and Inspection ─────────────────────────────────────────── -->
+  <section id="page-testinsp-wb" class="page" aria-label="Wall Board — Test and Inspection" hidden>
+    <div class="page-content page-content-wide">
+      <div class="wallboard-header">
+        <div>
+          <h2 class="page-heading" style="margin-bottom:4px">Wall Board</h2>
+          <div class="dept-badge dept-testinsp">Test and Inspection</div>
+          <div id="wallboard-testinsp-count" class="wallboard-subhead"></div>
+        </div>
+        <div class="wallboard-header-right">
+          <div id="wallboard-testinsp-updated" class="wallboard-updated"></div>
+          <button class="btn btn-ghost" onclick="refreshDeptWallboard('Test and Inspection')" aria-label="Refresh">↻ Refresh</button>
+        </div>
+      </div>
+      <div id="wallboard-testinsp-tiles" class="wallboard-tiles" role="list" aria-label="Active job timers — Test and Inspection"></div>
+    </div>
+  </section>
+
+  <!-- ── WALL BOARD COMPACT: Test and Inspection ──────────────────────────────────── -->
+  <section id="page-testinsp-wbc" class="page" aria-label="Wall Board Compact — Test and Inspection" hidden>
+    <div class="page-content page-content-wide">
+      <div class="wallboard-header">
+        <div>
+          <h2 class="page-heading" style="margin-bottom:4px">Wall Board Compact</h2>
+          <div class="dept-badge dept-testinsp">Test and Inspection</div>
+          <div id="wallboardC-testinsp-count" class="wallboard-subhead"></div>
+        </div>
+        <div class="wallboard-header-right">
+          <div id="wallboardC-testinsp-updated" class="wallboard-updated"></div>
+          <button class="btn btn-ghost" onclick="refreshDeptWallboardCompact('Test and Inspection')" aria-label="Refresh">↻ Refresh</button>
+        </div>
+      </div>
+      <div id="wallboardC-testinsp-tiles" class="wbc-grid" role="list" aria-label="Active job timers compact — Test and Inspection"></div>
+    </div>
+  </section>
+
 
   <!-- ── MANAGER DASHBOARD ─────────────────────────────────────────────── -->
   <section id="pageDashboard" class="page" aria-label="Manager Dashboard" hidden>
@@ -382,25 +472,7 @@
     </div>
   </section>
 
-  <!-- ── WALL BOARD COMPACT ───────────────────────────────────────────────── -->
-  <section id="pageWallboardC" class="page" aria-label="Wall Board Compact" hidden>
-    <div class="page-content page-content-wide">
-      <div class="wallboard-header">
-        <div>
-          <h2 class="page-heading" style="margin-bottom:4px">Wall Board</h2>
-          <div id="wallboardCCount" class="wallboard-subhead"></div>
-        </div>
-        <div class="wallboard-header-right">
-          <div id="wallboardCUpdated" class="wallboard-updated"></div>
-          <button class="btn btn-ghost" onclick="refreshWallboardCompact()" aria-label="Refresh">
-            ↻ Refresh
-          </button>
-        </div>
-      </div>
-      <div id="wallboardCTiles" class="wbc-grid" role="list"
-           aria-label="Active job timers compact view"></div>
-    </div>
-  </section>
+
 
   <!-- ── TARGET TIMES ─────────────────────────────────────────────────────── -->
   <section id="pageTargets" class="page" aria-label="Target Times" hidden>

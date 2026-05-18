@@ -59,6 +59,7 @@ function formatTimer(t) {
     targetHours:        t.target_hours   != null ? t.target_hours   : null,
     targetMinutes:      t.target_minutes != null ? t.target_minutes : null,
     handRaised:         !!t.hand_raised,
+    department:         t.department || 'Production',
   };
 }
 
@@ -81,11 +82,14 @@ router.post('/start', validate(schemas.startTimer), async (req, res) => {
 
     const id        = uuidv4();
     const startedAt = new Date().toISOString();
+    // Look up operator's full record to get department
+    const operatorRecord = await queryOne('SELECT * FROM users WHERE id = $1', [user.id]);
+    const department = operatorRecord?.department || 'Production';
 
     await query(
-      `INSERT INTO timers (id, item_number, operator_id, operator_name, started_at, status, time_check, workstation, wo_number, created_by)
-       VALUES ($1, $2, $3, $4, $5, 'active', $6, $7, $8, $9)`,
-      [id, itemNumber, user.id, user.full_name, startedAt, timeCheck || false, workstation || null, woNumber || null, user.id]
+      `INSERT INTO timers (id, item_number, operator_id, operator_name, started_at, status, time_check, workstation, wo_number, department, created_by)
+       VALUES ($1, $2, $3, $4, $5, 'active', $6, $7, $8, $9, $10)`,
+      [id, itemNumber, user.id, user.full_name, startedAt, timeCheck || false, workstation || null, woNumber || null, department, user.id]
     );
 
     const timer = await queryOne('SELECT * FROM timers WHERE id = $1', [id]);
@@ -240,20 +244,34 @@ router.patch('/:id', validate(schemas.adjustTimer), async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const user = req.user;
-    const { from, to, operatorId, itemNumber, status, limit = 200 } = req.query;
+    const { from, to, operatorId, itemNumber, status, limit = 200, department } = req.query;
     const isSupervisorPlus = hasRole(user, 'supervisor');
+    const isManagerPlus    = hasRole(user, 'manager');
 
     const conditions = [];
     const params     = [];
     let   p          = 1;
 
     if (!isSupervisorPlus) {
+      // Operators see only their own timers
       conditions.push(`t.operator_id = $${p++}`);
       params.push(user.id);
     } else if (operatorId) {
       conditions.push(`t.operator_id = $${p++}`);
       params.push(operatorId);
     }
+
+    // Supervisors are restricted to their own department unless overridden by explicit dept param
+    if (isSupervisorPlus && !isManagerPlus) {
+      // Supervisor: always filter to their own department
+      conditions.push(`t.department = $${p++}`);
+      params.push(user.department || 'Production');
+    } else if (department) {
+      // Manager/admin with explicit department filter
+      conditions.push(`t.department = $${p++}`);
+      params.push(department);
+    }
+
     if (from) { conditions.push(`t.started_at >= $${p++}`); params.push(new Date(from).toISOString()); }
     if (to)   { conditions.push(`t.started_at <= $${p++}`); params.push(new Date(to).toISOString()); }
     if (itemNumber) {

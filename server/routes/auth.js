@@ -138,7 +138,9 @@ router.get('/me', requireAuth, async (req, res) => {
     } : null;
     res.json({
       id: u.id, username: u.username, fullName: u.full_name,
-      role: u.role, totpEnabled: !!u.totp_enabled, activeTimer,
+      role: u.role, totpEnabled: !!u.totp_enabled,
+      department: u.department || 'Production',
+      activeTimer,
     });
   } catch (err) {
     res.status(500).json({ error: 'Could not load user data.' });
