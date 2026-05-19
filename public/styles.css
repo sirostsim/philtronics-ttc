@@ -2243,11 +2243,11 @@ button.topbar-brand:focus-visible {
   border-radius: 10px;
   padding: 20px;
   margin-bottom: 8px;
-  overflow-x: auto;
+  position: relative;
+  height: 320px;
 }
 .report-chart-wrap canvas {
   display: block;
-  max-width: 100%;
 }
 
 .report-section-header {

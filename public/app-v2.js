@@ -2761,8 +2761,8 @@ function renderChartDailyTrend(rows) {
   const canvas = document.getElementById('chartDailyTrend');
   if (!canvas || !rows.length) return;
   forceDestroyCanvas(canvas);
-  canvas.width  = 600;
-  canvas.height = 300;
+  canvas.removeAttribute('width');
+  canvas.removeAttribute('height');
   const labels  = rows.map(r => new Date(r.day).toLocaleDateString('en-GB', { day:'2-digit', month:'short' }));
   const jobs    = rows.map(r => r.jobs_completed);
   const overdue = rows.map(r => r.overdue_count);
@@ -2779,7 +2779,8 @@ function renderChartDailyTrend(rows) {
       ],
     },
     options: {
-      responsive: false,
+      responsive: true,
+      maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: { legend: { labels: { color: C.text, font: CFONT } } },
       scales: {
@@ -2801,8 +2802,8 @@ function renderChartItemOnTime(rows) {
   if (!withTarget.length) { canvas.closest('.report-chart-wrap').style.display='none'; return; }
   canvas.closest('.report-chart-wrap').style.display='';
   forceDestroyCanvas(canvas);
-  canvas.width  = 600;
-  canvas.height = 300;
+  canvas.removeAttribute('width');
+  canvas.removeAttribute('height');
   const labels  = withTarget.map(r => r.item_number);
   const over    = withTarget.map(r => Math.round(r.avg_seconds) > r.target_seconds ? r.count : 0);
   const onTime  = withTarget.map((r, i) => r.count - over[i]);
@@ -2816,7 +2817,8 @@ function renderChartItemOnTime(rows) {
       ],
     },
     options: {
-      responsive: false,
+      responsive: true,
+      maintainAspectRatio: false,
       plugins: { legend: { labels: { color: C.text, font: CFONT } }, tooltip: { mode: 'index', intersect: false } },
       scales: {
         x: { stacked: true, ticks: { color: C.text, font: CFONT }, grid: { color: C.grid } },
@@ -2832,8 +2834,8 @@ function renderChartOperator(rows) {
   const canvas = document.getElementById('chartOperator');
   if (!canvas || !rows.length) return;
   forceDestroyCanvas(canvas);
-  canvas.width  = 600;
-  canvas.height = 300;
+  canvas.removeAttribute('width');
+  canvas.removeAttribute('height');
   const labels  = rows.map(r => r.operator_name.split(' ')[0]);
   const jobs    = rows.map(r => r.jobs_completed);
   const overdue = rows.map(r => r.overdue_count);
@@ -2850,7 +2852,8 @@ function renderChartOperator(rows) {
       ],
     },
     options: {
-      responsive: false,
+      responsive: true,
+      maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: { legend: { labels: { color: C.text, font: CFONT } } },
       scales: {
