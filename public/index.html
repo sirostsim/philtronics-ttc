@@ -475,6 +475,43 @@
 
 
   <!-- ── TARGET TIMES ─────────────────────────────────────────────────────── -->
+
+  <!-- ── WALL BOARD: PCB ─────────────────────────────────────────── -->
+  <section id="page-pcb-wb" class="page" aria-label="Wall Board — PCB" hidden>
+    <div class="page-content page-content-wide">
+      <div class="wallboard-header">
+        <div>
+          <h2 class="page-heading" style="margin-bottom:4px">Wall Board</h2>
+          <div class="dept-badge dept-pcb">PCB</div>
+          <div id="wallboard-pcb-count" class="wallboard-subhead"></div>
+        </div>
+        <div class="wallboard-header-right">
+          <div id="wallboard-pcb-updated" class="wallboard-updated"></div>
+          <button class="btn btn-ghost" onclick="refreshDeptWallboard('PCB')" aria-label="Refresh">&#8635; Refresh</button>
+        </div>
+      </div>
+      <div id="wallboard-pcb-tiles" class="wallboard-tiles" role="list" aria-label="Active job timers — PCB"></div>
+    </div>
+  </section>
+
+  <!-- ── WALL BOARD COMPACT: PCB ──────────────────────────────────── -->
+  <section id="page-pcb-wbc" class="page" aria-label="Wall Board Compact — PCB" hidden>
+    <div class="page-content page-content-wide">
+      <div class="wallboard-header">
+        <div>
+          <h2 class="page-heading" style="margin-bottom:4px">Wall Board Compact</h2>
+          <div class="dept-badge dept-pcb">PCB</div>
+          <div id="wallboardC-pcb-count" class="wallboard-subhead"></div>
+        </div>
+        <div class="wallboard-header-right">
+          <div id="wallboardC-pcb-updated" class="wallboard-updated"></div>
+          <button class="btn btn-ghost" onclick="refreshDeptWallboardCompact('PCB')" aria-label="Refresh">&#8635; Refresh</button>
+        </div>
+      </div>
+      <div id="wallboardC-pcb-tiles" class="wbc-grid" role="list" aria-label="Active job timers compact — PCB"></div>
+    </div>
+  </section>
+
   <section id="pageTargets" class="page" aria-label="Target Times" hidden>
     <div class="page-content">
       <div class="page-heading-row">

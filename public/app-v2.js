@@ -148,8 +148,8 @@ document.getElementById('modal').addEventListener('click', e => {
 /* ═══════════════════════════════════════════════════════════════════════════
    NAVIGATION
    ═══════════════════════════════════════════════════════════════════════════ */
-const DEPARTMENTS = ['Production', 'Stores', 'Test and Inspection'];
-const DEPT_SLUGS  = { 'Production': 'prod', 'Stores': 'stores', 'Test and Inspection': 'testinsp' };
+const DEPARTMENTS = ['Production', 'Stores', 'Test and Inspection', 'PCB'];
+const DEPT_SLUGS  = { 'Production': 'prod', 'Stores': 'stores', 'Test and Inspection': 'testinsp', 'PCB': 'pcb' };
 
 const PAGES = {
   home:           { id: 'pageHome',             label: 'Home',                          minRole: 'supervisor'  },
@@ -162,6 +162,8 @@ const PAGES = {
   'wbc-prod':  { id: 'page-production-wbc',   label: '📺 Compact — Production',       minRole: 'supervisor', dept: 'Production'          },
   'wbc-stores':{ id: 'page-stores-wbc',       label: '📺 Compact — Stores',           minRole: 'supervisor', dept: 'Stores'              },
   'wbc-testinsp':{ id: 'page-testinsp-wbc',   label: '📺 Compact — Test & Insp',      minRole: 'supervisor', dept: 'Test and Inspection' },
+  'wb-pcb':      { id: 'page-pcb-wb',          label: '📋 Wall Board — PCB',           minRole: 'supervisor', dept: 'PCB'                },
+  'wbc-pcb':     { id: 'page-pcb-wbc',         label: '📺 Compact — PCB',              minRole: 'supervisor', dept: 'PCB'                },
   dashboard:      { id: 'pageDashboard',         label: 'Dashboard',                     minRole: 'manager'     },
   targets:        { id: 'pageTargets',           label: 'Target Times',                  minRole: 'manager'     },
   reports:        { id: 'pageReports',           label: 'Reports',                       minRole: 'manager'     },
