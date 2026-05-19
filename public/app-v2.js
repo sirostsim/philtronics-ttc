@@ -2640,7 +2640,11 @@ function playPing(type) {
 // Chart instances — destroyed and recreated on each report run
 const _charts = {};
 function destroyChart(key) {
-  if (_charts[key]) { _charts[key].destroy(); delete _charts[key]; }
+  if (_charts[key]) { try { _charts[key].destroy(); } catch(_) {} delete _charts[key]; }
+}
+function forceDestroyCanvas(canvas) {
+  if (!canvas || typeof Chart === 'undefined') return;
+  try { const ex = Chart.getChart(canvas); if (ex) ex.destroy(); } catch(_) {}
 }
 const C = {
   green: '#38a169', red: '#e53e3e', amber: '#d97706',
@@ -2752,6 +2756,7 @@ function renderChartDailyTrend(rows) {
   destroyChart('dailyTrend');
   const canvas = document.getElementById('chartDailyTrend');
   if (!canvas || !rows.length) return;
+  forceDestroyCanvas(canvas);
   canvas.width  = 600;
   canvas.height = 300;
   const labels  = rows.map(r => new Date(r.day).toLocaleDateString('en-GB', { day:'2-digit', month:'short' }));
@@ -2791,6 +2796,7 @@ function renderChartItemOnTime(rows) {
   const withTarget = rows.filter(r => r.target_seconds).slice(0, 12);
   if (!withTarget.length) { canvas.closest('.report-chart-wrap').style.display='none'; return; }
   canvas.closest('.report-chart-wrap').style.display='';
+  forceDestroyCanvas(canvas);
   canvas.width  = 600;
   canvas.height = 300;
   const labels  = withTarget.map(r => r.item_number);
@@ -2821,6 +2827,7 @@ function renderChartOperator(rows) {
   destroyChart('operator');
   const canvas = document.getElementById('chartOperator');
   if (!canvas || !rows.length) return;
+  forceDestroyCanvas(canvas);
   canvas.width  = 600;
   canvas.height = 300;
   const labels  = rows.map(r => r.operator_name.split(' ')[0]);
