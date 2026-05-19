@@ -1022,15 +1022,15 @@ function renderUserList(users) {
       onclick: () => openResetPasswordModal(u) });
     actions.appendChild(editBtn);
     actions.appendChild(pwBtn);
-    // Show 2FA status for roles that require it
-    if (ROLES_REQUIRING_TOTP.includes(u.role)) {
+    // Show 2FA button for non-operators (2FA is optional)
+    if (u.role !== 'operator') {
       const fa2Btn = el('button', {
         className: 'btn btn-ghost',
         textContent: u.totpEnabled ? 'Reset 2FA' : '2FA: Off',
         title: u.totpEnabled
           ? 'Reset this user\'s two-factor authentication (e.g. lost phone)'
-          : '2FA not yet configured by this user',
-        style: u.totpEnabled ? '' : 'color:var(--red);opacity:.7;',
+          : '2FA not configured — user can enable this themselves',
+        style: u.totpEnabled ? '' : 'color:var(--text3);',
       });
       if (u.totpEnabled) {
         fa2Btn.addEventListener('click', () => confirmReset2FA(u));
@@ -1708,9 +1708,7 @@ function confirmDeleteTarget(t, containerId = 'targetTimesList') {
    ═══════════════════════════════════════════════════════════════════════════ */
 const ROLES_REQUIRING_TOTP = ['manager', 'administrator'];
 function checkTotpSetupRequired() {
-  if (!ROLES_REQUIRING_TOTP.includes(state.user.role)) return;
-  if (state.user.totpEnabled !== false) return;
-  setTimeout(() => openTotpSetupModal(), 800);
+  // 2FA is optional — never force the setup prompt on login
 }
 async function openTotpSetupModal() {
   const body = el('div', {});
@@ -1986,19 +1984,13 @@ function renderHomeUsers(users) {
   const summary = el('div', { className: 'home-user-summary' });
   [{ label: 'Active Accounts', value: active.length, cls: '' },
    { label: 'Disabled', value: disabled.length, cls: disabled.length ? 'text-amber' : '' },
-   { label: '2FA Not Configured', value: need2fa.length, cls: need2fa.length ? 'text-red' : 'text-green' }].forEach(s => {
+   { label: '2FA Enabled', value: active.filter(u => u.totpEnabled).length, cls: '' }].forEach(s => {
     const item = el('div', { className: 'home-user-stat' });
     item.appendChild(el('span', { className: 'home-user-stat-val ' + s.cls, textContent: s.value }));
     item.appendChild(el('span', { className: 'home-user-stat-lbl', textContent: s.label }));
     summary.appendChild(item);
   });
   body.appendChild(summary);
-  if (need2fa.length) {
-    const warn = el('div', { className: 'home-2fa-warn' });
-    warn.appendChild(el('span', { textContent: '\u26a0 Users without 2FA: ' }));
-    warn.appendChild(el('span', { textContent: need2fa.map(u => u.fullName).join(', '), style: 'font-weight:600;' }));
-    body.appendChild(warn);
-  }
 }
 
 function renderHomeQuickActions() {
