@@ -2684,14 +2684,17 @@ async function runReport() {
   ['reportStatCards','reportItemTable','reportOperatorTable','reportTrendTable','reportOverdueGrid']
     .forEach(id => { const n = document.getElementById(id); if (n) n.innerHTML = '<div class="empty-state">Loading\u2026</div>'; });
 
-  // Reset all tabs back to chart view
-  [['trendChart','trendTable'],['itemChart','itemTable'],['operatorChart','operatorTable']].forEach(([show,hide]) => {
-    const showEl = document.getElementById(show), hideEl = document.getElementById(hide);
-    if (showEl) showEl.hidden = false;
-    if (hideEl) hideEl.hidden = true;
-  });
+  // Reset tab buttons back to Chart active — do NOT hide/show panels here,
+  // that makes chart canvases zero-sized at render time
   document.querySelectorAll('.report-tab').forEach((t,i) => {
     t.classList.toggle('active', i % 2 === 0);
+  });
+  // Ensure chart panels are visible, table panels hidden
+  ['trendChart','itemChart','operatorChart'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.hidden = false;
+  });
+  ['trendTable','itemTable','operatorTable'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.hidden = true;
   });
 
   const [stats, operators, trends, overdue] = await Promise.all([
@@ -2715,7 +2718,8 @@ async function runReport() {
   // Render charts after a short delay to ensure the section is fully visible
   // and the canvas elements have real dimensions
   _pendingChartData = { trends, byItem: stats?.byItem || [], operators };
-  setTimeout(renderPendingCharts, 600);
+  // Use rAF inside timeout to guarantee a full paint cycle before Chart.js measures canvas
+  setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(renderPendingCharts)), 100);
 }
 
 function switchReportTab(btn, showId, hideId) {
