@@ -2697,12 +2697,23 @@ async function runReport() {
     const el = document.getElementById(id); if (el) el.hidden = true;
   });
 
-  const [stats, operators, trends, overdue] = await Promise.all([
-    GET(`/export/stats?${qs}`).catch(() => null),
-    GET(`/export/report/operators?${qs}`).catch(() => []),
-    GET(`/export/report/trends?${qs}`).catch(() => []),
-    GET(`/export/report/overdue?${qs}`).catch(() => ({ byItem: [], byOperator: [] })),
-  ]);
+  let stats, operators, trends, overdue;
+  try {
+    [stats, operators, trends, overdue] = await Promise.all([
+      GET(`/export/stats?${qs}`),
+      GET(`/export/report/operators?${qs}`),
+      GET(`/export/report/trends?${qs}`),
+      GET(`/export/report/overdue?${qs}`),
+    ]);
+  } catch (err) {
+    console.error('Report fetch error:', err);
+    const sc = document.getElementById('reportStatCards');
+    if (sc) sc.innerHTML = `<div class="error-msg" style="padding:16px">Could not load report data: ${err.message}</div>`;
+    return;
+  }
+  trends  = trends  || [];
+  operators = operators || [];
+  overdue = overdue || { byItem: [], byOperator: [] };
 
   renderReportStatCards(stats);
   _lastTrends    = trends;
@@ -2759,7 +2770,12 @@ function renderPendingCharts() {
 function renderChartDailyTrend(rows) {
   destroyChart('dailyTrend');
   const canvas = document.getElementById('chartDailyTrend');
-  if (!canvas || !rows.length) return;
+  if (!canvas) return;
+  if (!rows || !rows.length) {
+    const wrap = canvas.closest('.report-chart-wrap');
+    if (wrap) wrap.innerHTML = '<div class="empty-state" style="padding:40px 0">No trend data available for this date range.</div>';
+    return;
+  }
   forceDestroyCanvas(canvas);
   canvas.removeAttribute('width');
   canvas.removeAttribute('height');
