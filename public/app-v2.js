@@ -2659,8 +2659,11 @@ function loadReportsPage() {
   runReport();
 }
 
-document.getElementById('btnReportSearch').addEventListener('click', runReport);
-document.getElementById('btnChartSearch').addEventListener('click', runCharts);
+// Use delegation — btnChartSearch is inside a hidden section at load time
+document.addEventListener('click', e => {
+  if (e.target.id === 'btnReportSearch') runReport();
+  if (e.target.id === 'btnChartSearch')  runCharts();
+});
 
 document.getElementById('btnReportExportCSV').addEventListener('click', () => {
   const from = document.getElementById('reportFrom').value;
