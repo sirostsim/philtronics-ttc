@@ -2732,14 +2732,9 @@ async function runCharts() {
   if (to)   { const d = new Date(to); d.setHours(23,59,59,999); params.set('to', d.toISOString()); }
   const qs = params.toString();
 
-  // Recreate canvases fresh inside their wraps
-  const canvasIds = ['chartDailyTrend','chartItemOnTime','chartOperator'];
-  document.querySelectorAll('#pageCharts .report-chart-wrap').forEach((wrap, i) => {
-    const canvas = document.createElement('canvas');
-    canvas.id = canvasIds[i];
-    wrap.innerHTML = '<div class="empty-state" style="padding:40px 0">Loading…</div>';
-    wrap.innerHTML = '';
-    wrap.appendChild(canvas);
+  // Show loading state in all three wraps
+  document.querySelectorAll('#pageCharts .report-chart-wrap').forEach(wrap => {
+    wrap.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text2)">Loading…</div>';
   });
 
   let stats, operators, trends;
@@ -2750,15 +2745,29 @@ async function runCharts() {
       GET(`/export/report/trends?${qs}`),
     ]);
   } catch (err) {
-    console.error('Charts fetch error:', err);
+    document.querySelectorAll('#pageCharts .report-chart-wrap').forEach(wrap => {
+      wrap.innerHTML = `<div style="padding:40px 0;text-align:center;color:var(--red)">Error: ${err.message}</div>`;
+    });
     return;
   }
+
   trends    = trends    || [];
   operators = operators || [];
+  const byItem = stats?.byItem || [];
 
-  // Canvases are in a fully visible page — render directly, no timing hacks needed
+  // Recreate canvases now that data is ready and wraps are visible
+  const canvasIds = ['chartDailyTrend','chartItemOnTime','chartOperator'];
+  const wraps = document.querySelectorAll('#pageCharts .report-chart-wrap');
+  wraps.forEach((wrap, i) => {
+    wrap.innerHTML = '';
+    const canvas = document.createElement('canvas');
+    canvas.id = canvasIds[i];
+    wrap.appendChild(canvas);
+  });
+
+  // Render — canvases are fresh, wraps are visible, no timing issues
   renderChartDailyTrend(trends);
-  renderChartItemOnTime(stats?.byItem || []);
+  renderChartItemOnTime(byItem);
   renderChartOperator(operators);
 }
 
@@ -2769,7 +2778,7 @@ function renderChartDailyTrend(rows) {
   const canvas = document.getElementById('chartDailyTrend');
   if (!canvas) return;
   if (!rows || !rows.length) {
-    canvas.closest('.report-chart-wrap').innerHTML = '<div class="empty-state" style="padding:40px 0">No trend data for this date range.</div>';
+    canvas.closest('.report-chart-wrap').innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text2);font-size:14px">No completed jobs found for this date range.</div>';
     return;
   }
   forceDestroyCanvas(canvas);
@@ -2806,7 +2815,7 @@ function renderChartItemOnTime(rows) {
   if (!canvas) return;
   const withTarget = rows.filter(r => r.target_seconds).slice(0, 12);
   if (!withTarget.length) {
-    canvas.closest('.report-chart-wrap').innerHTML = '<div class="empty-state" style="padding:40px 0">No items with target times set.</div>';
+    canvas.closest('.report-chart-wrap').innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text2);font-size:14px">No items with target times found for this date range.</div>';
     return;
   }
   forceDestroyCanvas(canvas);
@@ -2836,7 +2845,7 @@ function renderChartOperator(rows) {
   const canvas = document.getElementById('chartOperator');
   if (!canvas) return;
   if (!rows.length) {
-    canvas.closest('.report-chart-wrap').innerHTML = '<div class="empty-state" style="padding:40px 0">No operator data for this date range.</div>';
+    canvas.closest('.report-chart-wrap').innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text2);font-size:14px">No operator data found for this date range.</div>';
     return;
   }
   forceDestroyCanvas(canvas);
