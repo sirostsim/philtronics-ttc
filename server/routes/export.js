@@ -346,63 +346,78 @@ router.get('/report/csv', async (req, res) => {
 });
 
 // ─── GET /api/export/productivity ────────────────────────────────────────────
-// Returns per-operator productivity rate for a given date range.
+// Returns per-operator productivity with optional daily breakdown.
 // Available productive minutes per day (after breaks):
 //   Mon–Thu: 07:45–16:30 minus 15m break, 30m lunch = 480 min
 //   Fri:     07:45–13:00 minus 15m break             = 300 min
 //   Sat/Sun: 0
-// Productivity = (capped net active seconds) / (available seconds) * 100
 
 const TZ = 'Europe/London';
 
 function workDayMinutes(dateStr) {
-  // dateStr: 'YYYY-MM-DD'
-  const d = new Date(dateStr + 'T12:00:00Z');
   const dow = new Intl.DateTimeFormat('en-GB', { weekday: 'short', timeZone: TZ })
-    .format(d).toLowerCase();
+    .format(new Date(dateStr + 'T12:00:00Z')).toLowerCase();
   if (dow === 'sat' || dow === 'sun') return 0;
-  if (dow === 'fri') return 300; // 5h after break
-  return 480; // 8h after breaks Mon–Thu
+  return dow === 'fri' ? 300 : 480;
 }
 
 function workDayWindow(dateStr) {
-  // Returns { start, end } as UTC Date objects for the working window in Europe/London
   const dow = new Intl.DateTimeFormat('en-GB', { weekday: 'short', timeZone: TZ })
     .format(new Date(dateStr + 'T12:00:00Z')).toLowerCase();
   if (dow === 'sat' || dow === 'sun') return null;
   const endTime = dow === 'fri' ? '13:00' : '16:30';
-  // Build local time strings then parse as UTC-equivalent
-  const start = new Date(`${dateStr}T07:45:00`);
-  const end   = new Date(`${dateStr}T${endTime}:00`);
-  // Adjust for London timezone offset (approximate — good enough for capping)
-  return { start, end };
+  return {
+    start: new Date(`${dateStr}T07:45:00`),
+    end:   new Date(`${dateStr}T${endTime}:00`),
+  };
+}
+
+function calcActiveSecondsForDay(timerList, dayStr) {
+  const window = workDayWindow(dayStr);
+  if (!window) return 0;
+  const windowSecs = (window.end - window.start) / 1000;
+  let secs = 0;
+  for (const t of timerList) {
+    const tStart = new Date(t.started_at);
+    if (tStart.toISOString().slice(0,10) !== dayStr) continue;
+    const tEnd   = t.completed_at ? new Date(t.completed_at) : new Date();
+    const net    = t.status === 'completed' && t.duration_seconds != null
+      ? t.duration_seconds
+      : Math.max(0, (tEnd - tStart) / 1000 - (t.total_paused_seconds || 0));
+    secs += Math.min(net, windowSecs);
+  }
+  return secs;
 }
 
 router.get('/productivity', async (req, res) => {
   try {
-    const { from, to, department } = req.query;
+    const { from, to, department, groupByDay } = req.query;
+    const byDay = groupByDay === 'true';
+
+    const fromDt = from ? new Date(from) : new Date(Date.now() - 30 * 24 * 3600 * 1000);
+    const toDt   = to
+      ? (() => { const d = new Date(to); d.setHours(23,59,59,999); return d; })()
+      : new Date();
+
+    // Get productivity target from config
+    const { queryOne: qOne } = require('../db');
+    const configRow = await qOne(`SELECT value FROM config WHERE key = 'productivity_target_pct'`);
+    const targetPct = configRow ? parseInt(configRow.value, 10) : 80;
+
+    // Build operator conditions
     const conditions = [`u.role = 'operator'`, `u.is_active = TRUE`];
     const params = [];
     let p = 1;
-
-    const fromDt = from ? new Date(from) : new Date(Date.now() - 30 * 24 * 3600 * 1000);
-    const toDt   = to   ? (() => { const d = new Date(to); d.setHours(23,59,59,999); return d; })()
-                        : new Date();
-
     if (department) { conditions.push(`u.department = $${p++}`); params.push(department); }
 
-    // Get all operators
     const operators = await query(
-      `SELECT u.id, u.full_name, u.department
-       FROM users u
-       WHERE ${conditions.join(' AND ')}
-       ORDER BY u.full_name`,
+      `SELECT u.id, u.full_name, u.department FROM users u
+       WHERE ${conditions.join(' AND ')} ORDER BY u.full_name`,
       params
     );
+    if (!operators.length) return res.json({ targetPct, operators: [] });
 
-    if (!operators.length) return res.json([]);
-
-    // Get all timers for these operators in the date range
+    // Get timers
     const opIds = operators.map(o => o.id);
     const timers = await query(
       `SELECT t.operator_id, t.started_at, t.completed_at, t.status,
@@ -410,73 +425,81 @@ router.get('/productivity', async (req, res) => {
        FROM timers t
        WHERE t.operator_id = ANY($1)
          AND t.status IN ('completed','active','cancelled')
-         AND t.started_at >= $2
-         AND t.started_at <= $3
+         AND t.started_at >= $2 AND t.started_at <= $3
        ORDER BY t.operator_id, t.started_at`,
       [opIds, fromDt.toISOString(), toDt.toISOString()]
     );
 
-    // Group timers by operator
     const timersByOp = {};
     for (const t of timers) {
       if (!timersByOp[t.operator_id]) timersByOp[t.operator_id] = [];
       timersByOp[t.operator_id].push(t);
     }
 
-    // Calculate available minutes across the date range
-    let totalAvailableMinutes = 0;
+    // Build working days list
     const days = [];
-    const cur = new Date(fromDt);
-    cur.setHours(0,0,0,0);
-    const end = new Date(toDt);
-    end.setHours(23,59,59,999);
-    while (cur <= end) {
+    let totalAvailableMins = 0;
+    const cur = new Date(fromDt); cur.setHours(0,0,0,0);
+    const endD = new Date(toDt);  endD.setHours(23,59,59,999);
+    while (cur <= endD) {
       const ds = cur.toISOString().slice(0,10);
       const mins = workDayMinutes(ds);
-      if (mins > 0) { days.push(ds); totalAvailableMinutes += mins; }
+      if (mins > 0) { days.push({ date: ds, availableMins: mins }); totalAvailableMins += mins; }
       cur.setDate(cur.getDate() + 1);
     }
 
-    const results = operators.map(op => {
+    const result = operators.map(op => {
       const opTimers = timersByOp[op.id] || [];
-      let activeSeconds = 0;
+      let totalActiveSeconds = 0;
 
-      for (const t of opTimers) {
-        const tStart   = new Date(t.started_at);
-        const tEnd     = t.completed_at ? new Date(t.completed_at) : new Date();
-        const netSecs  = t.status === 'completed' && t.duration_seconds != null
-          ? t.duration_seconds
-          : Math.max(0, (tEnd - tStart) / 1000 - (t.total_paused_seconds || 0));
+      // Daily breakdown
+      const daily = byDay ? days.map(({ date, availableMins }) => {
+        const activeSecs = calcActiveSecondsForDay(opTimers, date);
+        const activeMins = Math.round(activeSecs / 60);
+        const pct = availableMins > 0 ? Math.min(100, Math.round(activeMins / availableMins * 100)) : 0;
+        totalActiveSeconds += activeSecs;
+        return {
+          date,
+          availableMins,
+          activeMinutes: activeMins,
+          productivityPct: pct,
+          vsTarget: pct - targetPct,
+        };
+      }) : null;
 
-        // Cap to working day window
-        const dayStr = tStart.toISOString().slice(0,10);
-        const window = workDayWindow(dayStr);
-        if (!window) continue;
-        const windowSecs = (window.end - window.start) / 1000;
-        activeSeconds += Math.min(netSecs, windowSecs);
+      if (!byDay) {
+        // Aggregate without daily breakdown
+        for (const t of opTimers) {
+          const ds = new Date(t.started_at).toISOString().slice(0,10);
+          totalActiveSeconds += calcActiveSecondsForDay([t], ds);
+        }
       }
 
-      const activeMinutes      = Math.round(activeSeconds / 60);
-      const productivityPct    = totalAvailableMinutes > 0
-        ? Math.min(100, Math.round(activeMinutes / totalAvailableMinutes * 100))
+      const totalActiveMins = Math.round(totalActiveSeconds / 60);
+      const overallPct = totalAvailableMins > 0
+        ? Math.min(100, Math.round(totalActiveMins / totalAvailableMins * 100))
         : 0;
-      const activeHours        = Math.floor(activeMinutes / 60);
-      const activeRemMins      = activeMinutes % 60;
 
       return {
-        operatorId:           op.id,
-        operatorName:         op.full_name,
-        department:           op.department,
-        activeMinutes,
-        activeHoursDisplay:   `${activeHours}h ${activeRemMins}m`,
-        availableMinutes:     totalAvailableMinutes,
-        availableHoursDisplay:`${Math.floor(totalAvailableMinutes/60)}h ${totalAvailableMinutes%60}m`,
-        productivityPct,
-        timerCount:           opTimers.length,
+        operatorId:            op.id,
+        operatorName:          op.full_name,
+        department:            op.department,
+        activeMinutes:         totalActiveMins,
+        activeHoursDisplay:    `${Math.floor(totalActiveMins/60)}h ${totalActiveMins%60}m`,
+        availableMinutes:      totalAvailableMins,
+        availableHoursDisplay: `${Math.floor(totalAvailableMins/60)}h ${totalAvailableMins%60}m`,
+        productivityPct:       overallPct,
+        vsTarget:              overallPct - targetPct,
+        timerCount:            opTimers.length,
+        targetPct,
+        daily,
       };
     });
 
-    res.json(results.sort((a,b) => b.productivityPct - a.productivityPct));
+    res.json({
+      targetPct,
+      operators: result.sort((a,b) => b.productivityPct - a.productivityPct),
+    });
   } catch (err) {
     console.error('Productivity error:', err.message);
     res.status(500).json({ error: 'Could not calculate productivity.' });
