@@ -6,7 +6,7 @@
 
 const express = require('express');
 const { stringify } = require('csv-stringify/sync');
-const { query } = require('../db');
+const { query, queryOne } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
