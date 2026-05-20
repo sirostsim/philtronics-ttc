@@ -167,6 +167,7 @@ const PAGES = {
   dashboard:      { id: 'pageDashboard',         label: 'Dashboard',                     minRole: 'manager'     },
   targets:        { id: 'pageTargets',           label: 'Target Times',                  minRole: 'manager'     },
   reports:        { id: 'pageReports',           label: 'Reports',                       minRole: 'manager'     },
+  charts:         { id: 'pageCharts',            label: 'Charts',                        minRole: 'manager'     },
   admin:          { id: 'pageAdmin',             label: 'Admin',                         minRole: 'administrator' },
 };
 
@@ -226,6 +227,7 @@ function navigateTo(page) {
   else if (page === 'dashboard') loadDashboard();
   else if (page === 'targets')   loadTargetsPage();
   else if (page === 'reports')   loadReportsPage();
+  else if (page === 'charts')    loadChartsPage();
   else if (page === 'admin')     loadAdminPage();
   else if (page.startsWith('wb-'))  loadDeptWallboard(PAGES[page].dept);
   else if (page.startsWith('wbc-')) loadDeptWallboardCompact(PAGES[page].dept);
@@ -2019,6 +2021,7 @@ function renderHomeQuickActions() {
     ...wbActions,
     { label: '\uD83D\uDCCA Dashboard',       page: 'dashboard', role: 'manager'       },
     { label: '\uD83D\uDCC8 Reports',          page: 'reports',   role: 'manager'       },
+    { label: '\uD83D\uDCCA Charts',           page: 'charts',    role: 'manager'       },
     { label: '\uD83C\uDFAF Target Times',     page: 'targets',   role: 'manager'       },
     { label: '\uD83D\uDD50 History',          page: 'history',   role: 'operator'      },
     { label: '\uD83D\uDC65 User Management',  page: 'admin',     role: 'administrator' },
@@ -2657,6 +2660,7 @@ function loadReportsPage() {
 }
 
 document.getElementById('btnReportSearch').addEventListener('click', runReport);
+document.getElementById('btnChartSearch').addEventListener('click', runCharts);
 
 document.getElementById('btnReportExportCSV').addEventListener('click', () => {
   const from = document.getElementById('reportFrom').value;
@@ -2676,20 +2680,7 @@ async function runReport() {
   const qs = params.toString();
 
   ['reportStatCards','reportItemTable','reportOperatorTable','reportTrendTable','reportOverdueGrid']
-    .forEach(id => { const n = document.getElementById(id); if (n) n.innerHTML = '<div class="empty-state">Loading\u2026</div>'; });
-
-  // Reset tab buttons back to Chart active — do NOT hide/show panels here,
-  // that makes chart canvases zero-sized at render time
-  document.querySelectorAll('.report-tab').forEach((t,i) => {
-    t.classList.toggle('active', i % 2 === 0);
-  });
-  // Ensure chart panels are visible, table panels hidden
-  ['trendChart','itemChart','operatorChart'].forEach(id => {
-    const el = document.getElementById(id); if (el) el.hidden = false;
-  });
-  ['trendTable','itemTable','operatorTable'].forEach(id => {
-    const el = document.getElementById(id); if (el) el.hidden = true;
-  });
+    .forEach(id => { const n = document.getElementById(id); if (n) n.innerHTML = '<div class="empty-state">Loading…</div>'; });
 
   let stats, operators, trends, overdue;
   try {
@@ -2705,92 +2696,94 @@ async function runReport() {
     if (sc) sc.innerHTML = `<div class="error-msg" style="padding:16px">Could not load report data: ${err.message}</div>`;
     return;
   }
-  trends  = trends  || [];
+  trends    = trends    || [];
   operators = operators || [];
-  overdue = overdue || { byItem: [], byOperator: [] };
+  overdue   = overdue   || { byItem: [], byOperator: [] };
 
   renderReportStatCards(stats);
-  _lastTrends    = trends;
-  _lastByItem    = stats?.byItem || [];
-  _lastOperators = operators;
   renderReportTrendTable(trends);
   renderReportItemTable(stats?.byItem || []);
   renderReportOperatorTable(operators);
   renderReportOverdue(overdue);
-
-  // Defer chart rendering until after the DOM has painted —
-  // canvas elements need to be visible with real dimensions first
-  // Render charts after a short delay to ensure the section is fully visible
-  // and the canvas elements have real dimensions
-  _pendingChartData = { trends, byItem: stats?.byItem || [], operators };
-  // Use rAF inside timeout to guarantee a full paint cycle before Chart.js measures canvas
-  setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(renderPendingCharts)), 100);
 }
 
-function switchReportTab(btn, showId, hideId) {
-  // Update button states
-  const tabs = btn.closest('.report-tabs').querySelectorAll('.report-tab');
-  tabs.forEach(t => t.classList.remove('active'));
-  btn.classList.add('active');
-  // Show/hide panels
-  document.getElementById(showId).hidden = false;
-  document.getElementById(hideId).hidden = true;
-  // If switching to a chart panel, redraw — canvas may have been zero-sized when hidden
-  const canvasMap = {
-    trendChart:    () => renderChartDailyTrend(_lastTrends),
-    itemChart:     () => renderChartItemOnTime(_lastByItem),
-    operatorChart: () => renderChartOperator(_lastOperators),
-  };
-  if (canvasMap[showId]) {
-    requestAnimationFrame(() => setTimeout(canvasMap[showId], 30));
+// ── CHARTS PAGE ───────────────────────────────────────────────────────────────
+
+function loadChartsPage() {
+  const today = new Date().toISOString().slice(0, 10);
+  const ago30 = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+  const rFrom = document.getElementById('reportFrom')?.value;
+  const rTo   = document.getElementById('reportTo')?.value;
+  if (!document.getElementById('chartFrom').value) {
+    document.getElementById('chartFrom').value = rFrom || ago30;
+    document.getElementById('chartTo').value   = rTo   || today;
   }
+  runCharts();
 }
 
-// Cache last data so tabs can redraw charts on demand
-let _lastTrends = [], _lastByItem = [], _lastOperators = [];
-let _pendingChartData = null;
+async function runCharts() {
+  const from = document.getElementById('chartFrom').value;
+  const to   = document.getElementById('chartTo').value;
+  const params = new URLSearchParams();
+  if (from) params.set('from', new Date(from).toISOString());
+  if (to)   { const d = new Date(to); d.setHours(23,59,59,999); params.set('to', d.toISOString()); }
+  const qs = params.toString();
 
-function renderPendingCharts() {
-  if (!_pendingChartData) return;
-  const { trends, byItem, operators } = _pendingChartData;
-  _pendingChartData = null;
+  // Recreate canvases fresh inside their wraps
+  const canvasIds = ['chartDailyTrend','chartItemOnTime','chartOperator'];
+  document.querySelectorAll('#pageCharts .report-chart-wrap').forEach((wrap, i) => {
+    const canvas = document.createElement('canvas');
+    canvas.id = canvasIds[i];
+    wrap.innerHTML = '<div class="empty-state" style="padding:40px 0">Loading…</div>';
+    wrap.innerHTML = '';
+    wrap.appendChild(canvas);
+  });
+
+  let stats, operators, trends;
+  try {
+    [stats, operators, trends] = await Promise.all([
+      GET(`/export/stats?${qs}`),
+      GET(`/export/report/operators?${qs}`),
+      GET(`/export/report/trends?${qs}`),
+    ]);
+  } catch (err) {
+    console.error('Charts fetch error:', err);
+    return;
+  }
+  trends    = trends    || [];
+  operators = operators || [];
+
+  // Canvases are in a fully visible page — render directly, no timing hacks needed
   renderChartDailyTrend(trends);
-  renderChartItemOnTime(byItem);
+  renderChartItemOnTime(stats?.byItem || []);
   renderChartOperator(operators);
 }
 
-
+// ── CHART RENDERERS ───────────────────────────────────────────────────────────
 
 function renderChartDailyTrend(rows) {
   destroyChart('dailyTrend');
   const canvas = document.getElementById('chartDailyTrend');
   if (!canvas) return;
   if (!rows || !rows.length) {
-    const wrap = canvas.closest('.report-chart-wrap');
-    if (wrap) wrap.innerHTML = '<div class="empty-state" style="padding:40px 0">No trend data available for this date range.</div>';
+    canvas.closest('.report-chart-wrap').innerHTML = '<div class="empty-state" style="padding:40px 0">No trend data for this date range.</div>';
     return;
   }
   forceDestroyCanvas(canvas);
-  canvas.removeAttribute('width');
-  canvas.removeAttribute('height');
   const labels  = rows.map(r => new Date(r.day).toLocaleDateString('en-GB', { day:'2-digit', month:'short' }));
   const jobs    = rows.map(r => r.jobs_completed);
   const overdue = rows.map(r => r.overdue_count);
   const avgMins = rows.map(r => r.avg_seconds ? +(r.avg_seconds / 60).toFixed(1) : 0);
   _charts.dailyTrend = new Chart(canvas, {
     type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        { label: 'Jobs Completed', data: jobs, backgroundColor: C.blue, borderRadius: 4, yAxisID: 'yJobs' },
-        { label: 'Over Target',    data: overdue, backgroundColor: C.red, borderRadius: 4, yAxisID: 'yJobs' },
-        { label: 'Avg Time (mins)', data: avgMins, type: 'line', borderColor: C.amber,
-          backgroundColor: 'transparent', pointBackgroundColor: C.amber, pointRadius: 3, tension: 0.3, yAxisID: 'yMins' },
-      ],
-    },
+    data: { labels, datasets: [
+      { label: 'Jobs Completed', data: jobs,    backgroundColor: C.blue,  borderRadius: 4, yAxisID: 'yJobs' },
+      { label: 'Over Target',    data: overdue, backgroundColor: C.red,   borderRadius: 4, yAxisID: 'yJobs' },
+      { label: 'Avg Time (mins)', data: avgMins, type: 'line', borderColor: C.amber,
+        backgroundColor: 'transparent', pointBackgroundColor: C.amber, pointRadius: 3, tension: 0.3, yAxisID: 'yMins' },
+    ]},
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
+      responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: { legend: { labels: { color: C.text, font: CFONT } } },
       scales: {
@@ -2809,26 +2802,22 @@ function renderChartItemOnTime(rows) {
   const canvas = document.getElementById('chartItemOnTime');
   if (!canvas) return;
   const withTarget = rows.filter(r => r.target_seconds).slice(0, 12);
-  if (!withTarget.length) { canvas.closest('.report-chart-wrap').style.display='none'; return; }
-  canvas.closest('.report-chart-wrap').style.display='';
+  if (!withTarget.length) {
+    canvas.closest('.report-chart-wrap').innerHTML = '<div class="empty-state" style="padding:40px 0">No items with target times set.</div>';
+    return;
+  }
   forceDestroyCanvas(canvas);
-  canvas.removeAttribute('width');
-  canvas.removeAttribute('height');
-  const labels  = withTarget.map(r => r.item_number);
-  const over    = withTarget.map(r => Math.round(r.avg_seconds) > r.target_seconds ? r.count : 0);
-  const onTime  = withTarget.map((r, i) => r.count - over[i]);
+  const labels = withTarget.map(r => r.item_number);
+  const over   = withTarget.map(r => Math.round(r.avg_seconds) > r.target_seconds ? r.count : 0);
+  const onTime = withTarget.map((r, i) => r.count - over[i]);
   _charts.itemOnTime = new Chart(canvas, {
     type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        { label: 'On Time',     data: onTime, backgroundColor: C.green, borderRadius: 4 },
-        { label: 'Over Target', data: over,   backgroundColor: C.red,   borderRadius: 4 },
-      ],
-    },
+    data: { labels, datasets: [
+      { label: 'On Time',     data: onTime, backgroundColor: C.green, borderRadius: 4 },
+      { label: 'Over Target', data: over,   backgroundColor: C.red,   borderRadius: 4 },
+    ]},
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
+      responsive: true, maintainAspectRatio: false,
       plugins: { legend: { labels: { color: C.text, font: CFONT } }, tooltip: { mode: 'index', intersect: false } },
       scales: {
         x: { stacked: true, ticks: { color: C.text, font: CFONT }, grid: { color: C.grid } },
@@ -2842,28 +2831,26 @@ function renderChartItemOnTime(rows) {
 function renderChartOperator(rows) {
   destroyChart('operator');
   const canvas = document.getElementById('chartOperator');
-  if (!canvas || !rows.length) return;
+  if (!canvas) return;
+  if (!rows.length) {
+    canvas.closest('.report-chart-wrap').innerHTML = '<div class="empty-state" style="padding:40px 0">No operator data for this date range.</div>';
+    return;
+  }
   forceDestroyCanvas(canvas);
-  canvas.removeAttribute('width');
-  canvas.removeAttribute('height');
   const labels  = rows.map(r => r.operator_name.split(' ')[0]);
   const jobs    = rows.map(r => r.jobs_completed);
   const overdue = rows.map(r => r.overdue_count);
   const avgMins = rows.map(r => r.avg_seconds ? +(r.avg_seconds / 60).toFixed(1) : 0);
   _charts.operator = new Chart(canvas, {
     type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        { label: 'Jobs Completed', data: jobs,    backgroundColor: C.blue, borderRadius: 4, yAxisID: 'yJobs' },
-        { label: 'Over Target',    data: overdue, backgroundColor: C.red,  borderRadius: 4, yAxisID: 'yJobs' },
-        { label: 'Avg Time (mins)', data: avgMins, type: 'line', borderColor: C.amber,
-          backgroundColor: 'transparent', pointBackgroundColor: C.amber, pointRadius: 4, yAxisID: 'yMins' },
-      ],
-    },
+    data: { labels, datasets: [
+      { label: 'Jobs Completed', data: jobs,    backgroundColor: C.blue, borderRadius: 4, yAxisID: 'yJobs' },
+      { label: 'Over Target',    data: overdue, backgroundColor: C.red,  borderRadius: 4, yAxisID: 'yJobs' },
+      { label: 'Avg Time (mins)', data: avgMins, type: 'line', borderColor: C.amber,
+        backgroundColor: 'transparent', pointBackgroundColor: C.amber, pointRadius: 4, yAxisID: 'yMins' },
+    ]},
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
+      responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: { legend: { labels: { color: C.text, font: CFONT } } },
       scales: {
@@ -2877,30 +2864,6 @@ function renderChartOperator(rows) {
   });
 }
 
-/* ── Tables ──────────────────────────────────────────────────────────────── */
-
-function renderReportStatCards(stats) {
-  const container = document.getElementById('reportStatCards');
-  container.innerHTML = '';
-  if (!stats) return;
-  const byItem = stats.byItem || [];
-  const totalJobs = byItem.reduce((s, r) => s + r.count, 0);
-  const withTarget = byItem.filter(r => r.target_seconds);
-  const overdueItems = withTarget.filter(r => Math.round(r.avg_seconds) > r.target_seconds);
-  const onTimeRate = withTarget.length
-    ? Math.round(((withTarget.length - overdueItems.length) / withTarget.length) * 100) : null;
-  [
-    { label: 'Jobs Completed',    value: totalJobs },
-    { label: 'Item Types',        value: byItem.length },
-    { label: 'On-Time Rate',      value: onTimeRate != null ? onTimeRate + '%' : '\u2014' },
-    { label: 'Items Over Target', value: overdueItems.length },
-  ].forEach(c => {
-    container.appendChild(el('div', { className: 'stat-card' },
-      el('div', { className: 'stat-label', textContent: c.label }),
-      el('div', { className: 'stat-value', textContent: c.value })
-    ));
-  });
-}
 
 function renderReportItemTable(rows) {
   const wrap = document.getElementById('reportItemTable');

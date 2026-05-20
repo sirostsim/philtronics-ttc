@@ -524,14 +524,14 @@
   </section>
 
   <!-- ── REPORTS PAGE ─────────────────────────────────────────────────────── -->
+  <!-- ── REPORTS (data tables) ──────────────────────────────────────────── -->
   <section id="pageReports" class="page" aria-label="Reports" hidden>
     <div class="page-content">
       <div class="page-heading-row">
         <h2 class="page-heading">Reports</h2>
-        <button id="btnReportExportCSV" class="btn btn-export">⬇ Export CSV</button>
+        <button id="btnReportExportCSV" class="btn btn-export">&#11015; Export CSV</button>
       </div>
 
-      <!-- Date range filter -->
       <div class="filter-bar" style="margin-bottom:24px;">
         <div class="filter-row">
           <div class="form-group filter-group">
@@ -546,64 +546,66 @@
         <button id="btnReportSearch" class="btn btn-primary">Refresh</button>
       </div>
 
-      <!-- Summary cards -->
       <div class="stat-cards" id="reportStatCards" style="margin-bottom:28px;"></div>
 
-      <!-- Daily trend chart + table -->
       <div class="report-section">
-        <div class="report-section-header">
-          <h3 class="section-heading">Daily Trend</h3>
-          <div class="report-tabs">
-            <button class="report-tab active" onclick="switchReportTab(this,'trendChart','trendTable')">📈 Chart</button>
-            <button class="report-tab" onclick="switchReportTab(this,'trendTable','trendChart')">📋 Table</button>
-          </div>
-        </div>
-        <div id="trendChart">
-          <div class="report-chart-wrap"><canvas id="chartDailyTrend"></canvas></div>
-        </div>
-        <div id="trendTable" hidden>
-          <div id="reportTrendTable" class="dash-table-wrap"></div>
-        </div>
+        <h3 class="section-heading">Daily Trend</h3>
+        <div id="reportTrendTable" class="dash-table-wrap"></div>
       </div>
 
-      <!-- On-time vs over target by item -->
       <div class="report-section">
-        <div class="report-section-header">
-          <h3 class="section-heading">On-Time vs Over Target — by Item</h3>
-          <div class="report-tabs">
-            <button class="report-tab active" onclick="switchReportTab(this,'itemChart','itemTable')">📈 Chart</button>
-            <button class="report-tab" onclick="switchReportTab(this,'itemTable','itemChart')">📋 Table</button>
-          </div>
-        </div>
-        <div id="itemChart">
-          <div class="report-chart-wrap"><canvas id="chartItemOnTime"></canvas></div>
-        </div>
-        <div id="itemTable" hidden>
-          <div id="reportItemTable" class="dash-table-wrap"></div>
-        </div>
+        <h3 class="section-heading">On-Time vs Over Target — by Item</h3>
+        <div id="reportItemTable" class="dash-table-wrap"></div>
       </div>
 
-      <!-- Operator comparison chart + table -->
       <div class="report-section">
-        <div class="report-section-header">
-          <h3 class="section-heading">Operator Performance</h3>
-          <div class="report-tabs">
-            <button class="report-tab active" onclick="switchReportTab(this,'operatorChart','operatorTable')">📈 Chart</button>
-            <button class="report-tab" onclick="switchReportTab(this,'operatorTable','operatorChart')">📋 Table</button>
-          </div>
-        </div>
-        <div id="operatorChart">
-          <div class="report-chart-wrap"><canvas id="chartOperator"></canvas></div>
-        </div>
-        <div id="operatorTable" hidden>
-          <div id="reportOperatorTable" class="dash-table-wrap"></div>
-        </div>
+        <h3 class="section-heading">Operator Performance</h3>
+        <div id="reportOperatorTable" class="dash-table-wrap"></div>
       </div>
 
-      <!-- Overdue analysis -->
       <div class="report-section">
         <h3 class="section-heading">Overdue Analysis</h3>
         <div class="report-overdue-grid" id="reportOverdueGrid"></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── CHARTS ───────────────────────────────────────────────────────────── -->
+  <section id="pageCharts" class="page" aria-label="Charts" hidden>
+    <div class="page-content">
+      <div class="page-heading-row">
+        <h2 class="page-heading">Charts</h2>
+        <button class="btn btn-ghost" onclick="loadChartsPage()">&#8635; Refresh</button>
+      </div>
+
+      <div class="filter-bar" style="margin-bottom:24px;">
+        <div class="filter-row">
+          <div class="form-group filter-group">
+            <label for="chartFrom">From</label>
+            <input id="chartFrom" type="date" />
+          </div>
+          <div class="form-group filter-group">
+            <label for="chartTo">To</label>
+            <input id="chartTo" type="date" />
+          </div>
+        </div>
+        <button id="btnChartSearch" class="btn btn-primary">Refresh</button>
+      </div>
+
+      <div class="report-section">
+        <h3 class="section-heading">Daily Trend</h3>
+        <div class="report-chart-wrap"><canvas id="chartDailyTrend"></canvas></div>
+      </div>
+
+      <div class="report-section">
+        <h3 class="section-heading">On-Time vs Over Target — by Item</h3>
+        <div class="report-chart-wrap" id="chartItemOnTimeWrap"><canvas id="chartItemOnTime"></canvas></div>
+      </div>
+
+      <div class="report-section">
+        <h3 class="section-heading">Operator Performance</h3>
+        <div class="report-chart-wrap"><canvas id="chartOperator"></canvas></div>
       </div>
 
     </div>
