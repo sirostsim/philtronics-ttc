@@ -2868,6 +2868,29 @@ function renderChartOperator(rows) {
 }
 
 
+function renderReportStatCards(stats) {
+  const container = document.getElementById('reportStatCards');
+  if (!container) return;
+  if (!stats) { container.innerHTML = '<div class="empty-state">No data available.</div>'; return; }
+  const onTimeCount = (stats.byItem || []).filter(r => !r.target_seconds || Math.round(r.avg_seconds) <= r.target_seconds).length;
+  const totalItems  = (stats.byItem || []).length;
+  const onTimePct   = totalItems ? Math.round(onTimeCount / totalItems * 100) : 100;
+  const overCount   = (stats.byItem || []).filter(r => r.target_seconds && Math.round(r.avg_seconds) > r.target_seconds).length;
+  const cards = [
+    { label: 'Jobs Completed', value: (stats.byItem || []).reduce((s,r) => s + r.count, 0) },
+    { label: 'Item Types',     value: totalItems },
+    { label: 'On-Time Rate',   value: onTimePct + '%' },
+    { label: 'Items Over Target', value: overCount },
+  ];
+  container.innerHTML = '';
+  cards.forEach(({ label, value }) => {
+    const card = el('div', { className: 'stat-card' });
+    card.appendChild(el('div', { className: 'stat-label', textContent: label }));
+    card.appendChild(el('div', { className: 'stat-value', textContent: value }));
+    container.appendChild(card);
+  });
+}
+
 function renderReportItemTable(rows) {
   const wrap = document.getElementById('reportItemTable');
   wrap.innerHTML = '';
