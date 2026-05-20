@@ -2001,6 +2001,41 @@ function renderHomeUsers(users) {
   body.appendChild(summary);
 }
 
+function renderHomeProductivity(rows, targetPct = 80) {
+  const card = document.getElementById('homeProductivity');
+  if (!card) return;
+  const body = card.querySelector('.home-card-body');
+  body.innerHTML = '';
+  if (!rows || !rows.length) {
+    body.appendChild(el('div', { className: 'empty-state', textContent: 'No operator timer activity today.' }));
+    return;
+  }
+  // Target indicator
+  const targetBadge = el('div', { style: 'font-size:11px;color:var(--text2);margin-bottom:8px' });
+  targetBadge.textContent = `Target: ${targetPct}% productive`;
+  body.appendChild(targetBadge);
+  const grid = el('div', { style: 'display:grid;gap:6px' });
+  rows.forEach(r => {
+    const pct = r.productivityPct;
+    const barColor = pct >= targetPct ? 'var(--green)' : pct >= targetPct * 0.7 ? 'var(--amber)' : 'var(--red)';
+    const row = el('div', { style: 'display:flex;align-items:center;gap:10px;background:var(--bg2);border-radius:6px;padding:8px 12px' });
+    const nameCol = el('div', { style: 'min-width:130px;font-weight:600;font-size:13px;color:var(--text)' });
+    nameCol.textContent = r.operatorName;
+    const barWrap = el('div', { style: 'flex:1;background:var(--bg3);border-radius:4px;height:8px' });
+    barWrap.appendChild(el('div', { style: `width:${pct}%;background:${barColor};height:8px;border-radius:4px` }));
+    const pctLabel = el('div', { style: `min-width:44px;text-align:right;font-weight:700;font-size:13px;color:${barColor}` });
+    pctLabel.textContent = pct + '%';
+    const timeLabel = el('div', { style: 'min-width:60px;text-align:right;font-size:12px;color:var(--text2)' });
+    timeLabel.textContent = r.activeHoursDisplay;
+    row.appendChild(nameCol);
+    row.appendChild(barWrap);
+    row.appendChild(pctLabel);
+    row.appendChild(timeLabel);
+    grid.appendChild(row);
+  });
+  body.appendChild(grid);
+}
+
 function renderHomeQuickActions() {
   const card = document.getElementById('homeQuickActions'); if (!card) return;
   const body = card.querySelector('.home-card-body'); body.innerHTML = '';
