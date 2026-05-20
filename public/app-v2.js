@@ -1853,14 +1853,17 @@ document.getElementById('btnRaiseHand').addEventListener('click', async () => {
    ═══════════════════════════════════════════════════════════════════════════ */
 async function loadHomePage() {
   renderHomeSkeleton();
-  const [activeTimers, stats, users] = await Promise.all([
+  const today = new Date().toISOString().slice(0,10);
+  const [activeTimers, stats, users, productivity] = await Promise.all([
     GET('/timers?status=active&limit=200').catch(() => []),
     GET('/export/stats').catch(() => null),
     hasRole('administrator') ? GET('/users').catch(() => []) : Promise.resolve([]),
+    hasRole('manager') ? GET(`/export/productivity?from=${today}&to=${today}`).catch(() => []) : Promise.resolve([]),
   ]);
   renderHomeActiveJobs(activeTimers);
   renderHomeTodayStats(stats, activeTimers);
   if (hasRole('manager'))       renderHomePerformance(stats);
+  if (hasRole('manager'))       renderHomeProductivity(productivity);
   if (hasRole('administrator')) renderHomeUsers(users);
   renderHomeQuickActions();
 }
@@ -1879,6 +1882,7 @@ function renderHomeSkeleton() {
       <div class="home-card" id="homeTodayStats"><div class="home-card-title">Today at a Glance</div><div class="home-card-body"><div class="empty-state">Loading...</div></div></div>
       <div class="home-card" id="homeQuickActions"><div class="home-card-title">Quick Actions</div><div class="home-card-body"></div></div>
       ${hasRole('manager') ? '<div class="home-card home-card-full" id="homePerformance"><div class="home-card-title">Performance</div><div class="home-card-body"><div class="empty-state">Loading...</div></div></div>' : ''}
+      ${hasRole('manager') ? '<div class="home-card home-card-full" id="homeProductivity"><div class="home-card-title">Operator Productivity — Today</div><div class="home-card-body"><div class="empty-state">Loading...</div></div></div>' : ''}
       ${hasRole('administrator') ? '<div class="home-card home-card-full" id="homeUsers"><div class="home-card-title">User Status</div><div class="home-card-body"><div class="empty-state">Loading...</div></div></div>' : ''}
     </div>
   </div>`;
@@ -2685,13 +2689,14 @@ async function runReport() {
   ['reportStatCards','reportItemTable','reportOperatorTable','reportTrendTable','reportOverdueGrid']
     .forEach(id => { const n = document.getElementById(id); if (n) n.innerHTML = '<div class="empty-state">Loading…</div>'; });
 
-  let stats, operators, trends, overdue;
+  let stats, operators, trends, overdue, productivity;
   try {
-    [stats, operators, trends, overdue] = await Promise.all([
+    [stats, operators, trends, overdue, productivity] = await Promise.all([
       GET(`/export/stats?${qs}`),
       GET(`/export/report/operators?${qs}`),
       GET(`/export/report/trends?${qs}`),
       GET(`/export/report/overdue?${qs}`),
+      GET(`/export/productivity?${qs}`),
     ]);
   } catch (err) {
     console.error('Report fetch error:', err);
@@ -2699,15 +2704,17 @@ async function runReport() {
     if (sc) sc.innerHTML = `<div class="error-msg" style="padding:16px">Could not load report data: ${err.message}</div>`;
     return;
   }
-  trends    = trends    || [];
-  operators = operators || [];
-  overdue   = overdue   || { byItem: [], byOperator: [] };
+  trends       = trends       || [];
+  operators    = operators    || [];
+  overdue      = overdue      || { byItem: [], byOperator: [] };
+  productivity = productivity || [];
 
   renderReportStatCards(stats);
   renderReportTrendTable(trends);
   renderReportItemTable(stats?.byItem || []);
   renderReportOperatorTable(operators);
   renderReportOverdue(overdue);
+  renderProductivityTable(productivity);
 }
 
 // ── CHARTS PAGE ───────────────────────────────────────────────────────────────
@@ -2898,6 +2905,80 @@ function renderReportStatCards(stats) {
     card.appendChild(el('div', { className: 'stat-value', textContent: value }));
     container.appendChild(card);
   });
+}
+
+function renderProductivityTable(rows) {
+  const container = document.getElementById('reportProductivityTable');
+  if (!container) return;
+  if (!rows || !rows.length) {
+    container.innerHTML = '<div class="empty-state">No operator data for this date range.</div>';
+    return;
+  }
+  const table = el('table', { className: 'dash-table' });
+  const thead = el('thead', {}, el('tr', {},
+    el('th', { textContent: 'Operator' }),
+    el('th', { textContent: 'Department' }),
+    el('th', { textContent: 'Active Time' }),
+    el('th', { textContent: 'Available Time' }),
+    el('th', { textContent: 'Productivity' }),
+    el('th', { textContent: 'Timers' }),
+  ));
+  table.appendChild(thead);
+  const tbody = el('tbody', {});
+  rows.forEach(r => {
+    const pct = r.productivityPct;
+    const barColor = pct >= 80 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--red)';
+    const tr = el('tr', {});
+    tr.appendChild(el('td', { textContent: r.operatorName, style: 'font-weight:600' }));
+    tr.appendChild(el('td', { textContent: r.department || '—' }));
+    tr.appendChild(el('td', { textContent: r.activeHoursDisplay }));
+    tr.appendChild(el('td', { textContent: r.availableHoursDisplay, style: 'color:var(--text2)' }));
+    // Productivity cell with bar
+    const pctCell = el('td', {});
+    const barWrap = el('div', { style: 'display:flex;align-items:center;gap:8px' });
+    const bar = el('div', { style: 'flex:1;background:var(--bg3);border-radius:4px;height:8px;min-width:80px' });
+    bar.appendChild(el('div', { style: `width:${pct}%;background:${barColor};height:8px;border-radius:4px;transition:width .3s` }));
+    barWrap.appendChild(bar);
+    barWrap.appendChild(el('span', { textContent: pct + '%', style: `font-weight:700;color:${barColor};min-width:36px` }));
+    pctCell.appendChild(barWrap);
+    tr.appendChild(pctCell);
+    tr.appendChild(el('td', { textContent: r.timerCount, style: 'color:var(--text2)' }));
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  container.innerHTML = '';
+  container.appendChild(table);
+}
+
+function renderHomeProductivity(rows) {
+  const card = document.getElementById('homeProductivity');
+  if (!card) return;
+  const body = card.querySelector('.home-card-body');
+  body.innerHTML = '';
+  if (!rows || !rows.length) {
+    body.appendChild(el('div', { className: 'empty-state', textContent: 'No operator timer activity today.' }));
+    return;
+  }
+  const grid = el('div', { style: 'display:grid;gap:6px' });
+  rows.forEach(r => {
+    const pct = r.productivityPct;
+    const barColor = pct >= 80 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--red)';
+    const row = el('div', { style: 'display:flex;align-items:center;gap:10px;background:var(--bg2);border-radius:6px;padding:8px 12px' });
+    const nameCol = el('div', { style: 'min-width:130px;font-weight:600;font-size:13px;color:var(--text)' });
+    nameCol.textContent = r.operatorName;
+    const barWrap = el('div', { style: 'flex:1;background:var(--bg3);border-radius:4px;height:8px' });
+    barWrap.appendChild(el('div', { style: `width:${pct}%;background:${barColor};height:8px;border-radius:4px` }));
+    const pctLabel = el('div', { style: `min-width:44px;text-align:right;font-weight:700;font-size:13px;color:${barColor}` });
+    pctLabel.textContent = pct + '%';
+    const timeLabel = el('div', { style: 'min-width:60px;text-align:right;font-size:12px;color:var(--text2)' });
+    timeLabel.textContent = r.activeHoursDisplay;
+    row.appendChild(nameCol);
+    row.appendChild(barWrap);
+    row.appendChild(pctLabel);
+    row.appendChild(timeLabel);
+    grid.appendChild(row);
+  });
+  body.appendChild(grid);
 }
 
 function renderReportItemTable(rows) {
