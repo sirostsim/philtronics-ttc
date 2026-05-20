@@ -183,14 +183,66 @@ function canSeePage(p) {
 function buildNav() {
   const list = document.getElementById('navList');
   list.innerHTML = '';
-  for (const [key, p] of Object.entries(PAGES)) {
-    if (!canSeePage(p)) continue;
+
+  // Non-wallboard pages — render as normal nav items
+  const topPages    = ['home','timer','history','dashboard','targets','reports','charts','admin'];
+  const wbPageKeys  = Object.keys(PAGES).filter(k => k.startsWith('wb-') || k.startsWith('wbc-'));
+  const visibleWbs  = wbPageKeys.filter(k => canSeePage(PAGES[k]));
+
+  for (const key of topPages) {
+    const p = PAGES[key];
+    if (!p || !canSeePage(p)) continue;
     const btn = el('button', {
       textContent: p.label,
       onclick: () => { navigateTo(key); closeNav(); },
     });
     if (state.currentPage === key) btn.classList.add('active');
     list.appendChild(el('li', {}, btn));
+  }
+
+  // Collapsible wallboard group — only if user can see any wallboards
+  if (visibleWbs.length) {
+    const isWbActive = visibleWbs.includes(state.currentPage);
+    const groupLi = el('li', {});
+
+    const header = el('button', { className: 'nav-group-header' + (isWbActive ? ' open' : '') });
+    header.appendChild(el('span', { textContent: '📋 Wall Boards' }));
+    header.appendChild(el('span', { className: 'nav-group-arrow', textContent: '▼' }));
+
+    const children = el('div', { className: 'nav-group-children' + (isWbActive ? ' open' : '') });
+
+    // Group by department
+    const deptGroups = {};
+    for (const key of visibleWbs) {
+      const dept = PAGES[key].dept;
+      if (!deptGroups[dept]) deptGroups[dept] = [];
+      deptGroups[dept].push(key);
+    }
+
+    for (const [dept, keys] of Object.entries(deptGroups)) {
+      const deptLabel = el('div', { style: 'padding:8px 20px 4px;font-size:11px;font-weight:700;letter-spacing:.1em;color:var(--text2);text-transform:uppercase' });
+      deptLabel.textContent = dept;
+      children.appendChild(deptLabel);
+      for (const key of keys) {
+        const p = PAGES[key];
+        const isCompact = key.startsWith('wbc-');
+        const btn = el('button', {
+          textContent: (isCompact ? '📺 Compact' : '📋 Full Board'),
+          onclick: () => { navigateTo(key); closeNav(); },
+        });
+        if (state.currentPage === key) btn.classList.add('active');
+        children.appendChild(btn);
+      }
+    }
+
+    header.addEventListener('click', () => {
+      const open = children.classList.toggle('open');
+      header.classList.toggle('open', open);
+    });
+
+    groupLi.appendChild(header);
+    groupLi.appendChild(children);
+    list.appendChild(groupLi);
   }
 }
 
@@ -2039,36 +2091,61 @@ function renderHomeProductivity(rows, targetPct = 80) {
 function renderHomeQuickActions() {
   const card = document.getElementById('homeQuickActions'); if (!card) return;
   const body = card.querySelector('.home-card-body'); body.innerHTML = '';
-  const dept = state.user?.department || 'Production';
-  const slug = DEPT_SLUGS[dept] || 'prod';
-  // For supervisors: show their department wallboards only
-  // For managers/admins: show all departments
-  const wbActions = hasRole('manager')
-    ? DEPARTMENTS.flatMap(d => {
-        const s = DEPT_SLUGS[d];
-        return [
-          { label: '\uD83D\uDCCB ' + d, page: 'wb-' + s, role: 'supervisor' },
-          { label: '\uD83D\uDCFA Compact — ' + d, page: 'wbc-' + s, role: 'supervisor' },
-        ];
-      })
-    : [
-        { label: '\uD83D\uDCCB Wall Board', page: 'wb-' + slug, role: 'supervisor' },
-        { label: '\uD83D\uDCFA Compact Board', page: 'wbc-' + slug, role: 'supervisor' },
-      ];
+
+  // Single wallboard picker button instead of one per department
+  if (hasRole('supervisor')) {
+    const wbBtn = el('button', { className: 'home-action-btn', textContent: '📋 Wall Boards' });
+    wbBtn.addEventListener('click', () => openWallboardPicker());
+    body.appendChild(wbBtn);
+  }
 
   const actions = [
-    ...wbActions,
-    { label: '\uD83D\uDCCA Dashboard',       page: 'dashboard', role: 'manager'       },
-    { label: '\uD83D\uDCC8 Reports',          page: 'reports',   role: 'manager'       },
-    { label: '\uD83D\uDCCA Charts',           page: 'charts',    role: 'manager'       },
-    { label: '\uD83C\uDFAF Target Times',     page: 'targets',   role: 'manager'       },
-    { label: '\uD83D\uDD50 History',          page: 'history',   role: 'operator'      },
-    { label: '\uD83D\uDC65 User Management',  page: 'admin',     role: 'administrator' },
+    { label: '📊 Dashboard',      page: 'dashboard', role: 'manager'       },
+    { label: '📈 Reports',         page: 'reports',   role: 'manager'       },
+    { label: '📉 Charts',          page: 'charts',    role: 'manager'       },
+    { label: '🎯 Target Times',    page: 'targets',   role: 'manager'       },
+    { label: '🕐 History',         page: 'history',   role: 'operator'      },
+    { label: '👥 User Management', page: 'admin',     role: 'administrator' },
   ];
   actions.filter(a => hasRole(a.role)).forEach(a => {
     body.appendChild(el('button', { className: 'home-action-btn', textContent: a.label, onclick: () => { navigateTo(a.page); closeNav(); } }));
   });
 }
+
+function openWallboardPicker() {
+  const dept       = state.user?.department || 'Production';
+  const slug       = DEPT_SLUGS[dept] || 'prod';
+  const isManager  = hasRole('manager');
+
+  // Build list of departments visible to this user
+  const depts = isManager ? DEPARTMENTS : [dept];
+
+  const body = el('div', {});
+  body.appendChild(el('p', { textContent: 'Choose a department and view:', style: 'margin-bottom:16px;color:var(--text2);font-size:14px' }));
+
+  depts.forEach(d => {
+    const s = DEPT_SLUGS[d];
+    const deptLabel = el('div', { style: 'font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text2);margin-bottom:6px;margin-top:12px' });
+    deptLabel.textContent = d;
+    body.appendChild(deptLabel);
+    const row = el('div', { className: 'wb-picker-grid' });
+
+    const fullBtn = el('button', { className: 'wb-picker-btn' });
+    fullBtn.innerHTML = `📋 Full Board<span class="wb-picker-sub">All tiles with details</span>`;
+    fullBtn.addEventListener('click', () => { closeModal(); navigateTo('wb-' + s); });
+
+    const compactBtn = el('button', { className: 'wb-picker-btn' });
+    compactBtn.innerHTML = `📺 Compact<span class="wb-picker-sub">Overview grid</span>`;
+    compactBtn.addEventListener('click', () => { closeModal(); navigateTo('wbc-' + s); });
+
+    row.appendChild(fullBtn);
+    row.appendChild(compactBtn);
+    body.appendChild(row);
+  });
+
+  openModal('Wall Boards', body, [el('button', { className: 'btn btn-ghost', textContent: 'Close', onclick: closeModal })]);
+}
+
 
 
 /* ═══════════════════════════════════════════════════════════════════════════

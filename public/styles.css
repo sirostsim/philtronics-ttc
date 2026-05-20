@@ -2536,3 +2536,82 @@ button.topbar-brand:focus-visible {
 .dept-stores    { background: rgba(56,161,105,.15); color: #4ade80; border: 1px solid rgba(56,161,105,.3); }
 .dept-testinsp  { background: rgba(159,122,234,.15); color: #c084fc; border: 1px solid rgba(159,122,234,.3); }
 .dept-pcb       { background: rgba(236,110,36,.15);  color: #fb923c; border: 1px solid rgba(236,110,36,.3); }
+
+/* ─── Collapsible nav group ─────────────────────────────────────────────── */
+.nav-group-header {
+  width: 100%;
+  text-align: left;
+  padding: 16px 24px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text2);
+  background: none;
+  border: none;
+  letter-spacing: .04em;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+.nav-group-header:hover { background: var(--bg3); color: var(--text); }
+.nav-group-header.open  { color: var(--accent); }
+.nav-group-arrow {
+  font-size: 10px;
+  transition: transform .2s ease;
+  color: var(--text2);
+}
+.nav-group-header.open .nav-group-arrow { transform: rotate(180deg); }
+.nav-group-children {
+  display: none;
+  background: var(--bg2);
+  border-left: 3px solid var(--accent);
+  margin: 0 12px 4px;
+  border-radius: 0 6px 6px 0;
+}
+.nav-group-children.open { display: block; }
+.nav-group-children button {
+  width: 100%;
+  text-align: left;
+  padding: 11px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text2);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+.nav-group-children button:hover,
+.nav-group-children button.active {
+  background: var(--bg3);
+  color: var(--accent);
+}
+
+/* ─── Home wallboard picker modal ───────────────────────────────────────── */
+.wb-picker-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 4px;
+}
+.wb-picker-btn {
+  padding: 14px 12px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--transition), border-color var(--transition);
+}
+.wb-picker-btn:hover { background: var(--bg2); border-color: var(--accent); color: var(--accent); }
+.wb-picker-btn .wb-picker-sub {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text2);
+  margin-top: 3px;
+}
