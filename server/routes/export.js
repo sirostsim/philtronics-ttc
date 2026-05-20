@@ -506,4 +506,140 @@ router.get('/productivity', async (req, res) => {
   }
 });
 
+// ─── GET /api/export/productivity/csv ────────────────────────────────────────
+router.get('/productivity/csv', async (req, res) => {
+  try {
+    const { from, to, department } = req.query;
+
+    const fromDt = from ? new Date(from) : new Date(Date.now() - 30 * 24 * 3600 * 1000);
+    const toDt   = to
+      ? (() => { const d = new Date(to); d.setHours(23,59,59,999); return d; })()
+      : new Date();
+
+    const configRow = await queryOne(`SELECT value FROM config WHERE key = 'productivity_target_pct'`);
+    const targetPct = configRow ? parseInt(configRow.value, 10) : 80;
+
+    const conditions = [`u.role = 'operator'`, `u.is_active = TRUE`];
+    const params = [];
+    let p = 1;
+    if (department) { conditions.push(`u.department = $${p++}`); params.push(department); }
+
+    const operators = await query(
+      `SELECT u.id, u.full_name, u.department FROM users u
+       WHERE ${conditions.join(' AND ')} ORDER BY u.full_name`,
+      params
+    );
+    if (!operators.length) {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.send('\uFEFFNo operator data found.');
+      return;
+    }
+
+    const opIds  = operators.map(o => o.id);
+    const timers = await query(
+      `SELECT t.operator_id, t.started_at, t.completed_at, t.status,
+              t.total_paused_seconds, t.duration_seconds
+       FROM timers t
+       WHERE t.operator_id = ANY($1)
+         AND t.status IN ('completed','active','cancelled')
+         AND t.started_at >= $2 AND t.started_at <= $3
+       ORDER BY t.operator_id, t.started_at`,
+      [opIds, fromDt.toISOString(), toDt.toISOString()]
+    );
+
+    const timersByOp = {};
+    for (const t of timers) {
+      if (!timersByOp[t.operator_id]) timersByOp[t.operator_id] = [];
+      timersByOp[t.operator_id].push(t);
+    }
+
+    // Build working days
+    const days = [];
+    let totalAvailableMins = 0;
+    const cur = new Date(fromDt); cur.setHours(0,0,0,0);
+    const endD = new Date(toDt);  endD.setHours(23,59,59,999);
+    while (cur <= endD) {
+      const ds   = cur.toISOString().slice(0,10);
+      const mins = workDayMinutes(ds);
+      if (mins > 0) { days.push({ date: ds, availableMins: mins }); totalAvailableMins += mins; }
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    // Build CSV rows — one row per operator per day, plus a summary row
+    const csvRows = [];
+    for (const op of operators) {
+      const opTimers = timersByOp[op.id] || [];
+      let totalActiveMins = 0;
+
+      for (const { date, availableMins } of days) {
+        const activeSecs = calcActiveSecondsForDay(opTimers, date);
+        const activeMins = Math.round(activeSecs / 60);
+        totalActiveMins += activeMins;
+        const pct = availableMins > 0 ? Math.min(100, Math.round(activeMins / availableMins * 100)) : 0;
+        const dow = new Intl.DateTimeFormat('en-GB', { weekday: 'long', timeZone: TZ })
+          .format(new Date(date + 'T12:00:00Z'));
+        csvRows.push({
+          operator:        op.full_name,
+          department:      op.department || '',
+          date,
+          dayOfWeek:       dow,
+          availableMins,
+          availableHours:  (availableMins / 60).toFixed(2),
+          activeMinutes:   activeMins,
+          activeHours:     (activeMins / 60).toFixed(2),
+          productivityPct: pct,
+          targetPct,
+          vsTargetPct:     pct - targetPct,
+          status:          pct >= targetPct ? 'On Target' : pct >= targetPct * 0.7 ? 'Near Target' : 'Below Target',
+        });
+      }
+
+      // Summary row for this operator
+      const overallPct = totalAvailableMins > 0
+        ? Math.min(100, Math.round(totalActiveMins / totalAvailableMins * 100))
+        : 0;
+      csvRows.push({
+        operator:        op.full_name,
+        department:      op.department || '',
+        date:            'TOTAL',
+        dayOfWeek:       '',
+        availableMins:   totalAvailableMins,
+        availableHours:  (totalAvailableMins / 60).toFixed(2),
+        activeMinutes:   totalActiveMins,
+        activeHours:     (totalActiveMins / 60).toFixed(2),
+        productivityPct: overallPct,
+        targetPct,
+        vsTargetPct:     overallPct - targetPct,
+        status:          overallPct >= targetPct ? 'On Target' : overallPct >= targetPct * 0.7 ? 'Near Target' : 'Below Target',
+      });
+    }
+
+    const csv = stringify(csvRows, {
+      header: true,
+      columns: [
+        { key: 'operator',        header: 'Operator'              },
+        { key: 'department',      header: 'Department'            },
+        { key: 'date',            header: 'Date'                  },
+        { key: 'dayOfWeek',       header: 'Day'                   },
+        { key: 'availableMins',   header: 'Available (Mins)'      },
+        { key: 'availableHours',  header: 'Available (Hours)'     },
+        { key: 'activeMinutes',   header: 'Active (Mins)'         },
+        { key: 'activeHours',     header: 'Active (Hours)'        },
+        { key: 'productivityPct', header: 'Productivity %'        },
+        { key: 'targetPct',       header: 'Target %'              },
+        { key: 'vsTargetPct',     header: 'vs Target %'           },
+        { key: 'status',          header: 'Status'                },
+      ],
+    });
+
+    const dateStr = new Date().toISOString().slice(0,10);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="productivity-${dateStr}.csv"`);
+    res.send('\uFEFF' + csv);
+  } catch (err) {
+    console.error('Productivity CSV error:', err.message);
+    res.status(500).json({ error: 'Export failed.' });
+  }
+});
+
 module.exports = router;

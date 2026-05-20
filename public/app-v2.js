@@ -2660,13 +2660,21 @@ function loadReportsPage() {
     document.getElementById('reportFrom').value = ago30;
     document.getElementById('reportTo').value   = today;
   }
+  // Sync productivity date pickers to match report range
+  const pFrom = document.getElementById('productivityFrom');
+  const pTo   = document.getElementById('productivityTo');
+  if (pFrom && !pFrom.value) { pFrom.value = ago30; }
+  if (pTo   && !pTo.value)   { pTo.value   = today; }
   runReport();
+  runProductivitySection();
 }
 
-// Use delegation — btnChartSearch is inside a hidden section at load time
+// Use delegation — some buttons are inside hidden sections at load time
 document.addEventListener('click', e => {
-  if (e.target.id === 'btnReportSearch') runReport();
-  if (e.target.id === 'btnChartSearch')  runCharts();
+  if (e.target.id === 'btnReportSearch')       runReport();
+  if (e.target.id === 'btnChartSearch')        runCharts();
+  if (e.target.id === 'btnProductivityRefresh') runProductivitySection();
+  if (e.target.id === 'btnProductivityCSV')    exportProductivityCSV();
 });
 
 document.getElementById('btnReportExportCSV').addEventListener('click', () => {
@@ -2715,6 +2723,32 @@ async function runReport() {
   renderReportOperatorTable(operators);
   renderReportOverdue(overdue);
   renderProductivityTable(productivity?.operators || [], productivity?.targetPct || 80, productivity?.operators?.[0]?.daily?.length > 0);
+}
+
+async function runProductivitySection() {
+  const from = document.getElementById('productivityFrom')?.value;
+  const to   = document.getElementById('productivityTo')?.value;
+  const params = new URLSearchParams();
+  if (from) params.set('from', new Date(from).toISOString());
+  if (to)   { const d = new Date(to); d.setHours(23,59,59,999); params.set('to', d.toISOString()); }
+  params.set('groupByDay', 'true');
+  const container = document.getElementById('reportProductivityTable');
+  if (container) container.innerHTML = '<div class="empty-state">Loading…</div>';
+  try {
+    const data = await GET(`/export/productivity?${params}`);
+    renderProductivityTable(data?.operators || [], data?.targetPct || 80, true);
+  } catch (err) {
+    if (container) container.innerHTML = `<div class="error-msg" style="padding:16px">Could not load productivity data: ${err.message}</div>`;
+  }
+}
+
+function exportProductivityCSV() {
+  const from = document.getElementById('productivityFrom')?.value;
+  const to   = document.getElementById('productivityTo')?.value;
+  const params = new URLSearchParams();
+  if (from) params.set('from', new Date(from).toISOString());
+  if (to)   { const d = new Date(to); d.setHours(23,59,59,999); params.set('to', d.toISOString()); }
+  window.location.href = `/api/export/productivity/csv?${params}`;
 }
 
 // ── CHARTS PAGE ───────────────────────────────────────────────────────────────

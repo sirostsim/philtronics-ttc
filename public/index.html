@@ -569,8 +569,24 @@
       </div>
 
       <div class="report-section">
-        <h3 class="section-heading">Operator Productivity Rate</h3>
+        <div class="report-section-header">
+          <h3 class="section-heading">Operator Productivity Rate</h3>
+          <button id="btnProductivityCSV" class="btn btn-export">&#11015; Export CSV</button>
+        </div>
         <p class="section-desc" style="margin-bottom:12px">Active timer time as a percentage of available working hours, after deducting breaks. Mon–Thu 8h productive, Fri 5h productive.</p>
+        <div class="filter-bar" style="margin-bottom:16px;padding:16px;background:var(--bg2);border-radius:10px;">
+          <div class="filter-row" style="margin-bottom:8px">
+            <div class="form-group filter-group">
+              <label for="productivityFrom">From</label>
+              <input id="productivityFrom" type="date" />
+            </div>
+            <div class="form-group filter-group">
+              <label for="productivityTo">To</label>
+              <input id="productivityTo" type="date" />
+            </div>
+          </div>
+          <button id="btnProductivityRefresh" class="btn btn-primary btn-sm">Refresh</button>
+        </div>
         <div id="reportProductivityTable" class="dash-table-wrap"></div>
       </div>
 
