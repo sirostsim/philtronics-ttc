@@ -548,6 +548,7 @@ tbody tr:hover td { background: var(--bg3); }
 .role-supervisor   { background: rgba(240,180,41,.15); color: var(--accent); }
 .role-manager      { background: rgba(168,85,247,.15); color: #c084fc; }
 .role-administrator{ background: rgba(239,68,68,.15); color: var(--red); }
+.role-superuser    { background: rgba(236,72,153,.15); color: #f472b6; border: 1px solid rgba(236,72,153,.3); }
 
 /* ─── Modal ─────────────────────────────────────────────────────────────── */
 .modal-overlay {

@@ -52,7 +52,7 @@ const chatHeaderSub  = document.getElementById('chatHeaderSub');
 const itemInput = document.getElementById('itemNumberInput');
 const sugList   = document.getElementById('itemSuggestions');
 
-const ROLE_LEVEL = { operator: 1, supervisor: 2, manager: 3, administrator: 4 };
+const ROLE_LEVEL = { operator: 1, supervisor: 2, manager: 3, administrator: 4, superuser: 5 };
 function hasRole(min) {
   return state.user && (ROLE_LEVEL[state.user.role] || 0) >= (ROLE_LEVEL[min] || 99);
 }
@@ -1066,16 +1066,26 @@ function renderUserList(users) {
     const meta = el('div', { className: 'user-meta' });
     meta.appendChild(el('span', { textContent: '@' + u.username }));
     meta.appendChild(el('span', { className: `badge role-${u.role}`, textContent: u.role }));
-    meta.appendChild(el('span', { className: `badge dept-badge dept-${DEPT_SLUGS[u.department] || 'prod'}`, textContent: u.department || 'Production' }));
+    if (u.role !== 'superuser') {
+      meta.appendChild(el('span', { className: `badge dept-badge dept-${DEPT_SLUGS[u.department] || 'prod'}`, textContent: u.department || 'Production' }));
+    }
     if (!u.isActive) meta.appendChild(el('span', { className: 'badge badge-cancelled', textContent: 'disabled' }));
     info.appendChild(meta);
     card.appendChild(info);
 
     const actions = el('div', { className: 'user-actions' });
+    const isSuTarget = u.role === 'superuser';
+    const canEdit    = !isSuTarget || state.user.role === 'superuser';
     const editBtn = el('button', { className: 'btn btn-ghost', textContent: 'Edit',
-      onclick: () => openUserModal(u) });
-    const pwBtn   = el('button', { className: 'btn btn-ghost', textContent: 'Reset PW',
-      onclick: () => openResetPasswordModal(u) });
+      onclick: () => canEdit ? openUserModal(u) : toast('Only a superuser can edit superuser accounts.', 'error'),
+      title: canEdit ? '' : 'Only a superuser can edit this account',
+    });
+    if (!canEdit) editBtn.disabled = true;
+    const pwBtn = el('button', { className: 'btn btn-ghost', textContent: 'Reset PW',
+      onclick: () => canEdit ? openResetPasswordModal(u) : toast('Only a superuser can reset superuser passwords.', 'error'),
+      title: canEdit ? '' : 'Only a superuser can reset this password',
+    });
+    if (!canEdit) pwBtn.disabled = true;
     actions.appendChild(editBtn);
     actions.appendChild(pwBtn);
     // Show 2FA button for non-operators (2FA is optional)
@@ -1128,9 +1138,12 @@ function openUserModal(user) {
     ));
   }
 
-  // Role select
+  // Role select — options depend on the current user's own role
   const roleSelect = el('select', { id: 'mRole', style: 'background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:16px;padding:12px 14px;width:100%;' });
-  ['operator','supervisor','manager','administrator'].forEach(r => {
+  const assignableRoles = state.user.role === 'superuser'
+    ? ['operator','supervisor','manager','administrator','superuser']
+    : ['operator','supervisor','manager'];
+  assignableRoles.forEach(r => {
     const o = el('option', { value: r, textContent: r.charAt(0).toUpperCase() + r.slice(1) });
     if (user?.role === r) o.selected = true;
     roleSelect.appendChild(o);
@@ -1762,7 +1775,7 @@ function confirmDeleteTarget(t, containerId = 'targetTimesList') {
 /* ═══════════════════════════════════════════════════════════════════════════
    TOTP SETUP
    ═══════════════════════════════════════════════════════════════════════════ */
-const ROLES_REQUIRING_TOTP = ['manager', 'administrator'];
+const ROLES_REQUIRING_TOTP = ['manager', 'administrator', 'superuser'];
 function checkTotpSetupRequired() {
   // 2FA is optional — never force the setup prompt on login
 }

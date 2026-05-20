@@ -1,5 +1,5 @@
 /**
- * routes/users.js – user management (PostgreSQL version)
+ * routes/users.js – user management
  */
 
 'use strict';
@@ -8,31 +8,42 @@ const express  = require('express');
 const bcrypt   = require('bcrypt');
 const { v4: uuidv4 } = require('uuid');
 const { query, queryOne } = require('../db');
-const { requireAuth, requireRole } = require('../middleware/auth');
-const { validate, schemas }        = require('../middleware/validate');
+const { requireAuth, requireRole, hasRole, canAssignRole } = require('../middleware/auth');
+const { validate, schemas } = require('../middleware/validate');
 
 const router = express.Router();
+
+// All user management requires at minimum administrator
 router.use(requireAuth, requireRole('administrator'));
 
 const ROUNDS = () => parseInt(process.env.BCRYPT_ROUNDS || '12', 10);
-
-const DEPARTMENTS = ['Production', 'Stores', 'Test and Inspection'];
+const DEPARTMENTS = ['Production', 'Stores', 'Test and Inspection', 'PCB'];
 
 function safeUser(u) {
   return {
-    id: u.id, username: u.username, fullName: u.full_name,
-    role: u.role, isActive: u.is_active,
-    department: u.department || 'Production',
-    totpEnabled: !!u.totp_enabled,
-    createdAt: u.created_at, updatedAt: u.updated_at,
+    id:           u.id,
+    username:     u.username,
+    fullName:     u.full_name,
+    role:         u.role,
+    isActive:     u.is_active,
+    department:   u.department || 'Production',
+    totpEnabled:  !!u.totp_enabled,
+    createdAt:    u.created_at,
+    updatedAt:    u.updated_at,
   };
 }
 
 // GET /api/users
+// Admins see everyone except superusers. Superusers see everyone.
 router.get('/', async (req, res) => {
   try {
-    const users = await query('SELECT * FROM users ORDER BY department, role, full_name');
-    res.json(users.map(safeUser));
+    const isSU = req.user.role === 'superuser';
+    const rows = await query(
+      isSU
+        ? `SELECT * FROM users ORDER BY role, full_name`
+        : `SELECT * FROM users WHERE role != 'superuser' ORDER BY department, role, full_name`
+    );
+    res.json(rows.map(safeUser));
   } catch (err) {
     res.status(500).json({ error: 'Could not load users.' });
   }
@@ -43,6 +54,10 @@ router.get('/:id', async (req, res) => {
   try {
     const user = await queryOne('SELECT * FROM users WHERE id = $1', [req.params.id]);
     if (!user) return res.status(404).json({ error: 'User not found.' });
+    // Admins cannot view superuser accounts
+    if (user.role === 'superuser' && req.user.role !== 'superuser') {
+      return res.status(403).json({ error: 'Insufficient permissions.' });
+    }
     res.json(safeUser(user));
   } catch (err) {
     res.status(500).json({ error: 'Could not load user.' });
@@ -53,6 +68,14 @@ router.get('/:id', async (req, res) => {
 router.post('/', validate(schemas.createUser), async (req, res) => {
   try {
     const { username, password, full_name, role, department } = req.body;
+
+    // Enforce role assignment permissions
+    if (!canAssignRole(req.user.role, role)) {
+      return res.status(403).json({
+        error: `Your role cannot create users with role '${role}'.`,
+      });
+    }
+
     const dept = DEPARTMENTS.includes(department) ? department : 'Production';
 
     const existing = await queryOne(
@@ -78,22 +101,40 @@ router.post('/', validate(schemas.createUser), async (req, res) => {
 // PATCH /api/users/:id
 router.patch('/:id', validate(schemas.updateUser), async (req, res) => {
   try {
-    const user = await queryOne('SELECT * FROM users WHERE id = $1', [req.params.id]);
-    if (!user) return res.status(404).json({ error: 'User not found.' });
+    const target = await queryOne('SELECT * FROM users WHERE id = $1', [req.params.id]);
+    if (!target) return res.status(404).json({ error: 'User not found.' });
+
+    // Admins cannot edit superuser accounts
+    if (target.role === 'superuser' && req.user.role !== 'superuser') {
+      return res.status(403).json({ error: 'Insufficient permissions.' });
+    }
 
     const { full_name, role, is_active, department } = req.body;
+
+    // If role is being changed, enforce assignment permissions
+    if (role && !canAssignRole(req.user.role, role)) {
+      return res.status(403).json({
+        error: `Your role cannot assign role '${role}'.`,
+      });
+    }
+
+    // Prevent demoting/editing another superuser unless you're also a superuser
+    if (target.role === 'superuser' && req.user.id !== target.id && req.user.role !== 'superuser') {
+      return res.status(403).json({ error: 'Insufficient permissions.' });
+    }
+
     const dept = department && DEPARTMENTS.includes(department) ? department : null;
     await query(
       `UPDATE users
-       SET full_name   = COALESCE($1, full_name),
-           role        = COALESCE($2, role),
-           is_active   = COALESCE($3, is_active),
-           department  = COALESCE($4, department),
-           updated_at  = NOW()
+       SET full_name  = COALESCE($1, full_name),
+           role       = COALESCE($2, role),
+           is_active  = COALESCE($3, is_active),
+           department = COALESCE($4, department),
+           updated_at = NOW()
        WHERE id = $5`,
-      [full_name ?? null, role ?? null, is_active ?? null, dept, user.id]
+      [full_name ?? null, role ?? null, is_active ?? null, dept, target.id]
     );
-    const updated = await queryOne('SELECT * FROM users WHERE id = $1', [user.id]);
+    const updated = await queryOne('SELECT * FROM users WHERE id = $1', [target.id]);
     res.json(safeUser(updated));
   } catch (err) {
     res.status(500).json({ error: 'Could not update user.' });
@@ -103,14 +144,17 @@ router.patch('/:id', validate(schemas.updateUser), async (req, res) => {
 // POST /api/users/:id/reset-password
 router.post('/:id/reset-password', validate(schemas.resetPassword), async (req, res) => {
   try {
-    const user = await queryOne('SELECT * FROM users WHERE id = $1', [req.params.id]);
-    if (!user) return res.status(404).json({ error: 'User not found.' });
+    const target = await queryOne('SELECT * FROM users WHERE id = $1', [req.params.id]);
+    if (!target) return res.status(404).json({ error: 'User not found.' });
+    if (target.role === 'superuser' && req.user.role !== 'superuser') {
+      return res.status(403).json({ error: 'Insufficient permissions.' });
+    }
     const hash = await bcrypt.hash(req.body.password, ROUNDS());
     await query(
       'UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2',
-      [hash, user.id]
+      [hash, target.id]
     );
-    res.json({ ok: true, message: `Password reset for ${user.username}.` });
+    res.json({ ok: true, message: `Password reset for ${target.username}.` });
   } catch (err) {
     res.status(500).json({ error: 'Could not reset password.' });
   }
@@ -119,7 +163,6 @@ router.post('/:id/reset-password', validate(schemas.resetPassword), async (req, 
 // POST /api/users/admin/cancel-stuck-timers
 router.post('/admin/cancel-stuck-timers', async (req, res) => {
   try {
-    const { v4: uuidv4 } = require('uuid');
     const reason = (req.body && req.body.reason) || 'Cancelled by administrator via emergency tool';
     const active = await query('SELECT * FROM timers WHERE status = $1', ['active']);
     if (active.length === 0) {

@@ -106,11 +106,12 @@ app.use((err, req, res, next) => {
 
 // ─── Boot: run migrations then start listening ────────────────────────────────
 runMigrations()
-  .then(() => {
+  .then(async () => {
+    await seedSuperuser();
     const { startSchedule } = require('./schedule');
     startSchedule();
     app.listen(PORT, () => {
-      console.log(`✅  Philtronics Time-to-Complete running on port ${PORT}`);
+      console.log(`✅  Work Time running on port ${PORT}`);
       console.log(`    Environment : ${process.env.NODE_ENV || 'development'}`);
       console.log(`    Database    : PostgreSQL (${process.env.DATABASE_URL ? 'connected' : 'NO URL SET'})`);
     });
@@ -119,3 +120,52 @@ runMigrations()
     console.error('❌  Failed to run migrations:', err.message);
     process.exit(1);
   });
+
+async function seedSuperuser() {
+  const username = process.env.SU_USERNAME;
+  const password = process.env.SU_PASSWORD;
+  const fullName = process.env.SU_FULL_NAME || 'SRS Support';
+
+  if (!username || !password) {
+    // No SU configured — skip silently (not required for existing deployments)
+    return;
+  }
+
+  try {
+    const { queryOne, query } = require('./db');
+    const bcrypt = require('bcrypt');
+    const { v4: uuidv4 } = require('uuid');
+
+    const existing = await queryOne(
+      `SELECT id FROM users WHERE role = 'superuser' AND LOWER(username) = LOWER($1)`,
+      [username]
+    );
+
+    if (!existing) {
+      const hash = await bcrypt.hash(password, parseInt(process.env.BCRYPT_ROUNDS || '12', 10));
+      await query(
+        `INSERT INTO users (id, username, password_hash, full_name, role, department, is_active)
+         VALUES ($1, $2, $3, $4, 'superuser', 'Production', TRUE)
+         ON CONFLICT (username) DO NOTHING`,
+        [uuidv4(), username, hash, fullName]
+      );
+      console.log(`✅  Superuser account '${username}' created.`);
+    } else {
+      // Update password if it has changed
+      const bcrypt = require('bcrypt');
+      const su = await queryOne(`SELECT password_hash FROM users WHERE id = $1`, [existing.id]);
+      const match = await bcrypt.compare(password, su.password_hash);
+      if (!match) {
+        const hash = await bcrypt.hash(password, parseInt(process.env.BCRYPT_ROUNDS || '12', 10));
+        await query(
+          `UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`,
+          [hash, existing.id]
+        );
+        console.log(`✅  Superuser '${username}' password updated from env.`);
+      }
+    }
+  } catch (err) {
+    console.error('⚠️  Superuser seed failed:', err.message);
+  }
+}
+

@@ -1,5 +1,5 @@
 /**
- * middleware/auth.js – JWT auth + RBAC (PostgreSQL async version)
+ * middleware/auth.js – JWT auth + RBAC
  */
 
 'use strict';
@@ -8,7 +8,17 @@ const jwt = require('jsonwebtoken');
 const { queryOne } = require('../db');
 
 const ROLE_HIERARCHY = {
-  operator: 1, supervisor: 2, manager: 3, administrator: 4,
+  operator: 1, supervisor: 2, manager: 3, administrator: 4, superuser: 5,
+};
+
+// Roles a given role is permitted to create/edit
+// Superuser can create any role. Admin can create up to manager.
+const CREATABLE_ROLES = {
+  superuser:     ['operator','supervisor','manager','administrator','superuser'],
+  administrator: ['operator','supervisor','manager'],
+  manager:       [],
+  supervisor:    [],
+  operator:      [],
 };
 
 async function requireAuth(req, res, next) {
@@ -53,4 +63,8 @@ function hasRole(user, minRole) {
   return (ROLE_HIERARCHY[user.role] || 0) >= (ROLE_HIERARCHY[minRole] || 999);
 }
 
-module.exports = { requireAuth, requireRole, hasRole };
+function canAssignRole(actorRole, targetRole) {
+  return (CREATABLE_ROLES[actorRole] || []).includes(targetRole);
+}
+
+module.exports = { requireAuth, requireRole, hasRole, canAssignRole, ROLE_HIERARCHY, CREATABLE_ROLES };
