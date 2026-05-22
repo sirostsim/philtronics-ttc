@@ -2968,7 +2968,7 @@ function makeSVGChart(wrap, W, H) {
   return svg;
 }
 
-function drawBarChart(containerId, { labels, datasets, title, yLabel }) {
+function drawBarChart(containerId, { labels, datasets, title, yLabel, lineData }) {
   const wrap = document.getElementById(containerId);
   if (!wrap) return;
 
@@ -3042,15 +3042,40 @@ function drawBarChart(containerId, { labels, datasets, title, yLabel }) {
   // Legend
   let lx = PAD.left;
   datasets.forEach(ds => {
-    const rect = svgEl('rect', { x: lx, y: H - 18, width: 12, height: 12,
-      fill: ds.color, rx: 2 });
+    const rect = svgEl('rect', { x: lx, y: H - 18, width: 12, height: 12, fill: ds.color, rx: 2 });
     svg.appendChild(rect);
-    const t = svgEl('text', { x: lx + 16, y: H - 8, fill: CHART_COLORS.text,
-      'font-size': '11', 'font-family': 'sans-serif' });
+    const t = svgEl('text', { x: lx + 16, y: H - 8, fill: CHART_COLORS.text, 'font-size': '11', 'font-family': 'sans-serif' });
     t.textContent = ds.label;
     svg.appendChild(t);
     lx += ds.label.length * 7 + 30;
   });
+
+  // Optional line overlay drawn inline
+  if (lineData && lineData.data && lineData.data.some(v => v > 0)) {
+    const ld = lineData;
+    const lMax = Math.max(...ld.data, 1);
+    const points = ld.data.map((val, gi) => {
+      const x = PAD.left + gi * groupW + groupW / 2;
+      const y = PAD.top + chartH - (val / lMax) * chartH;
+      return `${x},${y}`;
+    });
+    if (points.length > 1) {
+      svg.appendChild(svgEl('polyline', { points: points.join(' '),
+        fill: 'none', stroke: ld.color, 'stroke-width': '2',
+        'stroke-linejoin': 'round', 'stroke-linecap': 'round', opacity: '0.9' }));
+    }
+    ld.data.forEach((val, gi) => {
+      const x = PAD.left + gi * groupW + groupW / 2;
+      const y = PAD.top + chartH - (val / lMax) * chartH;
+      const c = svgEl('circle', { cx: x, cy: y, r: 4, fill: ld.color });
+      const tt = svgEl('title'); tt.textContent = `${ld.label}: ${Math.round(val)}`;
+      c.appendChild(tt); svg.appendChild(c);
+    });
+    // Add to legend
+    svg.appendChild(svgEl('circle', { cx: lx + 6, cy: H - 12, r: 6, fill: ld.color }));
+    const lt = svgEl('text', { x: lx + 16, y: H - 8, fill: CHART_COLORS.text, 'font-size': '11', 'font-family': 'sans-serif' });
+    lt.textContent = ld.label; svg.appendChild(lt);
+  }
 }
 
 function drawLineOverlay(containerId, { labels, data, color, yMax, label }) {
@@ -3111,48 +3136,38 @@ function drawLineOverlay(containerId, { labels, data, color, yMax, label }) {
 }
 
 function renderChartDailyTrend(rows) {
-  const wrap = document.querySelector('#pageCharts .report-chart-wrap:nth-child(1)') ||
-               document.getElementById('chartDailyTrend')?.closest('.report-chart-wrap');
-  if (!wrap) return;
-
+  const el2 = document.getElementById('chartDailyTrendSVG');
+  if (!el2) return;
   if (!rows || !rows.length) {
-    wrap.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text2);font-size:14px">No completed jobs found for this date range.</div>';
+    el2.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text2);font-size:14px">No completed jobs found for this date range.</div>';
     return;
   }
-
   const labels  = rows.map(r => new Date(r.day).toLocaleDateString('en-GB', { day:'2-digit', month:'short' }));
   const jobs    = rows.map(r => r.jobs_completed || 0);
   const overdue = rows.map(r => r.overdue_count  || 0);
-  const avgMins = rows.map(r => r.avg_seconds     || 0);
-
+  const avgSecs = rows.map(r => r.avg_seconds     || 0);
   drawBarChart('chartDailyTrendSVG', {
     labels,
     datasets: [
-      { label: 'Jobs Completed', data: jobs,    color: CHART_COLORS.blue  },
-      { label: 'Over Target',    data: overdue, color: CHART_COLORS.red   },
+      { label: 'Jobs Completed', data: jobs,    color: CHART_COLORS.blue },
+      { label: 'Over Target',    data: overdue, color: CHART_COLORS.red  },
     ],
     yLabel: 'Jobs',
-  });
-  drawLineOverlay('chartDailyTrendSVG', {
-    labels, data: avgMins, color: CHART_COLORS.amber, label: 'Avg Secs',
+    lineData: { data: avgSecs, color: CHART_COLORS.amber, label: 'Avg Secs' },
   });
 }
 
 function renderChartItemOnTime(rows) {
-  const wrap = document.querySelector('#pageCharts .report-chart-wrap:nth-child(2)') ||
-               document.getElementById('chartItemOnTimeSVG')?.closest('.report-chart-wrap');
-  if (!wrap) return;
-
+  const el2 = document.getElementById('chartItemOnTimeSVG');
+  if (!el2) return;
   const withTarget = (rows || []).filter(r => r.target_seconds).slice(0, 12);
   if (!withTarget.length) {
-    wrap.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text2);font-size:14px">No items with target times set.</div>';
+    el2.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text2);font-size:14px">No items with target times set.</div>';
     return;
   }
-
   const labels = withTarget.map(r => r.item_number);
   const over   = withTarget.map(r => Math.round(r.avg_seconds || 0) > r.target_seconds ? r.count : 0);
   const onTime = withTarget.map((r, i) => (r.count || 0) - over[i]);
-
   drawBarChart('chartItemOnTimeSVG', {
     labels,
     datasets: [
@@ -3164,20 +3179,16 @@ function renderChartItemOnTime(rows) {
 }
 
 function renderChartOperator(rows) {
-  const wrap = document.querySelector('#pageCharts .report-chart-wrap:nth-child(3)') ||
-               document.getElementById('chartOperatorSVG')?.closest('.report-chart-wrap');
-  if (!wrap) return;
-
+  const el2 = document.getElementById('chartOperatorSVG');
+  if (!el2) return;
   if (!rows || !rows.length) {
-    wrap.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text2);font-size:14px">No operator data for this date range.</div>';
+    el2.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text2);font-size:14px">No operator data for this date range.</div>';
     return;
   }
-
   const labels  = rows.map(r => r.operator_name.split(' ')[0]);
   const jobs    = rows.map(r => r.jobs_completed || 0);
   const overdue = rows.map(r => r.overdue_count  || 0);
-  const avgMins = rows.map(r => r.avg_seconds     || 0);
-
+  const avgSecs = rows.map(r => r.avg_seconds     || 0);
   drawBarChart('chartOperatorSVG', {
     labels,
     datasets: [
@@ -3185,9 +3196,7 @@ function renderChartOperator(rows) {
       { label: 'Over Target',    data: overdue, color: CHART_COLORS.red  },
     ],
     yLabel: 'Jobs',
-  });
-  drawLineOverlay('chartOperatorSVG', {
-    labels, data: avgMins, color: CHART_COLORS.amber, label: 'Avg Secs',
+    lineData: { data: avgSecs, color: CHART_COLORS.amber, label: 'Avg Secs' },
   });
 }
 
