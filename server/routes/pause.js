@@ -17,7 +17,7 @@ const { requireAuth } = require('../middleware/auth');
 const router = express.Router();
 router.use(requireAuth);
 
-const ROLE_LEVEL = { operator: 1, supervisor: 2, manager: 3, administrator: 4 };
+const ROLE_LEVEL = { operator: 1, supervisor: 2, manager: 3, administrator: 4, superuser: 5 };
 function roleLevel(role) { return ROLE_LEVEL[role] || 0; }
 
 // ── POST /api/pause/:timerId/pause ────────────────────────────────────────────
