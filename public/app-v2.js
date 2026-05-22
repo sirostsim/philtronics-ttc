@@ -3192,6 +3192,141 @@ function renderChartOperator(rows) {
 }
 
 
+function renderReportStatCards(stats) {
+  const container = document.getElementById('reportStatCards');
+  if (!container) return;
+  if (!stats) { container.innerHTML = '<div class="empty-state">No data available.</div>'; return; }
+  const items     = stats.byItem || [];
+  const totalJobs = items.reduce((s, r) => s + r.count, 0);
+  const overCount = items.filter(r => r.target_seconds && Math.round(r.avg_seconds) > r.target_seconds).length;
+  const onTimePct = items.length ? Math.round((items.length - overCount) / items.length * 100) : 100;
+  const cards = [
+    { label: 'Jobs Completed',    value: totalJobs        },
+    { label: 'Item Types',        value: items.length     },
+    { label: 'On-Time Rate',      value: onTimePct + '%'  },
+    { label: 'Items Over Target', value: overCount        },
+  ];
+  container.innerHTML = '';
+  cards.forEach(({ label, value }) => {
+    const card = el('div', { className: 'stat-card' });
+    card.appendChild(el('div', { className: 'stat-label', textContent: label }));
+    card.appendChild(el('div', { className: 'stat-value', textContent: value }));
+    container.appendChild(card);
+  });
+}
+
+function renderProductivityTable(rows, targetPct = 80, hasDaily = false) {
+  const container = document.getElementById('reportProductivityTable');
+  if (!container) return;
+  if (!rows || !rows.length) {
+    container.innerHTML = '<div class="empty-state">No operator data for this date range.</div>';
+    return;
+  }
+  container.innerHTML = '';
+
+  const targetBar = el('div', { style: 'display:flex;align-items:center;gap:10px;margin-bottom:12px;font-size:13px;color:var(--text2)' });
+  targetBar.appendChild(el('span', { textContent: `Target: ${targetPct}% productive` }));
+  if (hasRole('administrator')) {
+    const editBtn = el('button', { className: 'btn btn-ghost btn-sm', textContent: '\u270f Edit Target' });
+    editBtn.addEventListener('click', () => openEditTargetModal(targetPct));
+    targetBar.appendChild(editBtn);
+  }
+  container.appendChild(targetBar);
+
+  const table = el('table', { className: 'dash-table', style: 'margin-bottom:24px' });
+  table.appendChild(el('thead', {}, el('tr', {},
+    el('th', { textContent: 'Operator' }),
+    el('th', { textContent: 'Dept' }),
+    el('th', { textContent: 'Active' }),
+    el('th', { textContent: 'Available' }),
+    el('th', { textContent: 'Productivity' }),
+    el('th', { textContent: 'vs Target' }),
+    el('th', { textContent: 'Timers' }),
+  )));
+  const tbody = el('tbody', {});
+  rows.forEach(r => {
+    const pct = r.productivityPct;
+    const vs  = r.vsTarget !== undefined ? r.vsTarget : pct - targetPct;
+    const barColor = pct >= targetPct ? 'var(--green)' : pct >= targetPct * 0.7 ? 'var(--amber)' : 'var(--red)';
+    const tr = el('tr', {});
+    tr.appendChild(el('td', { textContent: r.operatorName, style: 'font-weight:600' }));
+    tr.appendChild(el('td', { textContent: r.department || '\u2014', style: 'color:var(--text2)' }));
+    tr.appendChild(el('td', { textContent: r.activeHoursDisplay }));
+    tr.appendChild(el('td', { textContent: r.availableHoursDisplay, style: 'color:var(--text2)' }));
+    const pctCell = el('td', {});
+    const barWrap = el('div', { style: 'display:flex;align-items:center;gap:8px' });
+    const bar = el('div', { style: 'flex:1;background:var(--bg3);border-radius:4px;height:8px;min-width:80px;position:relative' });
+    bar.appendChild(el('div', { style: `width:${pct}%;background:${barColor};height:8px;border-radius:4px` }));
+    const marker = el('div', { style: `position:absolute;left:${Math.min(targetPct,99)}%;top:-3px;width:2px;height:14px;background:var(--text3);border-radius:1px`, title: `Target: ${targetPct}%` });
+    bar.appendChild(marker);
+    barWrap.appendChild(bar);
+    barWrap.appendChild(el('span', { textContent: pct + '%', style: `font-weight:700;color:${barColor};min-width:36px` }));
+    pctCell.appendChild(barWrap);
+    tr.appendChild(pctCell);
+    const vsColor = vs >= 0 ? 'var(--green)' : 'var(--red)';
+    tr.appendChild(el('td', { textContent: (vs >= 0 ? '+' : '') + vs + '%', style: `color:${vsColor};font-weight:600` }));
+    tr.appendChild(el('td', { textContent: r.timerCount, style: 'color:var(--text2)' }));
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  container.appendChild(table);
+
+  if (hasDaily && rows[0]?.daily?.length) {
+    const days = rows[0].daily.map(d => d.date);
+    const bdWrap = el('div', { style: 'overflow-x:auto' });
+    bdWrap.appendChild(el('div', { style: 'font-size:11px;font-weight:700;letter-spacing:.1em;color:var(--text2);margin-bottom:8px;text-transform:uppercase', textContent: 'Daily Breakdown' }));
+    const dt = el('table', { className: 'dash-table', style: 'min-width:500px' });
+    const htr = el('tr', {}, el('th', { textContent: 'Date' }));
+    rows.forEach(r => htr.appendChild(el('th', { textContent: r.operatorName.split(' ')[0], style: 'text-align:center' })));
+    dt.appendChild(el('thead', {}, htr));
+    const dtb = el('tbody', {});
+    days.forEach(date => {
+      const dtr = el('tr', {});
+      dtr.appendChild(el('td', { textContent: new Date(date).toLocaleDateString('en-GB', { weekday:'short', day:'2-digit', month:'short' }), style: 'white-space:nowrap;font-weight:600' }));
+      rows.forEach(r => {
+        const dd = (r.daily || []).find(d => d.date === date);
+        if (!dd || dd.availableMins === 0) { dtr.appendChild(el('td', { textContent: '\u2014', style: 'text-align:center;color:var(--text2)' })); return; }
+        const c = dd.productivityPct >= targetPct ? 'var(--green)' : dd.productivityPct >= targetPct * 0.7 ? 'var(--amber)' : 'var(--red)';
+        dtr.appendChild(el('td', { textContent: dd.productivityPct + '%', style: `text-align:center;font-weight:700;color:${c}` }));
+      });
+      dtb.appendChild(dtr);
+    });
+    const avgTr = el('tr', { style: 'border-top:2px solid var(--border)' });
+    avgTr.appendChild(el('td', { textContent: 'Average', style: 'font-weight:700' }));
+    rows.forEach(r => {
+      const c = r.productivityPct >= targetPct ? 'var(--green)' : r.productivityPct >= targetPct * 0.7 ? 'var(--amber)' : 'var(--red)';
+      avgTr.appendChild(el('td', { textContent: r.productivityPct + '%', style: `text-align:center;font-weight:700;color:${c}` }));
+    });
+    dtb.appendChild(avgTr);
+    dt.appendChild(dtb);
+    bdWrap.appendChild(dt);
+    container.appendChild(bdWrap);
+  }
+}
+
+function openEditTargetModal(currentTarget) {
+  const body = el('div', {});
+  body.appendChild(el('p', { textContent: 'Set the productivity target for all operators. Affects colour coding and vs Target column across all reports and dashboards.', style: 'margin-bottom:16px;font-size:14px;color:var(--text2)' }));
+  const input = el('input', { id: 'targetPctInput', type: 'number', min: '1', max: '100', value: String(currentTarget), style: 'width:100%;padding:12px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:16px' });
+  body.appendChild(el('div', { className: 'form-group' }, el('label', { for: 'targetPctInput', textContent: 'Productivity Target (%)' }), input));
+  const errDiv = el('div', { className: 'error-msg' }); body.appendChild(errDiv);
+  const btnSave   = el('button', { className: 'btn btn-primary', textContent: 'Save Target' });
+  const btnCancel = el('button', { className: 'btn btn-ghost',   textContent: 'Cancel' });
+  btnCancel.addEventListener('click', closeModal);
+  btnSave.addEventListener('click', async () => {
+    const val = parseInt(document.getElementById('targetPctInput').value, 10);
+    if (isNaN(val) || val < 1 || val > 100) { errDiv.textContent = 'Please enter a number between 1 and 100.'; return; }
+    btnSave.disabled = true;
+    try {
+      await api('PUT', '/config/productivity_target_pct', { value: val });
+      toast(`Productivity target updated to ${val}%`, 'success');
+      closeModal();
+      if (state.currentPage === 'reports') runReport();
+    } catch (err) { errDiv.textContent = err.message; btnSave.disabled = false; }
+  });
+  openModal('Edit Productivity Target', body, [btnCancel, btnSave]);
+}
+
 function renderReportItemTable(rows) {
   const wrap = document.getElementById('reportItemTable');
   wrap.innerHTML = '';
