@@ -2921,283 +2921,274 @@ async function runCharts() {
   operators = operators || [];
   const byItem = stats?.byItem || [];
 
-  // Recreate canvases now that data is ready and wraps are visible
-  const canvasIds = ['chartDailyTrend','chartItemOnTime','chartOperator'];
+  // Use named div containers for SVG charts — no canvas, no timing issues
+  const chartDefs = [
+    { id: 'chartDailyTrendSVG',  label: 'Daily Trend' },
+    { id: 'chartItemOnTimeSVG',  label: 'On-Time vs Over Target' },
+    { id: 'chartOperatorSVG',    label: 'Operator Performance' },
+  ];
   const wraps = document.querySelectorAll('#pageCharts .report-chart-wrap');
   wraps.forEach((wrap, i) => {
     wrap.innerHTML = '';
-    const canvas = document.createElement('canvas');
-    canvas.id = canvasIds[i];
-    wrap.appendChild(canvas);
+    const div = document.createElement('div');
+    div.id = chartDefs[i].id;
+    div.style.cssText = 'width:100%;height:100%';
+    wrap.appendChild(div);
   });
 
-  // Render — canvases are fresh, wraps are visible, no timing issues
+  // Render SVG charts directly — no library, no timing issues
   renderChartDailyTrend(trends);
   renderChartItemOnTime(byItem);
   renderChartOperator(operators);
 }
 
-// ── CHART RENDERERS ───────────────────────────────────────────────────────────
+// ── CHART RENDERERS — pure SVG, no Chart.js dependency ──────────────────────
+
+const CHART_COLORS = {
+  blue:  '#4299e1',
+  red:   '#ef4444',
+  green: '#22c55e',
+  amber: '#f0b429',
+  grid:  'rgba(255,255,255,0.07)',
+  text:  '#9aa0b8',
+  bg2:   '#171b26',
+};
+
+function svgEl(tag, attrs = {}) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+function makeSVGChart(wrap, W, H) {
+  wrap.innerHTML = '';
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', height: '100%',
+    style: 'display:block;overflow:visible' });
+  wrap.appendChild(svg);
+  return svg;
+}
+
+function drawBarChart(containerId, { labels, datasets, title, yLabel }) {
+  const wrap = document.getElementById(containerId);
+  if (!wrap) return;
+
+  const W = 700, H = 320;
+  const PAD = { top: 30, right: 20, bottom: 60, left: 55 };
+  const chartW = W - PAD.left - PAD.right;
+  const chartH = H - PAD.top  - PAD.bottom;
+
+  const svg = makeSVGChart(wrap, W, H);
+
+  // Find max value across all datasets
+  const allVals = datasets.flatMap(d => d.data);
+  const maxVal  = Math.max(...allVals, 1);
+  const yTicks  = 5;
+  const yStep   = Math.ceil(maxVal / yTicks);
+  const yMax    = yStep * yTicks;
+
+  // Grid lines + Y axis labels
+  for (let i = 0; i <= yTicks; i++) {
+    const val = yStep * i;
+    const y   = PAD.top + chartH - (val / yMax) * chartH;
+    svg.appendChild(svgEl('line', { x1: PAD.left, y1: y, x2: PAD.left + chartW, y2: y,
+      stroke: CHART_COLORS.grid, 'stroke-width': 1 }));
+    const lbl = svgEl('text', { x: PAD.left - 8, y: y + 4, 'text-anchor': 'end',
+      fill: CHART_COLORS.text, 'font-size': '11', 'font-family': 'sans-serif' });
+    lbl.textContent = val;
+    svg.appendChild(lbl);
+  }
+
+  // Bars
+  const nGroups  = labels.length;
+  const nDatasets = datasets.length;
+  const groupW   = chartW / nGroups;
+  const barPad   = groupW * 0.15;
+  const barW     = (groupW - barPad * 2) / nDatasets;
+
+  datasets.forEach((ds, di) => {
+    ds.data.forEach((val, gi) => {
+      if (!val) return;
+      const barH = (val / yMax) * chartH;
+      const x    = PAD.left + gi * groupW + barPad + di * barW;
+      const y    = PAD.top + chartH - barH;
+      const rect = svgEl('rect', { x, y, width: barW - 2, height: barH,
+        fill: ds.color, rx: 3 });
+      // Tooltip on hover
+      const t = svgEl('title'); t.textContent = `${ds.label}: ${val}`;
+      rect.appendChild(t);
+      svg.appendChild(rect);
+    });
+  });
+
+  // X axis labels
+  labels.forEach((lbl, gi) => {
+    const x = PAD.left + gi * groupW + groupW / 2;
+    const t = svgEl('text', { x, y: PAD.top + chartH + 18, 'text-anchor': 'middle',
+      fill: CHART_COLORS.text, 'font-size': '11', 'font-family': 'sans-serif' });
+    t.textContent = lbl;
+    svg.appendChild(t);
+  });
+
+  // Y axis label
+  const yAxisLbl = svgEl('text', {
+    x: 12, y: PAD.top + chartH / 2,
+    'text-anchor': 'middle', fill: CHART_COLORS.text,
+    'font-size': '11', 'font-family': 'sans-serif',
+    transform: `rotate(-90, 12, ${PAD.top + chartH / 2})`,
+  });
+  yAxisLbl.textContent = yLabel || '';
+  svg.appendChild(yAxisLbl);
+
+  // Legend
+  let lx = PAD.left;
+  datasets.forEach(ds => {
+    const rect = svgEl('rect', { x: lx, y: H - 18, width: 12, height: 12,
+      fill: ds.color, rx: 2 });
+    svg.appendChild(rect);
+    const t = svgEl('text', { x: lx + 16, y: H - 8, fill: CHART_COLORS.text,
+      'font-size': '11', 'font-family': 'sans-serif' });
+    t.textContent = ds.label;
+    svg.appendChild(t);
+    lx += ds.label.length * 7 + 30;
+  });
+}
+
+function drawLineOverlay(containerId, { labels, data, color, yMax, label }) {
+  // Overlay a line on an existing chart SVG
+  const wrap = document.getElementById(containerId);
+  if (!wrap) return;
+  const svg  = wrap.querySelector('svg');
+  if (!svg)  return;
+
+  const W = 700, H = 320;
+  const PAD = { top: 30, right: 20, bottom: 60, left: 55 };
+  const chartW = W - PAD.left - PAD.right;
+  const chartH = H - PAD.top  - PAD.bottom;
+  const localMax = Math.max(...data, 1);
+  const scale = localMax > 0 ? yMax / localMax : 1;
+
+  const nGroups = labels.length;
+  const groupW  = chartW / nGroups;
+
+  const points = data.map((val, gi) => {
+    const x = PAD.left + gi * groupW + groupW / 2;
+    const y = PAD.top + chartH - (val / localMax) * chartH;
+    return `${x},${y}`;
+  });
+
+  if (points.length > 1) {
+    const poly = svgEl('polyline', {
+      points: points.join(' '),
+      fill: 'none', stroke: color, 'stroke-width': 2.5,
+      'stroke-linejoin': 'round', 'stroke-linecap': 'round',
+    });
+    svg.appendChild(poly);
+  }
+
+  // Dots
+  data.forEach((val, gi) => {
+    const x = PAD.left + gi * groupW + groupW / 2;
+    const y = PAD.top + chartH - (val / localMax) * chartH;
+    const circle = svgEl('circle', { cx: x, cy: y, r: 4, fill: color });
+    const t = svgEl('title'); t.textContent = `${label}: ${Math.round(val / 60)}m avg`;
+    circle.appendChild(t);
+    svg.appendChild(circle);
+  });
+
+  // Add to legend
+  let lx = PAD.left;
+  svg.querySelectorAll('text').forEach(t => {
+    if (parseFloat(t.getAttribute('y')) > H - 25) {
+      lx = Math.max(lx, parseFloat(t.getAttribute('x')) + t.textContent.length * 7 + 20);
+    }
+  });
+  const r = svgEl('circle', { cx: lx + 6, cy: H - 12, r: 6, fill: color });
+  svg.appendChild(r);
+  const lt = svgEl('text', { x: lx + 16, y: H - 8, fill: CHART_COLORS.text,
+    'font-size': '11', 'font-family': 'sans-serif' });
+  lt.textContent = label;
+  svg.appendChild(lt);
+}
 
 function renderChartDailyTrend(rows) {
-  destroyChart('dailyTrend');
-  const canvas = document.getElementById('chartDailyTrend');
-  if (!canvas) return;
+  const wrap = document.querySelector('#pageCharts .report-chart-wrap:nth-child(1)') ||
+               document.getElementById('chartDailyTrend')?.closest('.report-chart-wrap');
+  if (!wrap) return;
+
   if (!rows || !rows.length) {
-    canvas.closest('.report-chart-wrap').innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text2);font-size:14px">No completed jobs found for this date range.</div>';
+    wrap.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text2);font-size:14px">No completed jobs found for this date range.</div>';
     return;
   }
-  forceDestroyCanvas(canvas);
+
   const labels  = rows.map(r => new Date(r.day).toLocaleDateString('en-GB', { day:'2-digit', month:'short' }));
-  const jobs    = rows.map(r => r.jobs_completed);
-  const overdue = rows.map(r => r.overdue_count);
-  const avgMins = rows.map(r => r.avg_seconds ? +(r.avg_seconds / 60).toFixed(1) : 0);
-  _charts.dailyTrend = new Chart(canvas, {
-    type: 'bar',
-    data: { labels, datasets: [
-      { label: 'Jobs Completed', data: jobs,    backgroundColor: C.blue,  borderRadius: 4, yAxisID: 'yJobs' },
-      { label: 'Over Target',    data: overdue, backgroundColor: C.red,   borderRadius: 4, yAxisID: 'yJobs' },
-      { label: 'Avg Time (mins)', data: avgMins, type: 'line', borderColor: C.amber,
-        backgroundColor: 'transparent', pointBackgroundColor: C.amber, pointRadius: 3, tension: 0.3, yAxisID: 'yMins' },
-    ]},
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      plugins: { legend: { labels: { color: C.text, font: CFONT } } },
-      scales: {
-        x:     { ticks: { color: C.text, font: CFONT }, grid: { color: C.grid } },
-        yJobs: { ticks: { color: C.text, font: CFONT }, grid: { color: C.grid }, beginAtZero: true,
-                 title: { display: true, text: 'Jobs', color: C.text, font: CFONT } },
-        yMins: { position: 'right', ticks: { color: C.amber, font: CFONT }, grid: { drawOnChartArea: false },
-                 beginAtZero: true, title: { display: true, text: 'Avg Mins', color: C.amber, font: CFONT } },
-      },
-    },
+  const jobs    = rows.map(r => r.jobs_completed || 0);
+  const overdue = rows.map(r => r.overdue_count  || 0);
+  const avgMins = rows.map(r => r.avg_seconds     || 0);
+
+  drawBarChart('chartDailyTrendSVG', {
+    labels,
+    datasets: [
+      { label: 'Jobs Completed', data: jobs,    color: CHART_COLORS.blue  },
+      { label: 'Over Target',    data: overdue, color: CHART_COLORS.red   },
+    ],
+    yLabel: 'Jobs',
+  });
+  drawLineOverlay('chartDailyTrendSVG', {
+    labels, data: avgMins, color: CHART_COLORS.amber, label: 'Avg Secs',
   });
 }
 
 function renderChartItemOnTime(rows) {
-  destroyChart('itemOnTime');
-  const canvas = document.getElementById('chartItemOnTime');
-  if (!canvas) return;
-  const withTarget = rows.filter(r => r.target_seconds).slice(0, 12);
+  const wrap = document.querySelector('#pageCharts .report-chart-wrap:nth-child(2)') ||
+               document.getElementById('chartItemOnTimeSVG')?.closest('.report-chart-wrap');
+  if (!wrap) return;
+
+  const withTarget = (rows || []).filter(r => r.target_seconds).slice(0, 12);
   if (!withTarget.length) {
-    canvas.closest('.report-chart-wrap').innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text2);font-size:14px">No items with target times found for this date range.</div>';
+    wrap.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text2);font-size:14px">No items with target times set.</div>';
     return;
   }
-  forceDestroyCanvas(canvas);
+
   const labels = withTarget.map(r => r.item_number);
-  const over   = withTarget.map(r => Math.round(r.avg_seconds) > r.target_seconds ? r.count : 0);
-  const onTime = withTarget.map((r, i) => r.count - over[i]);
-  _charts.itemOnTime = new Chart(canvas, {
-    type: 'bar',
-    data: { labels, datasets: [
-      { label: 'On Time',     data: onTime, backgroundColor: C.green, borderRadius: 4 },
-      { label: 'Over Target', data: over,   backgroundColor: C.red,   borderRadius: 4 },
-    ]},
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { labels: { color: C.text, font: CFONT } }, tooltip: { mode: 'index', intersect: false } },
-      scales: {
-        x: { stacked: true, ticks: { color: C.text, font: CFONT }, grid: { color: C.grid } },
-        y: { stacked: true, ticks: { color: C.text, font: CFONT }, grid: { color: C.grid }, beginAtZero: true,
-             title: { display: true, text: 'Jobs', color: C.text, font: CFONT } },
-      },
-    },
+  const over   = withTarget.map(r => Math.round(r.avg_seconds || 0) > r.target_seconds ? r.count : 0);
+  const onTime = withTarget.map((r, i) => (r.count || 0) - over[i]);
+
+  drawBarChart('chartItemOnTimeSVG', {
+    labels,
+    datasets: [
+      { label: 'On Time',     data: onTime, color: CHART_COLORS.green },
+      { label: 'Over Target', data: over,   color: CHART_COLORS.red   },
+    ],
+    yLabel: 'Jobs',
   });
 }
 
 function renderChartOperator(rows) {
-  destroyChart('operator');
-  const canvas = document.getElementById('chartOperator');
-  if (!canvas) return;
-  if (!rows.length) {
-    canvas.closest('.report-chart-wrap').innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text2);font-size:14px">No operator data found for this date range.</div>';
-    return;
-  }
-  forceDestroyCanvas(canvas);
-  const labels  = rows.map(r => r.operator_name.split(' ')[0]);
-  const jobs    = rows.map(r => r.jobs_completed);
-  const overdue = rows.map(r => r.overdue_count);
-  const avgMins = rows.map(r => r.avg_seconds ? +(r.avg_seconds / 60).toFixed(1) : 0);
-  _charts.operator = new Chart(canvas, {
-    type: 'bar',
-    data: { labels, datasets: [
-      { label: 'Jobs Completed', data: jobs,    backgroundColor: C.blue, borderRadius: 4, yAxisID: 'yJobs' },
-      { label: 'Over Target',    data: overdue, backgroundColor: C.red,  borderRadius: 4, yAxisID: 'yJobs' },
-      { label: 'Avg Time (mins)', data: avgMins, type: 'line', borderColor: C.amber,
-        backgroundColor: 'transparent', pointBackgroundColor: C.amber, pointRadius: 4, yAxisID: 'yMins' },
-    ]},
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      plugins: { legend: { labels: { color: C.text, font: CFONT } } },
-      scales: {
-        x:     { ticks: { color: C.text, font: CFONT }, grid: { color: C.grid } },
-        yJobs: { ticks: { color: C.text, font: CFONT }, grid: { color: C.grid }, beginAtZero: true,
-                 title: { display: true, text: 'Jobs', color: C.text, font: CFONT } },
-        yMins: { position: 'right', ticks: { color: C.amber, font: CFONT }, grid: { drawOnChartArea: false },
-                 beginAtZero: true, title: { display: true, text: 'Avg Mins', color: C.amber, font: CFONT } },
-      },
-    },
-  });
-}
+  const wrap = document.querySelector('#pageCharts .report-chart-wrap:nth-child(3)') ||
+               document.getElementById('chartOperatorSVG')?.closest('.report-chart-wrap');
+  if (!wrap) return;
 
-
-function renderReportStatCards(stats) {
-  const container = document.getElementById('reportStatCards');
-  if (!container) return;
-  if (!stats) { container.innerHTML = '<div class="empty-state">No data available.</div>'; return; }
-  const onTimeCount = (stats.byItem || []).filter(r => !r.target_seconds || Math.round(r.avg_seconds) <= r.target_seconds).length;
-  const totalItems  = (stats.byItem || []).length;
-  const onTimePct   = totalItems ? Math.round(onTimeCount / totalItems * 100) : 100;
-  const overCount   = (stats.byItem || []).filter(r => r.target_seconds && Math.round(r.avg_seconds) > r.target_seconds).length;
-  const cards = [
-    { label: 'Jobs Completed', value: (stats.byItem || []).reduce((s,r) => s + r.count, 0) },
-    { label: 'Item Types',     value: totalItems },
-    { label: 'On-Time Rate',   value: onTimePct + '%' },
-    { label: 'Items Over Target', value: overCount },
-  ];
-  container.innerHTML = '';
-  cards.forEach(({ label, value }) => {
-    const card = el('div', { className: 'stat-card' });
-    card.appendChild(el('div', { className: 'stat-label', textContent: label }));
-    card.appendChild(el('div', { className: 'stat-value', textContent: value }));
-    container.appendChild(card);
-  });
-}
-
-function renderProductivityTable(rows, targetPct = 80, hasDaily = false) {
-  const container = document.getElementById('reportProductivityTable');
-  if (!container) return;
   if (!rows || !rows.length) {
-    container.innerHTML = '<div class="empty-state">No operator data for this date range.</div>';
+    wrap.innerHTML = '<div style="padding:40px 0;text-align:center;color:var(--text2);font-size:14px">No operator data for this date range.</div>';
     return;
   }
-  container.innerHTML = '';
 
-  // Target info bar
-  const targetBar = el('div', { style: 'display:flex;align-items:center;gap:10px;margin-bottom:12px;font-size:13px;color:var(--text2)' });
-  targetBar.appendChild(el('span', { textContent: `Target: ${targetPct}% productive` }));
-  if (hasRole('administrator')) {
-    const editBtn = el('button', { className: 'btn btn-ghost btn-sm', textContent: '✏ Edit Target' });
-    editBtn.addEventListener('click', () => openEditTargetModal(targetPct));
-    targetBar.appendChild(editBtn);
-  }
-  container.appendChild(targetBar);
+  const labels  = rows.map(r => r.operator_name.split(' ')[0]);
+  const jobs    = rows.map(r => r.jobs_completed || 0);
+  const overdue = rows.map(r => r.overdue_count  || 0);
+  const avgMins = rows.map(r => r.avg_seconds     || 0);
 
-  // Summary table
-  const table = el('table', { className: 'dash-table', style: 'margin-bottom:24px' });
-  table.appendChild(el('thead', {}, el('tr', {},
-    el('th', { textContent: 'Operator' }),
-    el('th', { textContent: 'Dept' }),
-    el('th', { textContent: 'Active' }),
-    el('th', { textContent: 'Available' }),
-    el('th', { textContent: 'Productivity' }),
-    el('th', { textContent: 'vs Target' }),
-    el('th', { textContent: 'Timers' }),
-  )));
-  const tbody = el('tbody', {});
-  rows.forEach(r => {
-    const pct = r.productivityPct;
-    const vs  = r.vsTarget !== undefined ? r.vsTarget : pct - targetPct;
-    const barColor = pct >= targetPct ? 'var(--green)' : pct >= targetPct * 0.7 ? 'var(--amber)' : 'var(--red)';
-    const tr = el('tr', {});
-    tr.appendChild(el('td', { textContent: r.operatorName, style: 'font-weight:600' }));
-    tr.appendChild(el('td', { textContent: r.department || '—', style: 'color:var(--text2)' }));
-    tr.appendChild(el('td', { textContent: r.activeHoursDisplay }));
-    tr.appendChild(el('td', { textContent: r.availableHoursDisplay, style: 'color:var(--text2)' }));
-    const pctCell = el('td', {});
-    const barWrap = el('div', { style: 'display:flex;align-items:center;gap:8px' });
-    const bar = el('div', { style: 'flex:1;background:var(--bg3);border-radius:4px;height:8px;min-width:80px;position:relative' });
-    bar.appendChild(el('div', { style: `width:${pct}%;background:${barColor};height:8px;border-radius:4px` }));
-    const marker = el('div', { style: `position:absolute;left:${Math.min(targetPct,99)}%;top:-3px;width:2px;height:14px;background:var(--text3);border-radius:1px`, title: `Target: ${targetPct}%` });
-    bar.appendChild(marker);
-    barWrap.appendChild(bar);
-    barWrap.appendChild(el('span', { textContent: pct + '%', style: `font-weight:700;color:${barColor};min-width:36px` }));
-    pctCell.appendChild(barWrap);
-    tr.appendChild(pctCell);
-    const vsColor = vs >= 0 ? 'var(--green)' : 'var(--red)';
-    tr.appendChild(el('td', { textContent: (vs >= 0 ? '+' : '') + vs + '%', style: `color:${vsColor};font-weight:600` }));
-    tr.appendChild(el('td', { textContent: r.timerCount, style: 'color:var(--text2)' }));
-    tbody.appendChild(tr);
+  drawBarChart('chartOperatorSVG', {
+    labels,
+    datasets: [
+      { label: 'Jobs Completed', data: jobs,    color: CHART_COLORS.blue },
+      { label: 'Over Target',    data: overdue, color: CHART_COLORS.red  },
+    ],
+    yLabel: 'Jobs',
   });
-  table.appendChild(tbody);
-  container.appendChild(table);
-
-  // Daily breakdown
-  if (hasDaily && rows[0]?.daily?.length) {
-    const days = rows[0].daily.map(d => d.date);
-    const bdWrap = el('div', { style: 'overflow-x:auto' });
-    bdWrap.appendChild(el('div', {
-      style: 'font-size:11px;font-weight:700;letter-spacing:.1em;color:var(--text2);margin-bottom:8px;text-transform:uppercase',
-      textContent: 'Daily Breakdown',
-    }));
-    const dt = el('table', { className: 'dash-table', style: 'min-width:500px' });
-    const htr = el('tr', {}, el('th', { textContent: 'Date' }));
-    rows.forEach(r => htr.appendChild(el('th', { textContent: r.operatorName.split(' ')[0], style: 'text-align:center' })));
-    dt.appendChild(el('thead', {}, htr));
-    const dtb = el('tbody', {});
-    days.forEach(date => {
-      const dtr = el('tr', {});
-      dtr.appendChild(el('td', {
-        textContent: new Date(date).toLocaleDateString('en-GB', { weekday:'short', day:'2-digit', month:'short' }),
-        style: 'white-space:nowrap;font-weight:600',
-      }));
-      rows.forEach(r => {
-        const dd = (r.daily || []).find(d => d.date === date);
-        if (!dd || dd.availableMins === 0) {
-          dtr.appendChild(el('td', { textContent: '—', style: 'text-align:center;color:var(--text2)' }));
-          return;
-        }
-        const c = dd.productivityPct >= targetPct ? 'var(--green)' : dd.productivityPct >= targetPct * 0.7 ? 'var(--amber)' : 'var(--red)';
-        dtr.appendChild(el('td', { textContent: dd.productivityPct + '%', style: `text-align:center;font-weight:700;color:${c}` }));
-      });
-      dtb.appendChild(dtr);
-    });
-    // Averages footer
-    const avgTr = el('tr', { style: 'border-top:2px solid var(--border)' });
-    avgTr.appendChild(el('td', { textContent: 'Average', style: 'font-weight:700' }));
-    rows.forEach(r => {
-      const c = r.productivityPct >= targetPct ? 'var(--green)' : r.productivityPct >= targetPct * 0.7 ? 'var(--amber)' : 'var(--red)';
-      avgTr.appendChild(el('td', { textContent: r.productivityPct + '%', style: `text-align:center;font-weight:700;color:${c}` }));
-    });
-    dtb.appendChild(avgTr);
-    dt.appendChild(dtb);
-    bdWrap.appendChild(dt);
-    container.appendChild(bdWrap);
-  }
-}
-
-function openEditTargetModal(currentTarget) {
-  const body = el('div', {});
-  body.appendChild(el('p', {
-    textContent: 'Set the productivity target for all operators. Affects colour coding and vs Target column across all reports and dashboards.',
-    style: 'margin-bottom:16px;font-size:14px;color:var(--text2)',
-  }));
-  const input = el('input', {
-    id: 'targetPctInput', type: 'number', min: '1', max: '100', value: String(currentTarget),
-    style: 'width:100%;padding:12px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:16px',
+  drawLineOverlay('chartOperatorSVG', {
+    labels, data: avgMins, color: CHART_COLORS.amber, label: 'Avg Secs',
   });
-  body.appendChild(el('div', { className: 'form-group' },
-    el('label', { for: 'targetPctInput', textContent: 'Productivity Target (%)' }),
-    input
-  ));
-  const errDiv = el('div', { className: 'error-msg' }); body.appendChild(errDiv);
-  const btnSave   = el('button', { className: 'btn btn-primary', textContent: 'Save Target' });
-  const btnCancel = el('button', { className: 'btn btn-ghost',   textContent: 'Cancel' });
-  btnCancel.addEventListener('click', closeModal);
-  btnSave.addEventListener('click', async () => {
-    const val = parseInt(document.getElementById('targetPctInput').value, 10);
-    if (isNaN(val) || val < 1 || val > 100) { errDiv.textContent = 'Please enter a number between 1 and 100.'; return; }
-    btnSave.disabled = true;
-    try {
-      await api('PUT', '/config/productivity_target_pct', { value: val });
-      toast(`Productivity target updated to ${val}%`, 'success');
-      closeModal();
-      if (state.currentPage === 'reports') runReport();
-    } catch (err) { errDiv.textContent = err.message; btnSave.disabled = false; }
-  });
-  openModal('Edit Productivity Target', body, [btnCancel, btnSave]);
 }
 
 
