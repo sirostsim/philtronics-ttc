@@ -616,6 +616,37 @@ document.getElementById('btnStart').addEventListener('click', async () => {
     return;
   }
 
+  // ── Assembly resume check ────────────────────────────────────────────────
+  // If wo_number AND route_card are both entered, check whether this operator
+  // has previous completed stints on the same assembly within the last 7 days.
+  // If so, prompt before starting a new session.
+  if (woNumber && routeCard) {
+    try {
+      const sevenDaysAgo = new Date(Date.now() - 7*24*60*60*1000).toISOString();
+      const qs = new URLSearchParams({
+        from: sevenDaysAgo,
+        wo: woNumber,
+        rc: routeCard,
+      });
+      const summary = await GET(`/export/assembly-summary?${qs}`);
+      const match = (summary?.assemblies || []).find(a =>
+        a.itemNumber.toLowerCase()    === itemNumber.toLowerCase() &&
+        a.woNumber                    === woNumber &&
+        (a.routeCardNumber || '')     === routeCard
+      );
+      if (match) {
+        // Found previous work on this assembly — show resume prompt
+        const shouldContinue = await showAssemblyResumePrompt(match);
+        if (shouldContinue === null) return; // User cancelled entirely
+        // If shouldContinue === true or false, proceed to start either way
+        // (the report handles summing all stints automatically)
+      }
+    } catch (_) {
+      // If the check fails for any reason, proceed silently — don't block the operator
+    }
+  }
+  // ── End assembly resume check ────────────────────────────────────────────
+
   const btn = document.getElementById('btnStart');
   btn.disabled = true;
   try {
@@ -1058,6 +1089,92 @@ document.getElementById('btnBulkUpload').addEventListener('click', () => {
 document.getElementById('btnNewUser').addEventListener('click', () => {
   openUserModal(null);
 });
+
+// Returns a Promise:
+//   true  — operator confirmed they want to continue this assembly (proceed to start)
+//   false — operator chose to start fresh (proceed to start)
+//   null  — operator cancelled (do not start)
+function showAssemblyResumePrompt(assembly) {
+  return new Promise(resolve => {
+    const body = el('div', {});
+
+    // Assembly identity
+    const identityCard = el('div', { style: 'background:var(--bg3);border-radius:10px;padding:14px 16px;margin-bottom:16px' });
+    identityCard.appendChild(el('div', { textContent: assembly.itemNumber,
+      style: 'font-size:20px;font-weight:700;color:var(--accent);margin-bottom:6px' }));
+    const tags = el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' });
+    tags.appendChild(el('span', { textContent: 'W/O: ' + assembly.woNumber,
+      style: 'font-size:13px;color:var(--text2);background:var(--bg2);padding:3px 10px;border-radius:4px' }));
+    if (assembly.routeCardNumber) {
+      tags.appendChild(el('span', { textContent: 'RC: ' + assembly.routeCardNumber,
+        style: 'font-size:13px;color:var(--text2);background:var(--bg2);padding:3px 10px;border-radius:4px' }));
+    }
+    identityCard.appendChild(tags);
+    body.appendChild(identityCard);
+
+    // Previous work summary
+    body.appendChild(el('p', {
+      textContent: 'You have already worked on this assembly. Here\'s a summary of the time recorded so far:',
+      style: 'font-size:14px;color:var(--text2);margin-bottom:12px',
+    }));
+
+    // Time summary grid
+    const grid = el('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px' });
+    const timeItems = [
+      { label: 'Your time so far', value: assembly.operators?.find(o => o.operatorId === state.user?.id)?.totalDisplay || assembly.combinedDisplay || '\u2014', color: 'var(--text)' },
+      { label: 'Total combined time', value: assembly.combinedDisplay || '\u2014', color: 'var(--text)' },
+      { label: 'Contributors', value: assembly.operatorCount + ' operator' + (assembly.operatorCount !== 1 ? 's' : ''), color: 'var(--text2)' },
+      { label: 'Elapsed (wall clock)', value: assembly.elapsedDisplay || '\u2014', color: 'var(--green)' },
+    ];
+    timeItems.forEach(({ label, value, color }) => {
+      const box = el('div', { style: 'background:var(--bg3);border-radius:8px;padding:10px 12px' });
+      box.appendChild(el('div', { textContent: label,
+        style: 'font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px' }));
+      box.appendChild(el('div', { textContent: value,
+        style: `font-size:16px;font-weight:700;color:${color}` }));
+      grid.appendChild(box);
+    });
+    body.appendChild(grid);
+
+    // Per-operator breakdown if multi-operator
+    if (assembly.operatorCount > 1) {
+      body.appendChild(el('div', { textContent: 'Operators who have worked on this assembly:',
+        style: 'font-size:13px;font-weight:600;color:var(--text2);margin-bottom:6px' }));
+      const tbl = el('table', { className: 'dash-table', style: 'margin-bottom:16px' });
+      tbl.appendChild(el('thead', {}, el('tr', {},
+        el('th', { textContent: 'Operator' }),
+        el('th', { textContent: 'Time' }),
+        el('th', { textContent: 'Stints' }),
+      )));
+      const tbody = el('tbody', {});
+      (assembly.operators || []).forEach(op => {
+        tbody.appendChild(el('tr', {},
+          el('td', { textContent: op.operatorName, style: 'font-weight:600' }),
+          el('td', { textContent: op.totalDisplay || '\u2014' }),
+          el('td', { textContent: op.stints.length, style: 'color:var(--text2)' }),
+        ));
+      });
+      tbl.appendChild(tbody);
+      body.appendChild(tbl);
+    }
+
+    body.appendChild(el('p', {
+      textContent: 'Do you want to continue timing this assembly, or start a completely new session?',
+      style: 'font-size:14px;color:var(--text2);margin-bottom:4px',
+    }));
+
+    // Buttons
+    const btnCancel    = el('button', { className: 'btn btn-ghost',   textContent: 'Cancel' });
+    const btnNewSess   = el('button', { className: 'btn btn-ghost',   textContent: '\u25B6 New Session' });
+    const btnContinue  = el('button', { className: 'btn btn-primary', textContent: '\u25B6 Continue This Assembly' });
+
+    btnCancel.addEventListener('click',   () => { closeModal(); resolve(null);  });
+    btnNewSess.addEventListener('click',  () => { closeModal(); resolve(false); });
+    btnContinue.addEventListener('click', () => { closeModal(); resolve(true);  });
+
+    openModal('Assembly Already in Progress', body, [btnCancel, btnNewSess, btnContinue]);
+  });
+}
 
 function openBulkUploadModal() {
   const body = el('div', {});
