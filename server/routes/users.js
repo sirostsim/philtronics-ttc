@@ -187,4 +187,101 @@ router.post('/admin/cancel-stuck-timers', async (req, res) => {
   }
 });
 
+// POST /api/users/bulk-upload
+// Accepts JSON array of user rows, validates all, then creates them
+// Admin can create operator/supervisor/manager only
+// Superuser can also create administrator
+router.post('/bulk-upload', async (req, res) => {
+  try {
+    const rows = req.body?.rows;
+    if (!Array.isArray(rows) || !rows.length) {
+      return res.status(400).json({ error: 'No rows provided.' });
+    }
+    if (rows.length > 200) {
+      return res.status(400).json({ error: 'Maximum 200 users per upload.' });
+    }
+
+    const VALID_ROLES = CREATABLE_ROLES[req.user.role] || [];
+    const VALID_DEPTS = ['Production', 'Stores', 'Test and Inspection', 'PCB'];
+
+    // Validate all rows first — collect results without writing anything
+    const results = [];
+    const usernamesInBatch = new Set();
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const rowNum = i + 1;
+      const errors = [];
+
+      const username  = (row.username  || '').trim().toLowerCase();
+      const fullName  = (row.full_name || row.fullName || row.name || '').trim();
+      const role      = (row.role      || '').trim().toLowerCase();
+      const dept      = (row.department|| row.dept || '').trim();
+      const password  = (row.password  || '').trim();
+
+      if (!username)  errors.push('Username is required');
+      else if (!/^[a-z0-9_.\-]{2,40}$/.test(username)) errors.push('Username must be 2-40 chars, letters/numbers/._- only');
+
+      if (!fullName)  errors.push('Full name is required');
+      if (!role)      errors.push('Role is required');
+      else if (!VALID_ROLES.includes(role)) errors.push(`Role "${role}" not permitted — must be one of: ${VALID_ROLES.join(', ')}`);
+
+      if (!dept)      errors.push('Department is required');
+      else if (!VALID_DEPTS.includes(dept)) errors.push(`Department "${dept}" not recognised — must be one of: ${VALID_DEPTS.join(', ')}`);
+
+      if (!password)  errors.push('Password is required');
+      else if (password.length < 8) errors.push('Password must be at least 8 characters');
+
+      // Duplicate within this batch
+      if (username && usernamesInBatch.has(username)) errors.push('Duplicate username in this file');
+      if (username) usernamesInBatch.add(username);
+
+      // Duplicate against existing users
+      if (username && !errors.length) {
+        const existing = await require('../db').queryOne(
+          'SELECT 1 FROM users WHERE LOWER(username) = $1', [username]
+        );
+        if (existing) errors.push('Username already exists');
+      }
+
+      results.push({
+        rowNum,
+        username,
+        fullName,
+        role,
+        department: dept,
+        valid: errors.length === 0,
+        errors,
+      });
+    }
+
+    // If caller just wants validation (dry run), return results now
+    if (req.body.dryRun) {
+      return res.json({ results, validCount: results.filter(r => r.valid).length });
+    }
+
+    // Otherwise create all valid rows
+    const created = []; const skipped = [];
+    for (const r of results) {
+      if (!r.valid) { skipped.push(r); continue; }
+      const id   = require('uuid').v4();
+      const hash = await require('bcrypt').hash(
+        rows.find(row => (row.username||'').trim().toLowerCase() === r.username)?.password || '',
+        parseInt(process.env.BCRYPT_ROUNDS || '12', 10)
+      );
+      await require('../db').query(
+        `INSERT INTO users (id, username, password_hash, full_name, role, department, is_active)
+         VALUES ($1,$2,$3,$4,$5,$6,TRUE)`,
+        [id, r.username, hash, r.fullName, r.role, r.department]
+      );
+      created.push(r);
+    }
+
+    res.json({ created: created.length, skipped: skipped.length, results });
+  } catch (err) {
+    console.error('Bulk upload error:', err.message);
+    res.status(500).json({ error: 'Bulk upload failed.' });
+  }
+});
+
 module.exports = router;

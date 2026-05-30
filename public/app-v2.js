@@ -1051,9 +1051,194 @@ function renderAdminTools() {
   });
 }
 
+document.getElementById('btnBulkUpload').addEventListener('click', () => {
+  openBulkUploadModal();
+});
+
 document.getElementById('btnNewUser').addEventListener('click', () => {
   openUserModal(null);
 });
+
+function openBulkUploadModal() {
+  const body = el('div', {});
+
+  // Instructions
+  const instructions = el('div', { style: 'background:var(--bg3);border-radius:8px;padding:14px;margin-bottom:16px;font-size:13px;color:var(--text2);line-height:1.6' });
+  instructions.innerHTML = `
+    <strong style="color:var(--text);display:block;margin-bottom:6px">CSV Format</strong>
+    Upload a CSV file with the following columns (header row required):<br>
+    <code style="color:var(--accent);font-size:12px">username, full_name, role, department, password</code><br><br>
+    <strong style="color:var(--text)">Valid roles:</strong> operator, supervisor, manager${state.user.role === 'superuser' ? ', administrator' : ''}<br>
+    <strong style="color:var(--text)">Valid departments:</strong> Production, Stores, Test and Inspection, PCB<br>
+    <strong style="color:var(--text)">Max rows:</strong> 200 per upload
+  `;
+  body.appendChild(instructions);
+
+  // Download template link
+  const tmplBtn = el('button', { className: 'btn btn-ghost btn-sm', textContent: '⬇ Download CSV Template', style: 'margin-bottom:16px' });
+  tmplBtn.addEventListener('click', () => {
+    const csv = [
+      'username,full_name,role,department,password',
+      'jsmith,John Smith,operator,Production,Temp1234!',
+      'ataylor,Anne Taylor,supervisor,Stores,Temp1234!',
+    ].join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'worktime-users-template.csv'; a.click();
+  });
+  body.appendChild(tmplBtn);
+
+  // File input
+  const fileLabel = el('label', { style: 'display:block;margin-bottom:16px' });
+  fileLabel.appendChild(el('div', { textContent: 'Select CSV file', style: 'font-size:13px;font-weight:600;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em' }));
+  const fileInput = el('input', { type: 'file', accept: '.csv,text/csv',
+    style: 'width:100%;padding:10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px;cursor:pointer' });
+  fileLabel.appendChild(fileInput);
+  body.appendChild(fileLabel);
+
+  // Preview area
+  const previewArea = el('div', { id: 'bulkPreviewArea' });
+  body.appendChild(previewArea);
+
+  const errDiv = el('div', { className: 'error-msg', style: 'margin-top:8px' });
+  body.appendChild(errDiv);
+
+  const btnCancel  = el('button', { className: 'btn btn-ghost',   textContent: 'Cancel' });
+  const btnPreview = el('button', { className: 'btn btn-ghost',   textContent: 'Validate CSV', disabled: true });
+  const btnConfirm = el('button', { className: 'btn btn-primary', textContent: 'Create Users', disabled: true });
+  btnCancel.addEventListener('click', closeModal);
+
+  let parsedRows = [];
+
+  // Parse CSV when file selected
+  fileInput.addEventListener('change', () => {
+    previewArea.innerHTML = '';
+    btnPreview.disabled = true;
+    btnConfirm.disabled = true;
+    errDiv.textContent = '';
+    const file = fileInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      const text = e.target.result;
+      const lines = text.trim().split(/\r?\n/).filter(l => l.trim());
+      if (lines.length < 2) { errDiv.textContent = 'File must have a header row and at least one data row.'; return; }
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g,''));
+      const required = ['username','full_name','role','department','password'];
+      const missing = required.filter(r => !headers.includes(r));
+      if (missing.length) { errDiv.textContent = `Missing columns: ${missing.join(', ')}`; return; }
+      parsedRows = lines.slice(1).map(line => {
+        // Handle quoted CSV fields
+        const vals = []; let cur = ''; let inQ = false;
+        for (let i = 0; i < line.length; i++) {
+          const ch = line[i];
+          if (ch === '"') { inQ = !inQ; }
+          else if (ch === ',' && !inQ) { vals.push(cur.trim()); cur = ''; }
+          else { cur += ch; }
+        }
+        vals.push(cur.trim());
+        const row = {};
+        headers.forEach((h, i) => { row[h] = (vals[i] || '').replace(/^"|"$/g,''); });
+        return row;
+      }).filter(r => Object.values(r).some(v => v));
+      if (!parsedRows.length) { errDiv.textContent = 'No data rows found.'; return; }
+      previewArea.appendChild(el('div', { textContent: `${parsedRows.length} row${parsedRows.length!==1?'s':''} found. Click Validate to check for errors.`,
+        style: 'font-size:13px;color:var(--text2);padding:8px 0' }));
+      btnPreview.disabled = false;
+    };
+    reader.readAsText(file);
+  });
+
+  // Validate (dry run)
+  btnPreview.addEventListener('click', async () => {
+    previewArea.innerHTML = '';
+    btnConfirm.disabled = true;
+    errDiv.textContent = '';
+    btnPreview.disabled = true;
+    btnPreview.textContent = 'Validating\u2026';
+    try {
+      const data = await api('POST', '/users/bulk-upload', { rows: parsedRows, dryRun: true });
+      renderBulkPreview(previewArea, data.results);
+      const validCount = data.validCount;
+      if (validCount === 0) {
+        errDiv.textContent = 'No valid rows to create. Please fix the errors above.';
+      } else {
+        btnConfirm.disabled = false;
+        btnConfirm.textContent = `Create ${validCount} User${validCount!==1?'s':''}`;
+      }
+    } catch (err) {
+      errDiv.textContent = err.message;
+    } finally {
+      btnPreview.disabled = false;
+      btnPreview.textContent = 'Validate CSV';
+    }
+  });
+
+  // Confirm upload
+  btnConfirm.addEventListener('click', async () => {
+    btnConfirm.disabled = true;
+    btnConfirm.textContent = 'Creating\u2026';
+    errDiv.textContent = '';
+    try {
+      const data = await api('POST', '/users/bulk-upload', { rows: parsedRows, dryRun: false });
+      closeModal();
+      toast(`${data.created} user${data.created!==1?'s':''} created${data.skipped?' ('+data.skipped+' skipped)':''}`, 'success');
+      loadAdminPage();
+    } catch (err) {
+      errDiv.textContent = err.message;
+      btnConfirm.disabled = false;
+      btnConfirm.textContent = 'Create Users';
+    }
+  });
+
+  openModal('Bulk Upload Users', body, [btnCancel, btnPreview, btnConfirm]);
+}
+
+function renderBulkPreview(container, results) {
+  container.innerHTML = '';
+  const validCount   = results.filter(r => r.valid).length;
+  const invalidCount = results.length - validCount;
+
+  // Summary banner
+  const summary = el('div', { style: `display:flex;gap:10px;margin-bottom:12px;padding:10px 14px;border-radius:8px;background:var(--bg3);font-size:13px` });
+  summary.appendChild(el('span', { textContent: `✓ ${validCount} valid`, style: 'color:var(--green);font-weight:700' }));
+  if (invalidCount) summary.appendChild(el('span', { textContent: `✗ ${invalidCount} invalid`, style: 'color:var(--red);font-weight:700' }));
+  container.appendChild(summary);
+
+  // Preview table
+  const wrap = el('div', { style: 'max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:8px' });
+  const tbl = el('table', { className: 'dash-table', style: 'margin:0' });
+  tbl.appendChild(el('thead', {}, el('tr', {},
+    el('th', { textContent: '#' }),
+    el('th', { textContent: 'Username' }),
+    el('th', { textContent: 'Full Name' }),
+    el('th', { textContent: 'Role' }),
+    el('th', { textContent: 'Department' }),
+    el('th', { textContent: 'Status' }),
+  )));
+  const tbody = el('tbody', {});
+  results.forEach(r => {
+    const tr = el('tr', { style: r.valid ? '' : 'background:rgba(239,68,68,.06)' });
+    tr.appendChild(el('td', { textContent: r.rowNum, style: 'color:var(--text2)' }));
+    tr.appendChild(el('td', { textContent: r.username || '\u2014', style: 'font-family:var(--font-mono,monospace)' }));
+    tr.appendChild(el('td', { textContent: r.fullName  || '\u2014' }));
+    tr.appendChild(el('td', { textContent: r.role      || '\u2014' }));
+    tr.appendChild(el('td', { textContent: r.department|| '\u2014' }));
+    const statusCell = el('td', {});
+    if (r.valid) {
+      statusCell.appendChild(el('span', { textContent: '✓ Ready', style: 'color:var(--green);font-weight:600;font-size:12px' }));
+    } else {
+      const errList = el('ul', { style: 'margin:0;padding-left:16px;list-style:disc' });
+      r.errors.forEach(e => errList.appendChild(el('li', { textContent: e, style: 'color:var(--red);font-size:12px' })));
+      statusCell.appendChild(errList);
+    }
+    tr.appendChild(statusCell);
+    tbody.appendChild(tr);
+  });
+  tbl.appendChild(tbody);
+  wrap.appendChild(tbl);
+  container.appendChild(wrap);
+}
 
 function renderUserList(users) {
   const container = document.getElementById('userList');
