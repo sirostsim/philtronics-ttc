@@ -400,9 +400,11 @@ router.get('/productivity', async (req, res) => {
       : new Date();
 
     // Get productivity target from config
-    const { queryOne: qOne } = require('../db');
-    const configRow = await qOne(`SELECT value FROM config WHERE key = 'productivity_target_pct'`);
-    const targetPct = configRow ? parseInt(configRow.value, 10) : 80;
+    let targetPct = 80;
+    try {
+      const configRow = await queryOne(`SELECT value FROM config WHERE key = 'productivity_target_pct'`);
+      if (configRow) targetPct = parseInt(configRow.value, 10);
+    } catch (_) { /* config table not yet created — use default */ }
 
     // Build operator conditions
     const conditions = [`u.role = 'operator'`, `u.is_active = TRUE`];
@@ -516,8 +518,11 @@ router.get('/productivity/csv', async (req, res) => {
       ? (() => { const d = new Date(to); d.setHours(23,59,59,999); return d; })()
       : new Date();
 
-    const configRow = await queryOne(`SELECT value FROM config WHERE key = 'productivity_target_pct'`);
-    const targetPct = configRow ? parseInt(configRow.value, 10) : 80;
+    let targetPct = 80;
+    try {
+      const configRow = await queryOne(`SELECT value FROM config WHERE key = 'productivity_target_pct'`);
+      if (configRow) targetPct = parseInt(configRow.value, 10);
+    } catch (_) { /* config table not yet created — use default */ }
 
     const conditions = [`u.role = 'operator'`, `u.is_active = TRUE`];
     const params = [];
@@ -638,6 +643,201 @@ router.get('/productivity/csv', async (req, res) => {
     res.send('\uFEFF' + csv);
   } catch (err) {
     console.error('Productivity CSV error:', err.message);
+    res.status(500).json({ error: 'Export failed.' });
+  }
+});
+
+// ─── GET /api/export/assembly-summary ────────────────────────────────────────
+// Groups completed timers by item_number + wo_number + route_card_number
+// Returns per-operator breakdown plus combined and elapsed totals
+router.get('/assembly-summary', async (req, res) => {
+  try {
+    const { from, to, item, wo, rc } = req.query;
+    const fromDate = from ? new Date(from) : new Date(Date.now() - 30*24*60*60*1000);
+    const toDate   = to   ? new Date(to)   : new Date();
+
+    // Pull all completed timers in range that have at least a wo_number
+    let sql = `
+      SELECT
+        t.id,
+        t.item_number,
+        t.wo_number,
+        t.route_card_number,
+        t.operator_id,
+        t.operator_name,
+        t.started_at,
+        t.completed_at,
+        t.duration_seconds,
+        t.workstation,
+        t.department
+      FROM timers t
+      WHERE t.status = 'completed'
+        AND t.completed_at >= $1
+        AND t.completed_at <= $2
+        AND t.wo_number IS NOT NULL
+    `;
+    const params = [fromDate, toDate];
+
+    if (item) { sql += ` AND t.item_number ILIKE $${params.length+1}`; params.push(`%${item}%`); }
+    if (wo)   { sql += ` AND t.wo_number   ILIKE $${params.length+1}`; params.push(`%${wo}%`); }
+    if (rc)   { sql += ` AND t.route_card_number ILIKE $${params.length+1}`; params.push(`%${rc}%`); }
+
+    sql += ` ORDER BY t.item_number, t.wo_number, t.route_card_number, t.started_at`;
+
+    const rows = await query(sql, params);
+
+    // Group into assemblies keyed by item|wo|rc
+    const assemblyMap = {};
+    for (const r of rows) {
+      const key = [
+        r.item_number,
+        r.wo_number,
+        r.route_card_number || '',
+      ].join('|||');
+
+      if (!assemblyMap[key]) {
+        assemblyMap[key] = {
+          itemNumber:      r.item_number,
+          woNumber:        r.wo_number,
+          routeCardNumber: r.route_card_number || null,
+          department:      r.department,
+          operators:       [],
+          records:         [],
+        };
+      }
+      assemblyMap[key].records.push(r);
+    }
+
+    // For each assembly, calculate operator breakdown + totals
+    const assemblies = Object.values(assemblyMap).map(a => {
+      // Per-operator totals (an operator may have multiple stints)
+      const opMap = {};
+      for (const r of a.records) {
+        if (!opMap[r.operator_id]) {
+          opMap[r.operator_id] = {
+            operatorId:   r.operator_id,
+            operatorName: r.operator_name,
+            workstation:  r.workstation,
+            totalSeconds: 0,
+            stints:       [],
+          };
+        }
+        opMap[r.operator_id].totalSeconds += (r.duration_seconds || 0);
+        opMap[r.operator_id].stints.push({
+          startedAt:   r.started_at,
+          completedAt: r.completed_at,
+          seconds:     r.duration_seconds || 0,
+        });
+      }
+      const operators = Object.values(opMap);
+
+      // Combined time = sum of all operator durations (total operator-hours)
+      const combinedSeconds = operators.reduce((s, o) => s + o.totalSeconds, 0);
+
+      // Elapsed time = wall-clock from first start to last completion
+      const allStarts = a.records.map(r => new Date(r.started_at).getTime());
+      const allEnds   = a.records.map(r => r.completed_at ? new Date(r.completed_at).getTime() : null).filter(Boolean);
+      const firstStart = allStarts.length  ? Math.min(...allStarts) : null;
+      const lastEnd    = allEnds.length    ? Math.max(...allEnds)   : null;
+      const elapsedSeconds = (firstStart && lastEnd) ? Math.round((lastEnd - firstStart) / 1000) : null;
+
+      // Overlap = combined - elapsed (how many seconds operators worked simultaneously)
+      const overlapSeconds = (elapsedSeconds !== null && combinedSeconds > elapsedSeconds)
+        ? combinedSeconds - elapsedSeconds : 0;
+
+      const fmt = s => {
+        if (!s && s !== 0) return null;
+        const h = Math.floor(s / 3600);
+        const m = Math.floor((s % 3600) / 60);
+        const sec = s % 60;
+        return h > 0
+          ? `${h}h ${String(m).padStart(2,'0')}m`
+          : `${String(m).padStart(2,'0')}m ${String(sec).padStart(2,'0')}s`;
+      };
+
+      return {
+        itemNumber:              a.itemNumber,
+        woNumber:                a.woNumber,
+        routeCardNumber:         a.routeCardNumber,
+        department:              a.department,
+        operatorCount:           operators.length,
+        operators:               operators.map(o => ({
+          ...o,
+          totalDisplay: fmt(o.totalSeconds),
+          stints: o.stints.map(s => ({
+            ...s,
+            display: fmt(s.seconds),
+          })),
+        })),
+        combinedSeconds,
+        elapsedSeconds,
+        overlapSeconds,
+        combinedDisplay:         fmt(combinedSeconds),
+        elapsedDisplay:          fmt(elapsedSeconds),
+        overlapDisplay:          fmt(overlapSeconds),
+        firstStart:              firstStart ? new Date(firstStart).toISOString() : null,
+        lastEnd:                 lastEnd    ? new Date(lastEnd).toISOString()    : null,
+        multiOperator:           operators.length > 1,
+      };
+    });
+
+    // Sort: multi-operator first, then by item number
+    assemblies.sort((a, b) => {
+      if (b.multiOperator !== a.multiOperator) return b.multiOperator ? 1 : -1;
+      return a.itemNumber.localeCompare(b.itemNumber);
+    });
+
+    res.json({ assemblies, total: assemblies.length });
+  } catch (err) {
+    console.error('Assembly summary error:', err.message);
+    res.status(500).json({ error: 'Could not load assembly summary.' });
+  }
+});
+
+// ─── GET /api/export/assembly-summary/csv ────────────────────────────────────
+router.get('/assembly-summary/csv', async (req, res) => {
+  try {
+    // Re-use the same logic via internal fetch pattern
+    const { from, to } = req.query;
+    const fromDate = from ? new Date(from) : new Date(Date.now() - 30*24*60*60*1000);
+    const toDate   = to   ? new Date(to)   : new Date();
+
+    const rows = await query(`
+      SELECT
+        t.item_number, t.wo_number, t.route_card_number,
+        t.operator_name, t.started_at, t.completed_at,
+        t.duration_seconds, t.workstation, t.department
+      FROM timers t
+      WHERE t.status = 'completed'
+        AND t.completed_at >= $1 AND t.completed_at <= $2
+        AND t.wo_number IS NOT NULL
+      ORDER BY t.item_number, t.wo_number, t.route_card_number, t.started_at
+    `, [fromDate, toDate]);
+
+    const lines = [
+      ['Item Number','W/O Number','Route Card','Operator','Department',
+       'Workstation','Started At','Completed At','Duration (mins)'].join(','),
+    ];
+    for (const r of rows) {
+      lines.push([
+        r.item_number,
+        r.wo_number,
+        r.route_card_number || '',
+        r.operator_name,
+        r.department || '',
+        r.workstation || '',
+        r.started_at  ? new Date(r.started_at).toLocaleString('en-GB')  : '',
+        r.completed_at? new Date(r.completed_at).toLocaleString('en-GB'): '',
+        r.duration_seconds ? Math.round(r.duration_seconds / 60) : '',
+      ].map(v => `"${String(v).replace(/"/g,'""')}"`).join(','));
+    }
+
+    const filename = `assembly-summary-${fromDate.toISOString().slice(0,10)}.csv`;
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(lines.join('\r\n'));
+  } catch (err) {
+    console.error('Assembly CSV error:', err.message);
     res.status(500).json({ error: 'Export failed.' });
   }
 });

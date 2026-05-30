@@ -473,8 +473,9 @@ async function loadTimerPage() {
       show('panelActive');
       document.getElementById('activeItemDisplay').textContent = me.activeTimer.itemNumber || '';
       const metaParts = ['Started at ' + formatLocalTime(me.activeTimer.startedAt)];
-      if (me.activeTimer.workstation) metaParts.push('WS: ' + me.activeTimer.workstation);
-      if (me.activeTimer.woNumber)    metaParts.push('W/O: ' + me.activeTimer.woNumber);
+      if (me.activeTimer.workstation)     metaParts.push('WS: ' + me.activeTimer.workstation);
+      if (me.activeTimer.woNumber)        metaParts.push('W/O: ' + me.activeTimer.woNumber);
+      if (me.activeTimer.routeCardNumber) metaParts.push('RC: ' + me.activeTimer.routeCardNumber);
       document.getElementById('activeMeta').textContent = metaParts.join('  ·  ');
 
       refreshActiveTimerBanner();
@@ -572,8 +573,9 @@ async function showActivePanel() {
       state.activeHandRaised           = t.handRaised || false;
       document.getElementById('activeItemDisplay').textContent = t.itemNumber;
       const metaParts = [`Started at ${formatLocalTime(t.startedAt)}`];
-      if (t.workstation) metaParts.push('WS: ' + t.workstation);
-      if (t.woNumber)    metaParts.push('W/O: ' + t.woNumber);
+      if (t.workstation)     metaParts.push('WS: ' + t.workstation);
+      if (t.woNumber)        metaParts.push('W/O: ' + t.woNumber);
+      if (t.routeCardNumber) metaParts.push('RC: ' + t.routeCardNumber);
       document.getElementById('activeMeta').textContent = metaParts.join('  ·  ');
       state.activeTargetSeconds = t.targetSeconds || null;
       updateActiveTargetDisplay();
@@ -598,9 +600,10 @@ async function showActivePanel() {
 // ─── Start job ───────────────────────────────────────────────────────────
 document.getElementById('btnStart').addEventListener('click', async () => {
   clearError('startError');
-  const itemNumber  = document.getElementById('itemNumberInput').value.trim();
-  const workstation = document.getElementById('startWorkstation').value.trim();
-  const woNumber    = document.getElementById('startWoNumber').value.trim();
+  const itemNumber   = document.getElementById('itemNumberInput').value.trim();
+  const workstation  = document.getElementById('startWorkstation').value.trim();
+  const woNumber     = document.getElementById('startWoNumber').value.trim();
+  const routeCard    = document.getElementById('startRouteCard').value.trim();
   const timeCheck   = document.getElementById('startTimeCheck').checked;
 
   if (!itemNumber) {
@@ -621,8 +624,9 @@ document.getElementById('btnStart').addEventListener('click', async () => {
       timer = await POST('/timers/start', {
         itemNumber,
         timeCheck,
-        workstation: workstation || undefined,
-        woNumber:    woNumber    || undefined,
+        workstation:     workstation || undefined,
+        woNumber:        woNumber    || undefined,
+        routeCardNumber: routeCard   || undefined,
       });
     } catch (startErr) {
       // If the operator already has an active timer, offer to resume it
@@ -661,6 +665,7 @@ document.getElementById('btnStart').addEventListener('click', async () => {
     document.getElementById('itemNumberInput').value  = '';
     document.getElementById('startWorkstation').value = '';
     document.getElementById('startWoNumber').value    = '';
+    document.getElementById('startRouteCard').value   = '';
     document.getElementById('startTimeCheck').checked = false;
     hideSuggestions();
     showActivePanel();
@@ -1274,8 +1279,9 @@ function renderEntryList(containerId, timers, showOperator = false) {
     left.appendChild(el('div', { className: 'entry-time',
       textContent: formatLocalTime(t.startedAt) + (t.completedAt ? ' → ' + formatLocalTime(t.completedAt) : '')
     }));
-    if (t.workstation) left.appendChild(el('div', { className: 'entry-meta-tag', textContent: '🖥 ' + t.workstation }));
-    if (t.woNumber)    left.appendChild(el('div', { className: 'entry-meta-tag', textContent: '📋 W/O: ' + t.woNumber }));
+    if (t.workstation)     left.appendChild(el('div', { className: 'entry-meta-tag', textContent: '🖥 ' + t.workstation }));
+    if (t.woNumber)        left.appendChild(el('div', { className: 'entry-meta-tag', textContent: '📋 W/O: ' + t.woNumber }));
+    if (t.routeCardNumber) left.appendChild(el('div', { className: 'entry-meta-tag', textContent: '🔢 RC: ' + t.routeCardNumber }));
     if (t.timeCheck)   left.appendChild(el('span', { className: 'badge badge-timecheck', textContent: '✓ Time Check' }));
     if (t.targetSeconds) left.appendChild(el('div', { className: 'entry-target',
       textContent: '🎯 Target: ' + formatHM(t.targetSeconds) }));
@@ -1664,6 +1670,7 @@ const scanner = (() => {
   });
   document.getElementById('btnScanWoNumber').addEventListener('click', () => {
     open(document.getElementById('startWoNumber'), 'notes');
+    open(document.getElementById('startRouteCard'), 'notes');
   });
 
   closeBtn.addEventListener('click', close);
@@ -2281,7 +2288,8 @@ async function refreshDeptWallboard(dept) {
       }));
       tile.appendChild(el('div', { className: 'wb-started', textContent: 'Started ' + formatLocalTime(t.startedAt) }));
       if (t.workstation) tile.appendChild(el('div', { className: 'wb-notes', textContent: '\uD83D\uDDA5 ' + t.workstation }));
-      if (t.woNumber)    tile.appendChild(el('div', { className: 'wb-notes', textContent: '\uD83D\uDCCB W/O: ' + t.woNumber }));
+      if (t.woNumber)        tile.appendChild(el('div', { className: 'wb-notes', textContent: '\uD83D\uDCCB W/O: ' + t.woNumber }));
+      if (t.routeCardNumber) tile.appendChild(el('div', { className: 'wb-notes', textContent: '\uD83D\uDD22 RC: '  + t.routeCardNumber }));
       if (t.timeCheck)   tile.appendChild(el('span', { className: 'badge badge-timecheck', style: 'margin-top:6px;display:inline-block;', textContent: '\u2713 Time Check' }));
 
       if (t.targetSeconds) {
@@ -2819,17 +2827,18 @@ async function runReport() {
   if (to)   { const d = new Date(to); d.setHours(23,59,59,999); params.set('to', d.toISOString()); }
   const qs = params.toString();
 
-  ['reportStatCards','reportItemTable','reportOperatorTable','reportTrendTable','reportOverdueGrid']
-    .forEach(id => { const n = document.getElementById(id); if (n) n.innerHTML = '<div class="empty-state">Loading…</div>'; });
+  ['reportStatCards','reportItemTable','reportOperatorTable','reportTrendTable','reportOverdueGrid','reportAssemblyGrid']
+    .forEach(id => { const n = document.getElementById(id); if (n) n.innerHTML = '<div class="empty-state">Loading\u2026</div>'; });
 
-  let stats, operators, trends, overdue, productivity;
+  let stats, operators, trends, overdue, productivity, assemblyData;
   try {
-    [stats, operators, trends, overdue, productivity] = await Promise.all([
+    [stats, operators, trends, overdue, productivity, assemblyData] = await Promise.all([
       GET(`/export/stats?${qs}`),
       GET(`/export/report/operators?${qs}`),
       GET(`/export/report/trends?${qs}`),
       GET(`/export/report/overdue?${qs}`),
       GET(`/export/productivity?${qs}&groupByDay=true`),
+      GET(`/export/assembly-summary?${qs}`),
     ]);
   } catch (err) {
     console.error('Report fetch error:', err);
@@ -2841,6 +2850,7 @@ async function runReport() {
   operators    = operators    || [];
   overdue      = overdue      || { byItem: [], byOperator: [] };
   productivity = productivity || [];
+  assemblyData = assemblyData || { assemblies: [] };
 
   renderReportStatCards(stats);
   renderReportTrendTable(trends);
@@ -2848,6 +2858,7 @@ async function runReport() {
   renderReportOperatorTable(operators);
   renderReportOverdue(overdue);
   renderProductivityTable(productivity?.operators || [], productivity?.targetPct || 80, productivity?.operators?.[0]?.daily?.length > 0);
+  renderAssemblySummary(assemblyData?.assemblies || []);
 }
 
 async function runProductivitySection() {
@@ -3476,6 +3487,150 @@ function renderReportOverdue(overdue) {
     opCard.appendChild(table);
   }
   grid.appendChild(opCard);
+}
+function renderAssemblySummary(assemblies) {
+  const container = document.getElementById('reportAssemblyGrid');
+  if (!container) return;
+  container.innerHTML = '';
+
+  if (!assemblies || !assemblies.length) {
+    container.appendChild(el('div', { className: 'empty-state', textContent: 'No assemblies with W/O numbers found for this date range.' }));
+    return;
+  }
+
+  // CSV export button
+  const csvBtn = el('button', { className: 'btn btn-ghost btn-sm', textContent: '\u2193 Export CSV',
+    style: 'margin-bottom:12px' });
+  csvBtn.addEventListener('click', () => {
+    const from = document.getElementById('reportFrom')?.value;
+    const to   = document.getElementById('reportTo')?.value;
+    const ps   = new URLSearchParams();
+    if (from) ps.set('from', new Date(from).toISOString());
+    if (to)   { const d = new Date(to); d.setHours(23,59,59,999); ps.set('to', d.toISOString()); }
+    window.location.href = `/api/export/assembly-summary/csv?${ps}`;
+  });
+  container.appendChild(csvBtn);
+
+  // Filter bar
+  const filterBar = el('div', { style: 'display:flex;gap:8px;margin-bottom:14px;align-items:center;flex-wrap:wrap' });
+  const searchInput = el('input', { type: 'text', placeholder: 'Filter by item, W/O or route card\u2026',
+    style: 'flex:1;min-width:200px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px' });
+  const multiToggle = el('button', { className: 'btn btn-ghost btn-sm',
+    textContent: 'Multi-operator only',
+    style: 'white-space:nowrap' });
+  let showMultiOnly = false;
+  multiToggle.addEventListener('click', () => {
+    showMultiOnly = !showMultiOnly;
+    multiToggle.style.color = showMultiOnly ? 'var(--accent)' : '';
+    multiToggle.style.borderColor = showMultiOnly ? 'var(--accent)' : '';
+    renderCards();
+  });
+  filterBar.appendChild(searchInput);
+  filterBar.appendChild(multiToggle);
+  container.appendChild(filterBar);
+
+  const cardsWrap = el('div', {});
+  container.appendChild(cardsWrap);
+
+  function renderCards() {
+    cardsWrap.innerHTML = '';
+    const q = searchInput.value.toLowerCase();
+    const filtered = assemblies.filter(a => {
+      if (showMultiOnly && !a.multiOperator) return false;
+      if (q) {
+        const hay = [a.itemNumber, a.woNumber, a.routeCardNumber || ''].join(' ').toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+
+    if (!filtered.length) {
+      cardsWrap.appendChild(el('div', { className: 'empty-state', textContent: 'No assemblies match the current filter.' }));
+      return;
+    }
+
+    filtered.forEach(a => {
+      const card = el('div', { style: 'background:var(--bg2);border-radius:12px;padding:16px;margin-bottom:12px;border:1px solid var(--border)' });
+
+      // Card header
+      const hdr = el('div', { style: 'display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px' });
+      const left = el('div', {});
+      left.appendChild(el('div', { textContent: a.itemNumber,
+        style: 'font-size:18px;font-weight:700;color:var(--accent)' }));
+      const meta = el('div', { style: 'display:flex;gap:8px;margin-top:4px;flex-wrap:wrap' });
+      meta.appendChild(el('span', { textContent: 'W/O: ' + a.woNumber,
+        style: 'font-size:13px;color:var(--text2);background:var(--bg3);padding:2px 8px;border-radius:4px' }));
+      if (a.routeCardNumber) {
+        meta.appendChild(el('span', { textContent: 'RC: ' + a.routeCardNumber,
+          style: 'font-size:13px;color:var(--text2);background:var(--bg3);padding:2px 8px;border-radius:4px' }));
+      }
+      if (a.department) {
+        meta.appendChild(el('span', { textContent: a.department,
+          style: 'font-size:13px;color:var(--text2);background:var(--bg3);padding:2px 8px;border-radius:4px' }));
+      }
+      if (a.multiOperator) {
+        meta.appendChild(el('span', { textContent: '\uD83D\uDC65 Multi-operator',
+          style: 'font-size:12px;font-weight:700;color:var(--purple,#a855f7);background:rgba(168,85,247,.12);padding:2px 8px;border-radius:4px' }));
+      }
+      left.appendChild(meta);
+      hdr.appendChild(left);
+      card.appendChild(hdr);
+
+      // Time summary row
+      const times = el('div', { style: 'display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:14px' });
+      const timeItems = [
+        { label: 'Combined Time', value: a.combinedDisplay || '\u2014', color: 'var(--text)', tip: 'Total operator-hours across all contributors' },
+        { label: 'Elapsed Time',  value: a.elapsedDisplay  || '\u2014', color: 'var(--green)', tip: 'Wall-clock time from first start to last stop' },
+        { label: 'Overlap',       value: a.overlapSeconds > 0 ? a.overlapDisplay : 'None', color: a.overlapSeconds > 0 ? 'var(--amber)' : 'var(--text2)', tip: 'Time operators worked simultaneously' },
+        { label: 'Contributors',  value: a.operatorCount + ' operator' + (a.operatorCount !== 1 ? 's' : ''), color: 'var(--text)' },
+      ];
+      timeItems.forEach(({ label, value, color, tip }) => {
+        const box = el('div', { style: 'background:var(--bg3);border-radius:8px;padding:10px 12px' });
+        box.appendChild(el('div', { textContent: label, style: 'font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px' }));
+        const v = el('div', { textContent: value, style: `font-size:18px;font-weight:700;color:${color}` });
+        if (tip) v.title = tip;
+        box.appendChild(v);
+        times.appendChild(box);
+      });
+      card.appendChild(times);
+
+      // Operator breakdown table
+      const tbl = el('table', { className: 'dash-table' });
+      tbl.appendChild(el('thead', {}, el('tr', {},
+        el('th', { textContent: 'Operator' }),
+        el('th', { textContent: 'Workstation' }),
+        el('th', { textContent: 'Time on Assembly' }),
+        el('th', { textContent: 'Stints' }),
+        el('th', { textContent: '% of Combined' }),
+      )));
+      const tbody = el('tbody', {});
+      a.operators.forEach(op => {
+        const pct = a.combinedSeconds > 0
+          ? Math.round(op.totalSeconds / a.combinedSeconds * 100) : 0;
+        const barColor = pct > 60 ? 'var(--blue)' : 'var(--accent)';
+        const tr = el('tr', {});
+        tr.appendChild(el('td', { textContent: op.operatorName, style: 'font-weight:600' }));
+        tr.appendChild(el('td', { textContent: op.workstation || '\u2014', style: 'color:var(--text2)' }));
+        tr.appendChild(el('td', { textContent: op.totalDisplay || '\u2014', style: 'font-weight:700;color:var(--text)' }));
+        tr.appendChild(el('td', { textContent: op.stints.length, style: 'color:var(--text2)' }));
+        const pctCell = el('td', {});
+        const barWrap = el('div', { style: 'display:flex;align-items:center;gap:8px' });
+        const bar = el('div', { style: 'flex:1;background:var(--bg3);border-radius:3px;height:6px' });
+        bar.appendChild(el('div', { style: `width:${pct}%;background:${barColor};height:6px;border-radius:3px` }));
+        barWrap.appendChild(bar);
+        barWrap.appendChild(el('span', { textContent: pct + '%', style: 'min-width:36px;font-size:12px;color:var(--text2)' }));
+        pctCell.appendChild(barWrap);
+        tr.appendChild(pctCell);
+        tbody.appendChild(tr);
+      });
+      tbl.appendChild(tbody);
+      card.appendChild(tbl);
+      cardsWrap.appendChild(card);
+    });
+  }
+
+  searchInput.addEventListener('input', renderCards);
+  renderCards();
 }
 
 
