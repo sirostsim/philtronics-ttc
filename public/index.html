@@ -198,6 +198,31 @@
           </div>
         </div>
 
+        <!-- Route Card Number -->
+        <div class="form-group">
+          <label for="startRouteCard">Route Card No. <span class="opt">(optional)</span></label>
+          <div class="input-with-action">
+            <input id="startRouteCard" type="text" maxlength="50"
+                   placeholder="e.g. 3 of 10" autocapitalize="characters"
+                   inputmode="numeric" />
+            <button id="btnScanRouteCard" class="btn-scan" type="button"
+                    aria-label="Scan barcode into Route Card number">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 7V5a2 2 0 0 1 2-2h2"/>
+                <path d="M17 3h2a2 2 0 0 1 2 2v2"/>
+                <path d="M21 17v2a2 2 0 0 1-2 2h-2"/>
+                <path d="M7 21H5a2 2 0 0 1-2-2v-2"/>
+                <rect x="7" y="7" width="3" height="3"/>
+                <rect x="14" y="7" width="3" height="3"/>
+                <rect x="7" y="14" width="3" height="3"/>
+                <rect x="14" y="14" width="3" height="3"/>
+              </svg>
+              Scan
+            </button>
+          </div>
+        </div>
+
         <!-- Time Check toggle -->
         <div class="form-group time-check-group">
           <label class="time-check-label" for="startTimeCheck">
