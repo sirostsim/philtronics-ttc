@@ -624,25 +624,50 @@ document.getElementById('btnStart').addEventListener('click', async () => {
   // If so, prompt before starting a new session.
   if (woNumber && routeCard) {
     try {
+      // Check directly against timers — not the assembly-summary endpoint,
+      // which only returns completed timers. We want any previous timer
+      // (completed or cancelled) for the same item + WO + RC combination.
       const sevenDaysAgo = new Date(Date.now() - 7*24*60*60*1000).toISOString();
-      const qs = new URLSearchParams({
-        from: sevenDaysAgo,
-        wo: woNumber,
-        rc: routeCard,
-      });
-      const summary = await GET(`/export/assembly-summary?${qs}`);
-      const match = (summary?.assemblies || []).find(a =>
-        a.itemNumber.toLowerCase()    === itemNumber.toLowerCase() &&
-        a.woNumber                    === woNumber &&
-        (a.routeCardNumber || '')     === routeCard
+      const prevTimers = await GET(
+        `/timers?from=${encodeURIComponent(sevenDaysAgo)}&itemNumber=${encodeURIComponent(itemNumber)}`
       );
-      if (match) {
-        const result = await showAssemblyResumePrompt(match);
-        if (result === null) return; // User cancelled entirely
+      const prevMatch = (prevTimers || []).filter(t =>
+        t.itemNumber?.toLowerCase() === itemNumber.toLowerCase() &&
+        t.woNumber                  === woNumber &&
+        (t.routeCardNumber || '')   === routeCard &&
+        (t.status === 'completed' || t.status === 'cancelled')
+      );
+      if (prevMatch.length > 0) {
+        // Build a lightweight assembly summary object for the prompt
+        const totalSecs = prevMatch.reduce((s, t) => s + (t.durationSeconds || 0), 0);
+        const fmtSecs = s => {
+          if (!s) return '0m';
+          const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+          return h > 0 ? `${h}h ${String(m).padStart(2,'0')}m` : `${m}m`;
+        };
+        const opMap = {};
+        prevMatch.forEach(t => {
+          if (!opMap[t.operatorId]) opMap[t.operatorId] = { operatorId: t.operatorId, operatorName: t.operatorName, totalSeconds: 0, stints: [] };
+          opMap[t.operatorId].totalSeconds += (t.durationSeconds || 0);
+          opMap[t.operatorId].stints.push({ seconds: t.durationSeconds || 0 });
+        });
+        const operators = Object.values(opMap).map(o => ({ ...o, totalDisplay: fmtSecs(o.totalSeconds) }));
+        const assemblyObj = {
+          itemNumber, woNumber, routeCardNumber: routeCard,
+          operatorCount:   operators.length,
+          operators,
+          combinedSeconds: totalSecs,
+          combinedDisplay: fmtSecs(totalSecs),
+          elapsedDisplay:  null,
+          multiOperator:   operators.length > 1,
+        };
+        const result = await showAssemblyResumePrompt(assemblyObj);
+        if (result === null) { btn.disabled = false; return; }
         window._timerCategory = result.category || 'work';
       }
-    } catch (_) {
-      // If the check fails for any reason, proceed silently — don't block the operator
+    } catch (checkErr) {
+      console.warn('Assembly resume check failed:', checkErr.message);
+      // Proceed silently — never block the operator due to a check failure
     }
   }
   // ── End assembly resume check ────────────────────────────────────────────
