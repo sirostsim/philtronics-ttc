@@ -911,6 +911,32 @@ tbody tr:hover td { background: var(--bg3); }
 }
 .wallboard-tile.tile-overdue::before { background: var(--red); }
 
+/* Orange — rework tile */
+.wallboard-tile.tile-rework {
+  background: #2a1800;
+  border-color: #e05c1a;
+  box-shadow: 0 0 18px rgba(224,92,26,.2);
+}
+.wallboard-tile.tile-rework::before { background: #e05c1a; }
+.wallboard-tile.tile-rework .wb-item { color: #fbbf7a; }
+.wallboard-tile.tile-rework .wb-elapsed { color: #fbbf7a; }
+.wallboard-tile.tile-rework .wb-operator-row { color: #d4a070; }
+.wallboard-tile.tile-rework .wb-notes { color: #a06030; }
+.wallboard-tile.tile-rework .wb-started { color: #7a4820; }
+
+.wb-rework-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  padding: 3px 10px;
+  border-radius: 4px;
+  background: #e05c1a;
+  color: #fff;
+  margin-top: 4px;
+  margin-bottom: 2px;
+}
+
 .wb-item {
   font-family: var(--font-mono);
   font-size: 22px;
@@ -1484,6 +1510,23 @@ button.topbar-brand:focus-visible {
   box-shadow: 0 0 16px rgba(239,68,68,.15);
 }
 .wbc-tile.tile-overdue::before { background: var(--red); }
+
+/* Orange — rework compact tile */
+.wbc-tile.tile-rework {
+  background: #2a1800;
+  border-color: #e05c1a;
+}
+.wbc-tile.tile-rework::before { background: #e05c1a; }
+.wbc-tile.tile-rework .wbc-item  { color: #fbbf7a; }
+.wbc-tile.tile-rework .wbc-elapsed { color: #fbbf7a; }
+
+.wbc-rework-tag {
+  position: absolute;
+  top: 6px;
+  right: 28px;
+  font-size: 14px;
+  line-height: 1;
+}
 
 .wbc-operator {
   font-size: 13px;

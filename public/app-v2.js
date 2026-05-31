@@ -2591,6 +2591,12 @@ async function refreshDeptWallboard(dept) {
       const elapsed = sNet !== null ? sNet : localEl;
       const tile    = el('div', { className: 'wallboard-tile' + (t.isPaused ? ' tile-paused' : '') });
 
+      // Rework tiles get a warm orange background — visually unmissable from across the shopfloor
+      const isRework = t.timerCategory === 'rework';
+      if (isRework) {
+        tile.classList.add('tile-rework');
+      }
+
       if (!t.isPaused) {
         if (t.targetSeconds) {
           const pct = elapsed / t.targetSeconds;
@@ -2625,6 +2631,11 @@ async function refreshDeptWallboard(dept) {
       }
 
       tile.appendChild(el('div', { className: 'wb-item', textContent: t.itemNumber }));
+      // Rework badge — shown below item number on rework tiles
+      if (isRework) {
+        const rwBadge = el('div', { className: 'wb-rework-badge', textContent: '\uD83D\uDD04 RE-WORK' });
+        tile.appendChild(rwBadge);
+      }
       const opRow = el('div', { className: 'wb-operator-row' });
       opRow.appendChild(el('span', {
         className: 'presence-dot ' + (onlineSet.has(t.operatorId) ? 'online' : 'offline'),
@@ -2767,7 +2778,7 @@ async function refreshDeptWallboardCompact(dept) {
       const sNet    = t.netElapsedSeconds != null ? t.netElapsedSeconds : null;
       const localEl = Math.max(0, Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000)) - (t.totalPausedSeconds || 0);
       const elapsed = sNet !== null ? sNet : localEl;
-      const tile    = el('div', { className: 'wbc-tile' + (t.isPaused ? ' tile-paused' : '') + (t.handRaised ? ' tile-hand-raised' : '') });
+      const tile    = el('div', { className: 'wbc-tile' + (t.isPaused ? ' tile-paused' : '') + (t.handRaised ? ' tile-hand-raised' : '') + (t.timerCategory === 'rework' ? ' tile-rework' : '') });
       if (!t.isPaused) {
         if (t.targetSeconds) {
           const pct = elapsed / t.targetSeconds;
@@ -2786,8 +2797,9 @@ async function refreshDeptWallboardCompact(dept) {
       opRow.appendChild(el('span', { textContent: t.operatorName }));
       tile.appendChild(opRow);
       tile.appendChild(el('div', { className: 'wbc-item', textContent: t.itemNumber }));
-      if (t.isPaused)   tile.appendChild(el('div', { className: 'wbc-paused-tag', textContent: '\u23f8' }));
-      if (t.handRaised) tile.appendChild(el('div', { className: 'wbc-hand-tag',   textContent: '\u270b' }));
+      if (t.isPaused)                      tile.appendChild(el('div', { className: 'wbc-paused-tag', textContent: '\u23f8' }));
+      if (t.handRaised)                    tile.appendChild(el('div', { className: 'wbc-hand-tag',   textContent: '\u270b' }));
+      if (t.timerCategory === 'rework')    tile.appendChild(el('div', { className: 'wbc-rework-tag', textContent: '\uD83D\uDD04' }));
       tile.appendChild(el('div', {
         className: 'wbc-elapsed', textContent: formatDuration(elapsed),
         'data-startedat':     t.startedAt,
