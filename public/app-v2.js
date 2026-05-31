@@ -2319,9 +2319,20 @@ function renderHomeActiveJobs(timers) {
   const now = Date.now();
   timers.sort((a, b) => {
     const elA = now - new Date(a.startedAt).getTime(), elB = now - new Date(b.startedAt).getTime();
-    const ovA = a.targetSeconds ? elA / 1000 > a.targetSeconds : elA > 4 * 3600000;
-    const ovB = b.targetSeconds ? elB / 1000 > b.targetSeconds : elB > 4 * 3600000;
-    if (ovA !== ovB) return ovA ? -1 : 1; return elB - elA;
+    function homeScore(t, elMs) {
+      const elS = elMs / 1000 - (t.totalPausedSeconds || 0);
+      const pct = t.targetSeconds ? elS / t.targetSeconds : elS / (4 * 3600);
+      if (t.isPaused)                return [6, -elS];
+      if (t.handRaised)              return [1,  0];
+      if (t.timerCategory==='rework')return [2, -elS];
+      if (pct >= 1.0)                return [3, -elS];
+      if (pct >= 0.8)                return [4, -elS];
+      return                                [5, -elS];
+    }
+    const [pa, sa] = homeScore(a, elA);
+    const [pb, sb] = homeScore(b, elB);
+    if (pa !== pb) return pa - pb;
+    return sa - sb;
   });
   const grid = el('div', { className: 'home-active-grid' });
   timers.forEach(t => {
@@ -2585,6 +2596,26 @@ async function refreshDeptWallboard(dept) {
       return;
     }
 
+    // Priority sort — hand raised > rework > overdue > warning > active (by elapsed desc) > paused
+    const _now = Date.now();
+    function _tileScore(t) {
+      const elapsedMs = _now - new Date(t.startedAt).getTime();
+      const elapsedS  = elapsedMs / 1000 - (t.totalPausedSeconds || 0);
+      const pct       = t.targetSeconds ? elapsedS / t.targetSeconds : (elapsedS / (4 * 3600));
+      if (t.isPaused)               return [6, -elapsedS];   // paused last, longest paused first
+      if (t.handRaised)             return [1,  0];           // hand raised — top priority
+      if (t.timerCategory==='rework') return [2, -elapsedS];  // rework — quality failure
+      if (pct >= 1.0)               return [3, -elapsedS];   // overdue
+      if (pct >= 0.8)               return [4, -elapsedS];   // warning
+      return                               [5, -elapsedS];   // on track, longest running first
+    }
+    timers.sort((a, b) => {
+      const [pa, sa] = _tileScore(a);
+      const [pb, sb] = _tileScore(b);
+      if (pa !== pb) return pa - pb;
+      return sa - sb;
+    });
+
     timers.forEach(t => {
       const sNet    = t.netElapsedSeconds != null ? t.netElapsedSeconds : null;
       const localEl = Math.max(0, Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000)) - (t.totalPausedSeconds || 0);
@@ -2774,6 +2805,27 @@ async function refreshDeptWallboardCompact(dept) {
         el('div', { className: 'wallboard-empty-text', textContent: 'No active jobs right now' })));
       return;
     }
+
+    // Priority sort — hand raised > rework > overdue > warning > active (by elapsed desc) > paused
+    const _now = Date.now();
+    function _tileScore(t) {
+      const elapsedMs = _now - new Date(t.startedAt).getTime();
+      const elapsedS  = elapsedMs / 1000 - (t.totalPausedSeconds || 0);
+      const pct       = t.targetSeconds ? elapsedS / t.targetSeconds : (elapsedS / (4 * 3600));
+      if (t.isPaused)               return [6, -elapsedS];   // paused last, longest paused first
+      if (t.handRaised)             return [1,  0];           // hand raised — top priority
+      if (t.timerCategory==='rework') return [2, -elapsedS];  // rework — quality failure
+      if (pct >= 1.0)               return [3, -elapsedS];   // overdue
+      if (pct >= 0.8)               return [4, -elapsedS];   // warning
+      return                               [5, -elapsedS];   // on track, longest running first
+    }
+    timers.sort((a, b) => {
+      const [pa, sa] = _tileScore(a);
+      const [pb, sb] = _tileScore(b);
+      if (pa !== pb) return pa - pb;
+      return sa - sb;
+    });
+
     timers.forEach(t => {
       const sNet    = t.netElapsedSeconds != null ? t.netElapsedSeconds : null;
       const localEl = Math.max(0, Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000)) - (t.totalPausedSeconds || 0);
