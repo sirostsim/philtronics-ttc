@@ -51,10 +51,12 @@ const schemas = {
   }),
 
   startTimer: Joi.object({
-    itemNumber:  itemNumberSchema,
-    timeCheck:   Joi.boolean().optional().default(false),
-    workstation: Joi.string().trim().max(100).optional().allow('', null),
-    woNumber:    Joi.string().trim().max(100).optional().allow('', null),
+    itemNumber:      itemNumberSchema,
+    timeCheck:       Joi.boolean().optional().default(false),
+    workstation:     Joi.string().trim().max(100).optional().allow('', null),
+    woNumber:        Joi.string().trim().max(100).optional().allow('', null),
+    routeCardNumber: Joi.string().trim().max(50).optional().allow('', null),
+    timerCategory:   Joi.string().valid('work', 'rework').optional().default('work'),
   }),
 
   stopTimer: Joi.object({
