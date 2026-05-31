@@ -619,14 +619,12 @@ document.getElementById('btnStart').addEventListener('click', async () => {
   }
 
   // ── Assembly resume check ────────────────────────────────────────────────
-  // If wo_number AND route_card are both entered, check whether this operator
-  // has previous completed stints on the same assembly within the last 7 days.
-  // If so, prompt before starting a new session.
+  // Declare btn early so it can be re-enabled if the user cancels the prompt
+  const btn = document.getElementById('btnStart');
+  btn.disabled = true;
+
   if (woNumber && routeCard) {
     try {
-      // Check directly against timers — not the assembly-summary endpoint,
-      // which only returns completed timers. We want any previous timer
-      // (completed or cancelled) for the same item + WO + RC combination.
       const sevenDaysAgo = new Date(Date.now() - 7*24*60*60*1000).toISOString();
       const prevTimers = await GET(
         `/timers?from=${encodeURIComponent(sevenDaysAgo)}&itemNumber=${encodeURIComponent(itemNumber)}`
@@ -638,7 +636,6 @@ document.getElementById('btnStart').addEventListener('click', async () => {
         (t.status === 'completed' || t.status === 'cancelled')
       );
       if (prevMatch.length > 0) {
-        // Build a lightweight assembly summary object for the prompt
         const totalSecs = prevMatch.reduce((s, t) => s + (t.durationSeconds || 0), 0);
         const fmtSecs = s => {
           if (!s) return '0m';
@@ -667,13 +664,11 @@ document.getElementById('btnStart').addEventListener('click', async () => {
       }
     } catch (checkErr) {
       console.warn('Assembly resume check failed:', checkErr.message);
-      // Proceed silently — never block the operator due to a check failure
     }
   }
   // ── End assembly resume check ────────────────────────────────────────────
 
   window._timerCategory = window._timerCategory || 'work';
-  const btn = document.getElementById('btnStart');
   btn.disabled = true;
   try {
     let timer;
