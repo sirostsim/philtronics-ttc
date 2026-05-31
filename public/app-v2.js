@@ -2322,12 +2322,13 @@ function renderHomeActiveJobs(timers) {
     function homeScore(t, elMs) {
       const elS = elMs / 1000 - (t.totalPausedSeconds || 0);
       const pct = t.targetSeconds ? elS / t.targetSeconds : elS / (4 * 3600);
-      if (t.isPaused)                return [6, -elS];
-      if (t.handRaised)              return [1,  0];
-      if (t.timerCategory==='rework')return [2, -elS];
-      if (pct >= 1.0)                return [3, -elS];
-      if (pct >= 0.8)                return [4, -elS];
-      return                                [5, -elS];
+      if (t.handRaised)                             return [1,  0];
+      if (t.timerCategory==='rework' && !t.isPaused)return [2, -elS];
+      if (pct >= 1.0 && !t.isPaused)                return [3, -elS];
+      if (pct >= 0.8 && !t.isPaused)                return [4, -elS];
+      if (!t.isPaused)                              return [5, -elS];
+      if (t.timerCategory==='rework')               return [6, -elS];
+      return                                               [7, -elS];
     }
     const [pa, sa] = homeScore(a, elA);
     const [pb, sb] = homeScore(b, elB);
@@ -2602,12 +2603,13 @@ async function refreshDeptWallboard(dept) {
       const elapsedMs = _now - new Date(t.startedAt).getTime();
       const elapsedS  = elapsedMs / 1000 - (t.totalPausedSeconds || 0);
       const pct       = t.targetSeconds ? elapsedS / t.targetSeconds : (elapsedS / (4 * 3600));
-      if (t.isPaused)               return [6, -elapsedS];   // paused last, longest paused first
-      if (t.handRaised)             return [1,  0];           // hand raised — top priority
-      if (t.timerCategory==='rework') return [2, -elapsedS];  // rework — quality failure
-      if (pct >= 1.0)               return [3, -elapsedS];   // overdue
-      if (pct >= 0.8)               return [4, -elapsedS];   // warning
-      return                               [5, -elapsedS];   // on track, longest running first
+      if (t.handRaised)               return [1,  0];           // hand raised — top priority
+      if (t.timerCategory==='rework' && !t.isPaused) return [2, -elapsedS]; // active rework
+      if (pct >= 1.0 && !t.isPaused)  return [3, -elapsedS];   // active overdue
+      if (pct >= 0.8 && !t.isPaused)  return [4, -elapsedS];   // active warning
+      if (!t.isPaused)                return [5, -elapsedS];   // active on track
+      if (t.timerCategory==='rework') return [6, -elapsedS];   // paused rework (above plain paused)
+      return                                 [7, -elapsedS];   // paused standard, longest first
     }
     timers.sort((a, b) => {
       const [pa, sa] = _tileScore(a);
@@ -2812,12 +2814,13 @@ async function refreshDeptWallboardCompact(dept) {
       const elapsedMs = _now - new Date(t.startedAt).getTime();
       const elapsedS  = elapsedMs / 1000 - (t.totalPausedSeconds || 0);
       const pct       = t.targetSeconds ? elapsedS / t.targetSeconds : (elapsedS / (4 * 3600));
-      if (t.isPaused)               return [6, -elapsedS];   // paused last, longest paused first
-      if (t.handRaised)             return [1,  0];           // hand raised — top priority
-      if (t.timerCategory==='rework') return [2, -elapsedS];  // rework — quality failure
-      if (pct >= 1.0)               return [3, -elapsedS];   // overdue
-      if (pct >= 0.8)               return [4, -elapsedS];   // warning
-      return                               [5, -elapsedS];   // on track, longest running first
+      if (t.handRaised)               return [1,  0];           // hand raised — top priority
+      if (t.timerCategory==='rework' && !t.isPaused) return [2, -elapsedS]; // active rework
+      if (pct >= 1.0 && !t.isPaused)  return [3, -elapsedS];   // active overdue
+      if (pct >= 0.8 && !t.isPaused)  return [4, -elapsedS];   // active warning
+      if (!t.isPaused)                return [5, -elapsedS];   // active on track
+      if (t.timerCategory==='rework') return [6, -elapsedS];   // paused rework (above plain paused)
+      return                                 [7, -elapsedS];   // paused standard, longest first
     }
     timers.sort((a, b) => {
       const [pa, sa] = _tileScore(a);
