@@ -629,12 +629,17 @@ document.getElementById('btnStart').addEventListener('click', async () => {
       const prevTimers = await GET(
         `/timers?from=${encodeURIComponent(sevenDaysAgo)}&itemNumber=${encodeURIComponent(itemNumber)}`
       );
+      console.log('[rework check] prevTimers returned:', prevTimers?.length, 'timers');
       const prevMatch = (prevTimers || []).filter(t =>
         t.itemNumber?.toLowerCase() === itemNumber.toLowerCase() &&
         t.woNumber                  === woNumber &&
         (t.routeCardNumber || '')   === routeCard &&
         (t.status === 'completed' || t.status === 'cancelled')
       );
+      console.log('[rework check] matching timers:', prevMatch.length, '| looking for:', itemNumber, woNumber, routeCard);
+      if (prevTimers?.length) {
+        console.log('[rework check] first timer woNumber:', prevTimers[0].woNumber, '| routeCardNumber:', prevTimers[0].routeCardNumber, '| status:', prevTimers[0].status);
+      }
       if (prevMatch.length > 0) {
         const totalSecs = prevMatch.reduce((s, t) => s + (t.durationSeconds || 0), 0);
         const fmtSecs = s => {
