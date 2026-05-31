@@ -569,6 +569,7 @@ async function showActivePanel() {
       state.activeTimerId              = t.id;
       state.activeStartedAt            = t.startedAt;
       state.activeIsPaused             = t.isPaused || false;
+      state.activePauseType            = t.pauseType || null;
       state.activePausedAt             = t.pausedAt || null;
       state.activeTotalPausedSeconds   = t.totalPausedSeconds || 0;
       state.activeHandRaised           = t.handRaised || false;
@@ -629,17 +630,12 @@ document.getElementById('btnStart').addEventListener('click', async () => {
       const prevTimers = await GET(
         `/timers?from=${encodeURIComponent(sevenDaysAgo)}&itemNumber=${encodeURIComponent(itemNumber)}`
       );
-      console.log('[rework check] prevTimers returned:', prevTimers?.length, 'timers');
       const prevMatch = (prevTimers || []).filter(t =>
         t.itemNumber?.toLowerCase() === itemNumber.toLowerCase() &&
         t.woNumber                  === woNumber &&
         (t.routeCardNumber || '')   === routeCard &&
         (t.status === 'completed' || t.status === 'cancelled')
       );
-      console.log('[rework check] matching timers:', prevMatch.length, '| looking for:', itemNumber, woNumber, routeCard);
-      if (prevTimers?.length) {
-        console.log('[rework check] first timer woNumber:', prevTimers[0].woNumber, '| routeCardNumber:', prevTimers[0].routeCardNumber, '| status:', prevTimers[0].status);
-      }
       if (prevMatch.length > 0) {
         const totalSecs = prevMatch.reduce((s, t) => s + (t.durationSeconds || 0), 0);
         const fmtSecs = s => {
@@ -2137,6 +2133,7 @@ async function openTotpSetupModal() {
    ═══════════════════════════════════════════════════════════════════════════ */
 function updatePauseUI() {
   const isPaused  = state.activeIsPaused;
+  const pauseType = state.activePauseType || '';
   const banner    = document.getElementById('pauseBanner');
   const pauseBtn  = document.getElementById('btnPauseTimer');
   const label     = document.getElementById('activeJobLabel');
@@ -2150,6 +2147,39 @@ function updatePauseUI() {
     if (isPaused) { pauseBtn.textContent = '\u25b6 Resume'; pauseBtn.className = 'btn btn-resume-sm'; pauseBtn.setAttribute('aria-label', 'Resume timer'); }
     else          { pauseBtn.textContent = '\u23f8 Pause';  pauseBtn.className = 'btn btn-pause-sm';  pauseBtn.setAttribute('aria-label', 'Pause timer'); }
   }
+
+  // Show overtime override button when auto-paused by the schedule
+  const existingOT = document.getElementById('btnOvertimeOverride');
+  if (existingOT) existingOT.remove();
+  if (isPaused && pauseType === 'schedule') {
+    const otBtn = el('button', {
+      id: 'btnOvertimeOverride',
+      className: 'btn btn-primary btn-full',
+      textContent: '\u23F1 Override \u2014 Working Overtime',
+      style: 'margin-top:10px;background:var(--amber);color:#000;font-weight:700',
+    });
+    otBtn.addEventListener('click', async () => {
+      otBtn.disabled = true;
+      try {
+        // Resume the timer and mark as overtime_override so the schedule won't re-pause it
+        await POST('/pause/' + state.activeTimerId + '/resume', { overtimeOverride: true });
+        state.activeIsPaused  = false;
+        state.activePausedAt  = null;
+        state.activePauseType = 'overtime_override';
+        updatePauseUI();
+        toast('Overtime override active \u2014 your timer will not be auto-paused again tonight.', 'success');
+      } catch (err) {
+        toast(err.message, 'error');
+        otBtn.disabled = false;
+      }
+    });
+    // Insert below the pause button
+    const pauseBtnEl = document.getElementById('btnPauseTimer');
+    if (pauseBtnEl && pauseBtnEl.parentNode) {
+      pauseBtnEl.parentNode.insertBefore(otBtn, pauseBtnEl.nextSibling);
+    }
+  }
+
   if (isPaused) {
     stopStopwatch();
     if (state.activeStartedAt && state.activePausedAt) {
@@ -2184,10 +2214,17 @@ function startPausePoll() {
       const t = await GET('/timers/' + state.activeTimerId); if (!t) return;
       const waspaused = state.activeIsPaused, wasHandRaised = state.activeHandRaised;
       state.activeIsPaused = t.isPaused || false; state.activePausedAt = t.pausedAt || null;
+      state.activePauseType = t.pauseType || null;
       state.activeTotalPausedSeconds = t.totalPausedSeconds || 0; state.activeHandRaised = t.handRaised || false;
       if (waspaused !== state.activeIsPaused) {
         updatePauseUI();
-        toast(state.activeIsPaused ? 'Your timer has been automatically paused outside working hours.' : 'Your timer has automatically resumed for the new working day.', state.activeIsPaused ? '' : 'success');
+        if (state.activeIsPaused && state.activePauseType === 'schedule') {
+          toast('Your timer has been automatically paused — tap Override to work overtime.', '');
+        } else if (!state.activeIsPaused) {
+          toast('Your timer has automatically resumed for the new working day.', 'success');
+        } else {
+          toast('Your timer has been paused.', '');
+        }
       }
       if (wasHandRaised !== state.activeHandRaised) { updateHandUI(); if (!state.activeHandRaised) toast('Your hand has been lowered by a supervisor.', ''); }
     } catch (_) {}

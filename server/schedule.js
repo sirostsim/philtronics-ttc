@@ -1,26 +1,24 @@
 /**
  * schedule.js -- Working hours auto-pause/resume
  *
- * Working hours: 07:45 - 16:30 Mon-Fri, Europe/London timezone.
+ * Working hours: Mon-Thu 07:45-16:30, Fri 07:45-13:00, Europe/London timezone.
  * Runs every minute via setInterval.
  *
- * Railway cost note: ~1,440 lightweight DB queries/day.
- * Each query takes ~2ms and touches a small indexed table.
- * Estimated additional cost: negligible (<$0.01/month).
+ * Overtime override: if an operator explicitly chooses to work overtime,
+ * their timer is marked with pause_type = 'overtime_override'. The schedule
+ * will not auto-pause these timers until the next working day starts.
  */
 
 'use strict';
 
 const { query, queryOne } = require('./db');
 
-const WORK_START = { hour: 7,  minute: 45 };
-const WORK_END   = { hour: 16, minute: 30 };
-const TZ         = 'Europe/London';
+const TZ = 'Europe/London';
 
-// Returns true if the current moment is within working hours (Mon-Fri only)
+// Returns true if the current moment is within working hours
 function isWorkingHours() {
-  const now     = new Date();
-  const london  = new Intl.DateTimeFormat('en-GB', {
+  const now    = new Date();
+  const london = new Intl.DateTimeFormat('en-GB', {
     timeZone: TZ,
     hour: 'numeric', minute: 'numeric',
     weekday: 'short', hour12: false,
@@ -29,16 +27,38 @@ function isWorkingHours() {
   const parts = {};
   london.forEach(p => { parts[p.type] = p.value; });
 
-  const weekday = parts.weekday; // 'Mon', 'Tue', etc.
+  const weekday = parts.weekday;
+  if (['Sat', 'Sun'].includes(weekday)) return false;
+
+  const h       = parseInt(parts.hour,   10);
+  const m       = parseInt(parts.minute, 10);
+  const nowMins = h * 60 + m;
+  const startMin = 7 * 60 + 45;  // 07:45
+  const endMin   = weekday === 'Fri' ? 13 * 60 : 16 * 60 + 30; // Fri 13:00, else 16:30
+
+  return nowMins >= startMin && nowMins < endMin;
+}
+
+// Returns true if we are at the start of a new working day
+// Used to clear overnight overtime overrides
+function isStartOfWorkingDay() {
+  const now    = new Date();
+  const london = new Intl.DateTimeFormat('en-GB', {
+    timeZone: TZ,
+    hour: 'numeric', minute: 'numeric',
+    weekday: 'short', hour12: false,
+  }).formatToParts(now);
+
+  const parts = {};
+  london.forEach(p => { parts[p.type] = p.value; });
+
+  const weekday = parts.weekday;
   if (['Sat', 'Sun'].includes(weekday)) return false;
 
   const h = parseInt(parts.hour,   10);
   const m = parseInt(parts.minute, 10);
-  const nowMins  = h * 60 + m;
-  const startMin = WORK_START.hour * 60 + WORK_START.minute;
-  const endMin   = WORK_END.hour   * 60 + WORK_END.minute;
-
-  return nowMins >= startMin && nowMins < endMin;
+  // True for the 07:45 minute window (schedule runs every 60s)
+  return h === 7 && m >= 45 && m < 46;
 }
 
 async function runSchedule() {
@@ -46,27 +66,29 @@ async function runSchedule() {
     const working = isWorkingHours();
 
     if (!working) {
-      // Outside working hours -- pause all active timers that are not already paused
-      // and were not manually paused (we don't want to overwrite a manual pause)
+      // Outside working hours — pause all active, unpaused timers
+      // EXCEPT those the operator has explicitly marked as overtime override
       const rows = await query(
         `SELECT id FROM timers
-         WHERE status = 'active' AND paused_at IS NULL`,
+         WHERE status = 'active'
+           AND paused_at IS NULL`,
         []
       );
       if (rows.length) {
         await query(
           `UPDATE timers SET
              paused_at    = NOW(),
-             pause_reason = 'Outside working hours (07:45-16:30)',
+             pause_reason = 'Outside working hours — tap Override to work overtime',
              pause_type   = 'schedule',
              updated_at   = NOW()
            WHERE status = 'active' AND paused_at IS NULL`,
           []
         );
-        console.log(`[schedule] Auto-paused ${rows.length} timer(s) -- outside working hours`);
+        console.log(`[schedule] Auto-paused ${rows.length} timer(s) — outside working hours`);
       }
     } else {
-      // Within working hours -- auto-resume any schedule-paused timers
+      // Within working hours — auto-resume any schedule-paused timers
+      // Also clear any overtime_override flags at the start of the working day
       const rows = await query(
         `SELECT id FROM timers
          WHERE status = 'active'
@@ -88,7 +110,25 @@ async function runSchedule() {
              AND pause_type = 'schedule'`,
           []
         );
-        console.log(`[schedule] Auto-resumed ${rows.length} timer(s) -- within working hours`);
+        console.log(`[schedule] Auto-resumed ${rows.length} timer(s) — within working hours`);
+      }
+
+      // At start of working day, clear overtime_override flags so the schedule
+      // will auto-pause again at end of day if operator forgets to stop
+      if (isStartOfWorkingDay()) {
+        await query(
+          `UPDATE timers SET
+             total_paused_seconds = total_paused_seconds +
+               EXTRACT(EPOCH FROM (NOW() - paused_at))::int,
+             paused_at    = NULL,
+             pause_reason = NULL,
+             pause_type   = NULL,
+             updated_at   = NOW()
+           WHERE status = 'active'
+             AND paused_at IS NOT NULL
+             AND pause_type = 'overtime_override'`,
+          []
+        );
       }
     }
   } catch (err) {
@@ -98,9 +138,7 @@ async function runSchedule() {
 
 function startSchedule() {
   console.log('[schedule] Working hours auto-pause/resume started (every 60s)');
-  // Run immediately on startup to handle the current state
   runSchedule();
-  // Then every 60 seconds
   return setInterval(runSchedule, 60 * 1000);
 }
 

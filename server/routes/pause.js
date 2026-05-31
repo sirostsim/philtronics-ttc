@@ -74,19 +74,42 @@ router.post('/:timerId/resume', async (req, res) => {
       return res.status(409).json({ error: 'Timer is not paused.' });
     }
 
-    // Accumulate paused time
-    await query(
-      `UPDATE timers SET
-         total_paused_seconds = total_paused_seconds +
-           EXTRACT(EPOCH FROM (NOW() - paused_at))::int,
-         paused_at   = NULL,
-         pause_reason = NULL,
-         pause_type   = NULL,
-         updated_at   = NOW(),
-         updated_by   = $1
-       WHERE id = $2`,
-      [req.user.id, timer.id]
-    );
+    // If the operator is choosing to work overtime, mark the timer with
+    // overtime_override so the schedule won't auto-pause it again tonight.
+    // The override is cleared at the start of the next working day.
+    const isOvertimeOverride = req.body?.overtimeOverride === true;
+    const newPauseType = isOvertimeOverride ? 'overtime_override' : null;
+    const newPauseReason = isOvertimeOverride ? 'Operator overtime — override active until next working day' : null;
+
+    if (isOvertimeOverride) {
+      // Resume but leave a marker so the schedule skips this timer
+      await query(
+        `UPDATE timers SET
+           total_paused_seconds = total_paused_seconds +
+             EXTRACT(EPOCH FROM (NOW() - paused_at))::int,
+           paused_at    = NULL,
+           pause_reason = $1,
+           pause_type   = $2,
+           updated_at   = NOW(),
+           updated_by   = $3
+         WHERE id = $4`,
+        [newPauseReason, newPauseType, req.user.id, timer.id]
+      );
+    } else {
+      // Normal resume — clear all pause fields
+      await query(
+        `UPDATE timers SET
+           total_paused_seconds = total_paused_seconds +
+             EXTRACT(EPOCH FROM (NOW() - paused_at))::int,
+           paused_at    = NULL,
+           pause_reason = NULL,
+           pause_type   = NULL,
+           updated_at   = NOW(),
+           updated_by   = $1
+         WHERE id = $2`,
+        [req.user.id, timer.id]
+      );
+    }
 
     const updated = await queryOne('SELECT * FROM timers WHERE id = $1', [timer.id]);
     res.json(formatTimer(updated));
