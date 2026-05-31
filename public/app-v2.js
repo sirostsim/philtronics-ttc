@@ -476,6 +476,7 @@ async function loadTimerPage() {
       if (me.activeTimer.workstation)     metaParts.push('WS: ' + me.activeTimer.workstation);
       if (me.activeTimer.woNumber)        metaParts.push('W/O: ' + me.activeTimer.woNumber);
       if (me.activeTimer.routeCardNumber) metaParts.push('RC: ' + me.activeTimer.routeCardNumber);
+      if (me.activeTimer.timerCategory === 'rework') metaParts.push('🔄 REWORK');
       document.getElementById('activeMeta').textContent = metaParts.join('  ·  ');
 
       refreshActiveTimerBanner();
@@ -576,6 +577,7 @@ async function showActivePanel() {
       if (t.workstation)     metaParts.push('WS: ' + t.workstation);
       if (t.woNumber)        metaParts.push('W/O: ' + t.woNumber);
       if (t.routeCardNumber) metaParts.push('RC: ' + t.routeCardNumber);
+      if (t.timerCategory === 'rework') metaParts.push('🔄 REWORK');
       document.getElementById('activeMeta').textContent = metaParts.join('  ·  ');
       state.activeTargetSeconds = t.targetSeconds || null;
       updateActiveTargetDisplay();
@@ -635,11 +637,9 @@ document.getElementById('btnStart').addEventListener('click', async () => {
         (a.routeCardNumber || '')     === routeCard
       );
       if (match) {
-        // Found previous work on this assembly — show resume prompt
-        const shouldContinue = await showAssemblyResumePrompt(match);
-        if (shouldContinue === null) return; // User cancelled entirely
-        // If shouldContinue === true or false, proceed to start either way
-        // (the report handles summing all stints automatically)
+        const result = await showAssemblyResumePrompt(match);
+        if (result === null) return; // User cancelled entirely
+        window._timerCategory = result.category || 'work';
       }
     } catch (_) {
       // If the check fails for any reason, proceed silently — don't block the operator
@@ -647,6 +647,7 @@ document.getElementById('btnStart').addEventListener('click', async () => {
   }
   // ── End assembly resume check ────────────────────────────────────────────
 
+  window._timerCategory = window._timerCategory || 'work';
   const btn = document.getElementById('btnStart');
   btn.disabled = true;
   try {
@@ -655,9 +656,10 @@ document.getElementById('btnStart').addEventListener('click', async () => {
       timer = await POST('/timers/start', {
         itemNumber,
         timeCheck,
-        workstation:     workstation || undefined,
-        woNumber:        woNumber    || undefined,
-        routeCardNumber: routeCard   || undefined,
+        workstation:     workstation     || undefined,
+        woNumber:        woNumber        || undefined,
+        routeCardNumber: routeCard       || undefined,
+        timerCategory:   window._timerCategory || 'work',
       });
     } catch (startErr) {
       // If the operator already has an active timer, offer to resume it
@@ -698,6 +700,7 @@ document.getElementById('btnStart').addEventListener('click', async () => {
     document.getElementById('startWoNumber').value    = '';
     document.getElementById('startRouteCard').value   = '';
     document.getElementById('startTimeCheck').checked = false;
+    window._timerCategory = 'work';
     hideSuggestions();
     showActivePanel();
     startStopwatch();
@@ -1097,82 +1100,65 @@ document.getElementById('btnNewUser').addEventListener('click', () => {
 function showAssemblyResumePrompt(assembly) {
   return new Promise(resolve => {
     const body = el('div', {});
-
-    // Assembly identity
+    // Identity card
     const identityCard = el('div', { style: 'background:var(--bg3);border-radius:10px;padding:14px 16px;margin-bottom:16px' });
-    identityCard.appendChild(el('div', { textContent: assembly.itemNumber,
-      style: 'font-size:20px;font-weight:700;color:var(--accent);margin-bottom:6px' }));
+    identityCard.appendChild(el('div', { textContent: assembly.itemNumber, style: 'font-size:20px;font-weight:700;color:var(--accent);margin-bottom:6px' }));
     const tags = el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' });
-    tags.appendChild(el('span', { textContent: 'W/O: ' + assembly.woNumber,
-      style: 'font-size:13px;color:var(--text2);background:var(--bg2);padding:3px 10px;border-radius:4px' }));
-    if (assembly.routeCardNumber) {
-      tags.appendChild(el('span', { textContent: 'RC: ' + assembly.routeCardNumber,
-        style: 'font-size:13px;color:var(--text2);background:var(--bg2);padding:3px 10px;border-radius:4px' }));
-    }
-    identityCard.appendChild(tags);
-    body.appendChild(identityCard);
-
-    // Previous work summary
-    body.appendChild(el('p', {
-      textContent: 'You have already worked on this assembly. Here\'s a summary of the time recorded so far:',
-      style: 'font-size:14px;color:var(--text2);margin-bottom:12px',
-    }));
-
-    // Time summary grid
+    tags.appendChild(el('span', { textContent: 'W/O: ' + assembly.woNumber, style: 'font-size:13px;color:var(--text2);background:var(--bg2);padding:3px 10px;border-radius:4px' }));
+    if (assembly.routeCardNumber) tags.appendChild(el('span', { textContent: 'RC: ' + assembly.routeCardNumber, style: 'font-size:13px;color:var(--text2);background:var(--bg2);padding:3px 10px;border-radius:4px' }));
+    identityCard.appendChild(tags); body.appendChild(identityCard);
+    body.appendChild(el('p', { textContent: 'Time has already been recorded on this assembly:', style: 'font-size:14px;color:var(--text2);margin-bottom:12px' }));
+    // Time grid
     const grid = el('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px' });
-    const timeItems = [
-      { label: 'Your time so far', value: assembly.operators?.find(o => o.operatorId === state.user?.id)?.totalDisplay || assembly.combinedDisplay || '\u2014', color: 'var(--text)' },
-      { label: 'Total combined time', value: assembly.combinedDisplay || '\u2014', color: 'var(--text)' },
-      { label: 'Contributors', value: assembly.operatorCount + ' operator' + (assembly.operatorCount !== 1 ? 's' : ''), color: 'var(--text2)' },
-      { label: 'Elapsed (wall clock)', value: assembly.elapsedDisplay || '\u2014', color: 'var(--green)' },
-    ];
-    timeItems.forEach(({ label, value, color }) => {
+    [{ label: 'Your time so far', value: assembly.operators?.find(o => o.operatorId === state.user?.id)?.totalDisplay || assembly.combinedDisplay || '—', color: 'var(--text)' },
+     { label: 'Total combined time', value: assembly.combinedDisplay || '—', color: 'var(--text)' },
+     { label: 'Contributors', value: assembly.operatorCount + ' operator' + (assembly.operatorCount !== 1 ? 's' : ''), color: 'var(--text2)' },
+     { label: 'Elapsed (wall clock)', value: assembly.elapsedDisplay || '—', color: 'var(--green)' },
+    ].forEach(({ label, value, color }) => {
       const box = el('div', { style: 'background:var(--bg3);border-radius:8px;padding:10px 12px' });
-      box.appendChild(el('div', { textContent: label,
-        style: 'font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px' }));
-      box.appendChild(el('div', { textContent: value,
-        style: `font-size:16px;font-weight:700;color:${color}` }));
+      box.appendChild(el('div', { textContent: label, style: 'font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px' }));
+      box.appendChild(el('div', { textContent: value, style: `font-size:16px;font-weight:700;color:${color}` }));
       grid.appendChild(box);
     });
     body.appendChild(grid);
-
-    // Per-operator breakdown if multi-operator
+    // Multi-op breakdown
     if (assembly.operatorCount > 1) {
-      body.appendChild(el('div', { textContent: 'Operators who have worked on this assembly:',
-        style: 'font-size:13px;font-weight:600;color:var(--text2);margin-bottom:6px' }));
+      body.appendChild(el('div', { textContent: 'Operators who have worked on this assembly:', style: 'font-size:13px;font-weight:600;color:var(--text2);margin-bottom:6px' }));
       const tbl = el('table', { className: 'dash-table', style: 'margin-bottom:16px' });
-      tbl.appendChild(el('thead', {}, el('tr', {},
-        el('th', { textContent: 'Operator' }),
-        el('th', { textContent: 'Time' }),
-        el('th', { textContent: 'Stints' }),
-      )));
+      tbl.appendChild(el('thead', {}, el('tr', {}, el('th', { textContent: 'Operator' }), el('th', { textContent: 'Time' }), el('th', { textContent: 'Stints' }))));
       const tbody = el('tbody', {});
-      (assembly.operators || []).forEach(op => {
-        tbody.appendChild(el('tr', {},
-          el('td', { textContent: op.operatorName, style: 'font-weight:600' }),
-          el('td', { textContent: op.totalDisplay || '\u2014' }),
-          el('td', { textContent: op.stints.length, style: 'color:var(--text2)' }),
-        ));
-      });
-      tbl.appendChild(tbody);
-      body.appendChild(tbl);
+      (assembly.operators || []).forEach(op => { tbody.appendChild(el('tr', {}, el('td', { textContent: op.operatorName, style: 'font-weight:600' }), el('td', { textContent: op.totalDisplay || '—' }), el('td', { textContent: op.stints.length, style: 'color:var(--text2)' }))); });
+      tbl.appendChild(tbody); body.appendChild(tbl);
     }
-
-    body.appendChild(el('p', {
-      textContent: 'Do you want to continue timing this assembly, or start a completely new session?',
-      style: 'font-size:14px;color:var(--text2);margin-bottom:4px',
-    }));
-
-    // Buttons
-    const btnCancel    = el('button', { className: 'btn btn-ghost',   textContent: 'Cancel' });
-    const btnNewSess   = el('button', { className: 'btn btn-ghost',   textContent: '\u25B6 New Session' });
-    const btnContinue  = el('button', { className: 'btn btn-primary', textContent: '\u25B6 Continue This Assembly' });
-
-    btnCancel.addEventListener('click',   () => { closeModal(); resolve(null);  });
-    btnNewSess.addEventListener('click',  () => { closeModal(); resolve(false); });
-    btnContinue.addEventListener('click', () => { closeModal(); resolve(true);  });
-
-    openModal('Assembly Already in Progress', body, [btnCancel, btnNewSess, btnContinue]);
+    // The key question
+    const qCard = el('div', { style: 'background:var(--bg3);border-radius:10px;padding:14px 16px;margin-bottom:8px;border:1px solid var(--border)' });
+    qCard.appendChild(el('div', { textContent: 'Why are you returning to this assembly?', style: 'font-size:15px;font-weight:700;color:var(--text);margin-bottom:12px' }));
+    let selectedCategory = null;
+    const optCards = [];
+    [{ value: 'work',   icon: '▶', title: 'Continuing the build', desc: 'The assembly is not yet finished — picking up where you left off.', color: 'var(--blue)' },
+     { value: 'rework', icon: '🔄', title: 'Re-Work Request', desc: 'The assembly was completed but has been returned for correction.', color: 'var(--amber)' },
+    ].forEach(opt => {
+      const card = el('div', { style: 'cursor:pointer;border:2px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:8px;transition:border-color .15s' });
+      const row = el('div', { style: 'display:flex;align-items:flex-start;gap:12px' });
+      row.appendChild(el('span', { textContent: opt.icon, style: 'font-size:20px;margin-top:2px' }));
+      const txt = el('div', {});
+      txt.appendChild(el('div', { textContent: opt.title, style: `font-weight:700;font-size:15px;color:${opt.color};margin-bottom:3px` }));
+      txt.appendChild(el('div', { textContent: opt.desc,  style: 'font-size:13px;color:var(--text2)' }));
+      row.appendChild(txt); card.appendChild(row);
+      optCards.push({ card, value: opt.value, color: opt.color });
+      card.addEventListener('click', () => {
+        selectedCategory = opt.value;
+        optCards.forEach(o => { o.card.style.borderColor = o.value === opt.value ? o.color : 'var(--border)'; });
+        btnStart.disabled = false;
+      });
+      qCard.appendChild(card);
+    });
+    body.appendChild(qCard);
+    const btnCancel = el('button', { className: 'btn btn-ghost',   textContent: 'Cancel' });
+    const btnStart  = el('button', { className: 'btn btn-primary', textContent: '▶ Start Timer', disabled: true });
+    btnCancel.addEventListener('click', () => { closeModal(); resolve(null); });
+    btnStart.addEventListener('click',  () => { closeModal(); resolve({ category: selectedCategory || 'work' }); });
+    openModal('Assembly Already in Progress', body, [btnCancel, btnStart]);
   });
 }
 
@@ -1584,6 +1570,7 @@ function renderEntryList(containerId, timers, showOperator = false) {
     if (t.workstation)     left.appendChild(el('div', { className: 'entry-meta-tag', textContent: '🖥 ' + t.workstation }));
     if (t.woNumber)        left.appendChild(el('div', { className: 'entry-meta-tag', textContent: '📋 W/O: ' + t.woNumber }));
     if (t.routeCardNumber) left.appendChild(el('div', { className: 'entry-meta-tag', textContent: '🔢 RC: ' + t.routeCardNumber }));
+    if (t.timerCategory === 'rework') left.appendChild(el('div', { className: 'entry-meta-tag', style: 'color:var(--amber);border-color:var(--amber)', textContent: '🔄 Rework' }));
     if (t.timeCheck)   left.appendChild(el('span', { className: 'badge badge-timecheck', textContent: '✓ Time Check' }));
     if (t.targetSeconds) left.appendChild(el('div', { className: 'entry-target',
       textContent: '🎯 Target: ' + formatHM(t.targetSeconds) }));
@@ -3129,18 +3116,19 @@ async function runReport() {
   if (to)   { const d = new Date(to); d.setHours(23,59,59,999); params.set('to', d.toISOString()); }
   const qs = params.toString();
 
-  ['reportStatCards','reportItemTable','reportOperatorTable','reportTrendTable','reportOverdueGrid','reportAssemblyGrid']
+  ['reportStatCards','reportItemTable','reportOperatorTable','reportTrendTable','reportOverdueGrid','reportAssemblyGrid','reportQualityGrid']
     .forEach(id => { const n = document.getElementById(id); if (n) n.innerHTML = '<div class="empty-state">Loading\u2026</div>'; });
 
-  let stats, operators, trends, overdue, productivity, assemblyData;
+  let stats, operators, trends, overdue, productivity, assemblyData, qualityData;
   try {
-    [stats, operators, trends, overdue, productivity, assemblyData] = await Promise.all([
+    [stats, operators, trends, overdue, productivity, assemblyData, qualityData] = await Promise.all([
       GET(`/export/stats?${qs}`),
       GET(`/export/report/operators?${qs}`),
       GET(`/export/report/trends?${qs}`),
       GET(`/export/report/overdue?${qs}`),
       GET(`/export/productivity?${qs}&groupByDay=true`),
       GET(`/export/assembly-summary?${qs}`),
+      GET(`/export/quality?${qs}`),
     ]);
   } catch (err) {
     console.error('Report fetch error:', err);
@@ -3153,6 +3141,7 @@ async function runReport() {
   overdue      = overdue      || { byItem: [], byOperator: [] };
   productivity = productivity || [];
   assemblyData = assemblyData || { assemblies: [] };
+  qualityData  = qualityData  || { summary: {}, reworkByItem: [], reworkByOperator: [] };
 
   renderReportStatCards(stats);
   renderReportTrendTable(trends);
@@ -3161,6 +3150,7 @@ async function runReport() {
   renderReportOverdue(overdue);
   renderProductivityTable(productivity?.operators || [], productivity?.targetPct || 80, productivity?.operators?.[0]?.daily?.length > 0);
   renderAssemblySummary(assemblyData?.assemblies || []);
+  renderQualityReport(qualityData);
 }
 
 async function runProductivitySection() {
@@ -3933,6 +3923,107 @@ function renderAssemblySummary(assemblies) {
 
   searchInput.addEventListener('input', renderCards);
   renderCards();
+}
+function renderQualityReport(data) {
+  const container = document.getElementById('reportQualityGrid');
+  if (!container) return;
+  container.innerHTML = '';
+
+  const s = data?.summary || {};
+  const reworkByItem     = data?.reworkByItem     || [];
+  const reworkByOperator = data?.reworkByOperator || [];
+
+  const rftRate  = s.rftRate  ?? 100;
+  const rftColor = rftRate >= 95 ? 'var(--green)' : rftRate >= 80 ? 'var(--amber)' : 'var(--red)';
+
+  // ── RFT summary cards ───────────────────────────────────────────────────
+  const cards = el('div', { style: 'display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:20px' });
+  [
+    { label: 'Right First Time',      value: rftRate + '%',                      color: rftColor,        tip: 'Assemblies with no rework timers' },
+    { label: 'Assemblies tracked',    value: s.totalAssemblies ?? 0,             color: 'var(--text)' },
+    { label: 'Passed first time',     value: s.rftCount ?? 0,                    color: 'var(--green)' },
+    { label: 'Required rework',       value: s.reworkAssemblies ?? 0,            color: s.reworkAssemblies ? 'var(--red)' : 'var(--text2)' },
+    { label: 'Total work time',       value: s.totalWorkDisplay   || '0m',       color: 'var(--text)' },
+    { label: 'Total rework time',     value: s.totalReworkDisplay || '0m',       color: s.totalReworkSecs ? 'var(--amber)' : 'var(--text2)' },
+    { label: 'Rework as % of hours',  value: (s.reworkPct ?? 0) + '%',          color: s.reworkPct ? 'var(--amber)' : 'var(--text2)' },
+  ].forEach(({ label, value, color, tip }) => {
+    const card = el('div', { style: 'background:var(--bg2);border-radius:10px;padding:14px 16px;border:1px solid var(--border)' });
+    card.appendChild(el('div', { textContent: label, style: 'font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px' }));
+    const v = el('div', { textContent: value, style: `font-size:22px;font-weight:700;color:${color}` });
+    if (tip) v.title = tip;
+    card.appendChild(v);
+    cards.appendChild(card);
+  });
+  container.appendChild(cards);
+
+  if (!s.totalAssemblies) {
+    container.appendChild(el('div', { className: 'empty-state', textContent: 'No assembly data with W/O numbers found for this period.' }));
+    return;
+  }
+
+  // ── RFT gauge bar ────────────────────────────────────────────────────────
+  const gaugeWrap = el('div', { style: 'background:var(--bg2);border-radius:10px;padding:16px;margin-bottom:16px;border:1px solid var(--border)' });
+  gaugeWrap.appendChild(el('div', { textContent: 'Right First Time Rate', style: 'font-size:13px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px' }));
+  const gaugeBar = el('div', { style: 'background:var(--bg3);border-radius:6px;height:24px;position:relative;overflow:hidden' });
+  gaugeBar.appendChild(el('div', { style: `width:${rftRate}%;background:${rftColor};height:24px;border-radius:6px;transition:width .6s ease` }));
+  const gaugeLabel = el('div', { textContent: rftRate + '%', style: `position:absolute;right:12px;top:3px;font-weight:700;font-size:14px;color:var(--text)` });
+  gaugeBar.appendChild(gaugeLabel);
+  gaugeWrap.appendChild(gaugeBar);
+  const targets = el('div', { style: 'display:flex;gap:16px;margin-top:8px;font-size:12px;color:var(--text2)' });
+  targets.appendChild(el('span', { textContent: '■ 95%+ Target', style: 'color:var(--green)' }));
+  targets.appendChild(el('span', { textContent: '■ 80-95% Acceptable', style: 'color:var(--amber)' }));
+  targets.appendChild(el('span', { textContent: '■ Below 80% Needs attention', style: 'color:var(--red)' }));
+  gaugeWrap.appendChild(targets);
+  container.appendChild(gaugeWrap);
+
+  if (!reworkByItem.length) {
+    container.appendChild(el('div', { className: 'empty-state', textContent: 'No rework timers recorded in this period.' }));
+    return;
+  }
+
+  // ── Two column tables ────────────────────────────────────────────────────
+  const cols = el('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:14px' });
+
+  // Rework by item
+  const itemCard = el('div', { style: 'background:var(--bg2);border-radius:10px;padding:16px;border:1px solid var(--border)' });
+  itemCard.appendChild(el('div', { textContent: 'Rework — by Item', style: 'font-size:13px;font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px' }));
+  const iTbl = el('table', { className: 'dash-table' });
+  iTbl.appendChild(el('thead', {}, el('tr', {},
+    el('th', { textContent: 'Item' }),
+    el('th', { textContent: 'Rework Jobs' }),
+    el('th', { textContent: 'Rework Time' }),
+  )));
+  const iTbody = el('tbody', {});
+  reworkByItem.forEach(r => {
+    iTbody.appendChild(el('tr', {},
+      el('td', { textContent: r.itemNumber, className: 'perf-item' }),
+      el('td', { textContent: r.reworkCount, style: 'color:var(--red);font-weight:700' }),
+      el('td', { textContent: r.reworkHoursDisplay }),
+    ));
+  });
+  iTbl.appendChild(iTbody); itemCard.appendChild(iTbl);
+  cols.appendChild(itemCard);
+
+  // Rework by operator
+  const opCard = el('div', { style: 'background:var(--bg2);border-radius:10px;padding:16px;border:1px solid var(--border)' });
+  opCard.appendChild(el('div', { textContent: 'Rework — by Operator', style: 'font-size:13px;font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px' }));
+  const oTbl = el('table', { className: 'dash-table' });
+  oTbl.appendChild(el('thead', {}, el('tr', {},
+    el('th', { textContent: 'Operator' }),
+    el('th', { textContent: 'Rework Jobs' }),
+    el('th', { textContent: 'Rework Time' }),
+  )));
+  const oTbody = el('tbody', {});
+  reworkByOperator.forEach(r => {
+    oTbody.appendChild(el('tr', {},
+      el('td', { textContent: r.operatorName, style: 'font-weight:600' }),
+      el('td', { textContent: r.reworkCount, style: 'color:var(--red);font-weight:700' }),
+      el('td', { textContent: r.reworkHoursDisplay }),
+    ));
+  });
+  oTbl.appendChild(oTbody); opCard.appendChild(oTbl);
+  cols.appendChild(opCard);
+  container.appendChild(cols);
 }
 
 

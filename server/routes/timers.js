@@ -24,6 +24,7 @@ async function writeAudit(timerId, action, performedBy, reason, details) {
 }
 
 function formatTimer(t) {
+  // Net elapsed excludes paused time -- used for display on wallboard/timer
   const now       = Date.now();
   const startedMs = new Date(t.started_at).getTime();
   const pausedMs  = t.paused_at ? new Date(t.paused_at).getTime() : now;
@@ -39,12 +40,14 @@ function formatTimer(t) {
     completedAt:        t.completed_at,
     durationSeconds:    t.duration_seconds,
     status:             t.status,
+    // Pause state
     isPaused:           !!t.paused_at,
     pausedAt:           t.paused_at || null,
     pauseReason:        t.pause_reason || null,
     pauseType:          t.pause_type || null,
     totalPausedSeconds: t.total_paused_seconds || 0,
     netElapsedSeconds:  netElapsed,
+    // Other fields
     timeCheck:          !!t.time_check,
     workstation:        t.workstation,
     woNumber:           t.wo_number,
@@ -81,6 +84,7 @@ router.post('/start', validate(schemas.startTimer), async (req, res) => {
 
     const id        = uuidv4();
     const startedAt = new Date().toISOString();
+    // Look up operator's full record to get department
     const operatorRecord = await queryOne('SELECT * FROM users WHERE id = $1', [user.id]);
     const department = operatorRecord?.department || 'Production';
 
@@ -93,6 +97,7 @@ router.post('/start', validate(schemas.startTimer), async (req, res) => {
     const timer = await queryOne('SELECT * FROM timers WHERE id = $1', [id]);
     res.status(201).json(formatTimer(timer));
   } catch (err) {
+    // Unique constraint violation = race condition, two starts at same time
     if (err.code === '23505') {
       return res.status(409).json({ error: 'You already have an active timer running.' });
     }
@@ -115,6 +120,7 @@ router.post('/:id/stop', validate(schemas.stopTimer), async (req, res) => {
 
     const { notes } = req.body;
 
+    // If paused, accumulate final pause period before stopping
     if (timer.paused_at) {
       await query(
         `UPDATE timers SET
@@ -124,10 +130,12 @@ router.post('/:id/stop', validate(schemas.stopTimer), async (req, res) => {
          WHERE id = $1`,
         [timer.id]
       );
+      // Reload to get updated total_paused_seconds
       const refreshed = await queryOne('SELECT * FROM timers WHERE id = $1', [timer.id]);
       Object.assign(timer, refreshed);
     }
 
+    // Net duration = total elapsed minus all paused time
     const completedAt     = new Date().toISOString();
     const rawSeconds      = Math.round((Date.now() - new Date(timer.started_at).getTime()) / 1000);
     const durationSeconds = Math.max(0, rawSeconds - (timer.total_paused_seconds || 0));
@@ -247,6 +255,7 @@ router.get('/', async (req, res) => {
     let   p          = 1;
 
     if (!isSupervisorPlus) {
+      // Operators see only their own timers
       conditions.push(`t.operator_id = $${p++}`);
       params.push(user.id);
     } else if (operatorId) {
@@ -254,10 +263,13 @@ router.get('/', async (req, res) => {
       params.push(operatorId);
     }
 
+    // Supervisors are restricted to their own department unless overridden by explicit dept param
     if (isSupervisorPlus && !isManagerPlus) {
+      // Supervisor: always filter to their own department
       conditions.push(`t.department = $${p++}`);
       params.push(user.department || 'Production');
     } else if (department) {
+      // Manager/admin with explicit department filter
       conditions.push(`t.department = $${p++}`);
       params.push(department);
     }
@@ -317,6 +329,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+
 // ─── DELETE /api/timers/:id ── Administrator only ─────────────────────────────
 router.delete('/:id', async (req, res) => {
   if (!hasRole(req.user, 'administrator')) {
@@ -326,7 +339,9 @@ router.delete('/:id', async (req, res) => {
     const timer = await queryOne('SELECT * FROM timers WHERE id = $1', [req.params.id]);
     if (!timer) return res.status(404).json({ error: 'Timer not found.' });
 
+    // Delete audit log entries for this timer first (foreign key)
     await query('DELETE FROM audit_log WHERE timer_id = $1', [timer.id]);
+    // Delete the timer
     await query('DELETE FROM timers WHERE id = $1', [timer.id]);
 
     res.json({ ok: true, message: 'Timer record deleted.' });
@@ -336,7 +351,9 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+
 // ─── POST /api/timers/lower-all-hands ────────────────────────────────────────
+// Supervisor+ lowers all raised hands in one action.
 router.post('/lower-all-hands', async (req, res) => {
   try {
     if (!hasRole(req.user, 'supervisor')) {
@@ -355,14 +372,15 @@ router.post('/lower-all-hands', async (req, res) => {
     res.status(500).json({ error: 'Could not lower all hands.' });
   }
 });
-
-// ─── POST /api/timers/:id/raise-hand ─────────────────────────────────────────
+// Operator raises their hand on their active timer. Supervisors+ can also lower
+// anyone's hand via the lower-hand route.
 router.post('/:id/raise-hand', async (req, res) => {
   try {
     const timer = await queryOne('SELECT * FROM timers WHERE id = $1', [req.params.id]);
     if (!timer) return res.status(404).json({ error: 'Timer not found.' });
     if (timer.status !== 'active') return res.status(409).json({ error: 'Timer is not active.' });
 
+    // Only the operator who owns the timer can raise their own hand
     if (timer.operator_id !== req.user.id) {
       return res.status(403).json({ error: 'You can only raise your own hand.' });
     }
@@ -370,6 +388,7 @@ router.post('/:id/raise-hand', async (req, res) => {
     await query('UPDATE timers SET hand_raised = TRUE WHERE id = $1', [timer.id]);
     await writeAudit(timer.id, 'hand_raised', req.user.id, null, null);
 
+    // Notify all connected supervisors, managers and administrators
     pushToRole('supervisor', {
       type:          'hand_raised',
       timerId:       timer.id,
@@ -387,13 +406,14 @@ router.post('/:id/raise-hand', async (req, res) => {
 });
 
 // ─── POST /api/timers/:id/lower-hand ─────────────────────────────────────────
+// Operator lowers their own hand, or supervisor+ lowers anyone's hand.
 router.post('/:id/lower-hand', async (req, res) => {
   try {
     const timer = await queryOne('SELECT * FROM timers WHERE id = $1', [req.params.id]);
     if (!timer) return res.status(404).json({ error: 'Timer not found.' });
     if (timer.status !== 'active') return res.status(409).json({ error: 'Timer is not active.' });
 
-    const isSupervisorPlus = ['supervisor', 'manager', 'administrator', 'superuser'].includes(req.user.role);
+    const isSupervisorPlus = ['supervisor', 'manager', 'administrator'].includes(req.user.role);
     if (timer.operator_id !== req.user.id && !isSupervisorPlus) {
       return res.status(403).json({ error: 'You do not have permission to lower this hand.' });
     }

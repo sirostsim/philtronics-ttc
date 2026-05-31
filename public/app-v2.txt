@@ -476,6 +476,7 @@ async function loadTimerPage() {
       if (me.activeTimer.workstation)     metaParts.push('WS: ' + me.activeTimer.workstation);
       if (me.activeTimer.woNumber)        metaParts.push('W/O: ' + me.activeTimer.woNumber);
       if (me.activeTimer.routeCardNumber) metaParts.push('RC: ' + me.activeTimer.routeCardNumber);
+      if (me.activeTimer.timerCategory === 'rework') metaParts.push('🔄 REWORK');
       document.getElementById('activeMeta').textContent = metaParts.join('  ·  ');
 
       refreshActiveTimerBanner();
@@ -576,6 +577,7 @@ async function showActivePanel() {
       if (t.workstation)     metaParts.push('WS: ' + t.workstation);
       if (t.woNumber)        metaParts.push('W/O: ' + t.woNumber);
       if (t.routeCardNumber) metaParts.push('RC: ' + t.routeCardNumber);
+      if (t.timerCategory === 'rework') metaParts.push('🔄 REWORK');
       document.getElementById('activeMeta').textContent = metaParts.join('  ·  ');
       state.activeTargetSeconds = t.targetSeconds || null;
       updateActiveTargetDisplay();
@@ -616,6 +618,36 @@ document.getElementById('btnStart').addEventListener('click', async () => {
     return;
   }
 
+  // ── Assembly resume check ────────────────────────────────────────────────
+  // If wo_number AND route_card are both entered, check whether this operator
+  // has previous completed stints on the same assembly within the last 7 days.
+  // If so, prompt before starting a new session.
+  if (woNumber && routeCard) {
+    try {
+      const sevenDaysAgo = new Date(Date.now() - 7*24*60*60*1000).toISOString();
+      const qs = new URLSearchParams({
+        from: sevenDaysAgo,
+        wo: woNumber,
+        rc: routeCard,
+      });
+      const summary = await GET(`/export/assembly-summary?${qs}`);
+      const match = (summary?.assemblies || []).find(a =>
+        a.itemNumber.toLowerCase()    === itemNumber.toLowerCase() &&
+        a.woNumber                    === woNumber &&
+        (a.routeCardNumber || '')     === routeCard
+      );
+      if (match) {
+        const result = await showAssemblyResumePrompt(match);
+        if (result === null) return; // User cancelled entirely
+        window._timerCategory = result.category || 'work';
+      }
+    } catch (_) {
+      // If the check fails for any reason, proceed silently — don't block the operator
+    }
+  }
+  // ── End assembly resume check ────────────────────────────────────────────
+
+  window._timerCategory = window._timerCategory || 'work';
   const btn = document.getElementById('btnStart');
   btn.disabled = true;
   try {
@@ -624,9 +656,10 @@ document.getElementById('btnStart').addEventListener('click', async () => {
       timer = await POST('/timers/start', {
         itemNumber,
         timeCheck,
-        workstation:     workstation || undefined,
-        woNumber:        woNumber    || undefined,
-        routeCardNumber: routeCard   || undefined,
+        workstation:     workstation     || undefined,
+        woNumber:        woNumber        || undefined,
+        routeCardNumber: routeCard       || undefined,
+        timerCategory:   window._timerCategory || 'work',
       });
     } catch (startErr) {
       // If the operator already has an active timer, offer to resume it
@@ -667,6 +700,7 @@ document.getElementById('btnStart').addEventListener('click', async () => {
     document.getElementById('startWoNumber').value    = '';
     document.getElementById('startRouteCard').value   = '';
     document.getElementById('startTimeCheck').checked = false;
+    window._timerCategory = 'work';
     hideSuggestions();
     showActivePanel();
     startStopwatch();
@@ -1051,9 +1085,263 @@ function renderAdminTools() {
   });
 }
 
+document.getElementById('btnBulkUpload').addEventListener('click', () => {
+  openBulkUploadModal();
+});
+
 document.getElementById('btnNewUser').addEventListener('click', () => {
   openUserModal(null);
 });
+
+// Returns a Promise:
+//   true  — operator confirmed they want to continue this assembly (proceed to start)
+//   false — operator chose to start fresh (proceed to start)
+//   null  — operator cancelled (do not start)
+function showAssemblyResumePrompt(assembly) {
+  return new Promise(resolve => {
+    const body = el('div', {});
+    // Identity card
+    const identityCard = el('div', { style: 'background:var(--bg3);border-radius:10px;padding:14px 16px;margin-bottom:16px' });
+    identityCard.appendChild(el('div', { textContent: assembly.itemNumber, style: 'font-size:20px;font-weight:700;color:var(--accent);margin-bottom:6px' }));
+    const tags = el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' });
+    tags.appendChild(el('span', { textContent: 'W/O: ' + assembly.woNumber, style: 'font-size:13px;color:var(--text2);background:var(--bg2);padding:3px 10px;border-radius:4px' }));
+    if (assembly.routeCardNumber) tags.appendChild(el('span', { textContent: 'RC: ' + assembly.routeCardNumber, style: 'font-size:13px;color:var(--text2);background:var(--bg2);padding:3px 10px;border-radius:4px' }));
+    identityCard.appendChild(tags); body.appendChild(identityCard);
+    body.appendChild(el('p', { textContent: 'Time has already been recorded on this assembly:', style: 'font-size:14px;color:var(--text2);margin-bottom:12px' }));
+    // Time grid
+    const grid = el('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px' });
+    [{ label: 'Your time so far', value: assembly.operators?.find(o => o.operatorId === state.user?.id)?.totalDisplay || assembly.combinedDisplay || '—', color: 'var(--text)' },
+     { label: 'Total combined time', value: assembly.combinedDisplay || '—', color: 'var(--text)' },
+     { label: 'Contributors', value: assembly.operatorCount + ' operator' + (assembly.operatorCount !== 1 ? 's' : ''), color: 'var(--text2)' },
+     { label: 'Elapsed (wall clock)', value: assembly.elapsedDisplay || '—', color: 'var(--green)' },
+    ].forEach(({ label, value, color }) => {
+      const box = el('div', { style: 'background:var(--bg3);border-radius:8px;padding:10px 12px' });
+      box.appendChild(el('div', { textContent: label, style: 'font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px' }));
+      box.appendChild(el('div', { textContent: value, style: `font-size:16px;font-weight:700;color:${color}` }));
+      grid.appendChild(box);
+    });
+    body.appendChild(grid);
+    // Multi-op breakdown
+    if (assembly.operatorCount > 1) {
+      body.appendChild(el('div', { textContent: 'Operators who have worked on this assembly:', style: 'font-size:13px;font-weight:600;color:var(--text2);margin-bottom:6px' }));
+      const tbl = el('table', { className: 'dash-table', style: 'margin-bottom:16px' });
+      tbl.appendChild(el('thead', {}, el('tr', {}, el('th', { textContent: 'Operator' }), el('th', { textContent: 'Time' }), el('th', { textContent: 'Stints' }))));
+      const tbody = el('tbody', {});
+      (assembly.operators || []).forEach(op => { tbody.appendChild(el('tr', {}, el('td', { textContent: op.operatorName, style: 'font-weight:600' }), el('td', { textContent: op.totalDisplay || '—' }), el('td', { textContent: op.stints.length, style: 'color:var(--text2)' }))); });
+      tbl.appendChild(tbody); body.appendChild(tbl);
+    }
+    // The key question
+    const qCard = el('div', { style: 'background:var(--bg3);border-radius:10px;padding:14px 16px;margin-bottom:8px;border:1px solid var(--border)' });
+    qCard.appendChild(el('div', { textContent: 'Why are you returning to this assembly?', style: 'font-size:15px;font-weight:700;color:var(--text);margin-bottom:12px' }));
+    let selectedCategory = null;
+    const optCards = [];
+    [{ value: 'work',   icon: '▶', title: 'Continuing the build', desc: 'The assembly is not yet finished — picking up where you left off.', color: 'var(--blue)' },
+     { value: 'rework', icon: '🔄', title: 'Re-Work Request', desc: 'The assembly was completed but has been returned for correction.', color: 'var(--amber)' },
+    ].forEach(opt => {
+      const card = el('div', { style: 'cursor:pointer;border:2px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:8px;transition:border-color .15s' });
+      const row = el('div', { style: 'display:flex;align-items:flex-start;gap:12px' });
+      row.appendChild(el('span', { textContent: opt.icon, style: 'font-size:20px;margin-top:2px' }));
+      const txt = el('div', {});
+      txt.appendChild(el('div', { textContent: opt.title, style: `font-weight:700;font-size:15px;color:${opt.color};margin-bottom:3px` }));
+      txt.appendChild(el('div', { textContent: opt.desc,  style: 'font-size:13px;color:var(--text2)' }));
+      row.appendChild(txt); card.appendChild(row);
+      optCards.push({ card, value: opt.value, color: opt.color });
+      card.addEventListener('click', () => {
+        selectedCategory = opt.value;
+        optCards.forEach(o => { o.card.style.borderColor = o.value === opt.value ? o.color : 'var(--border)'; });
+        btnStart.disabled = false;
+      });
+      qCard.appendChild(card);
+    });
+    body.appendChild(qCard);
+    const btnCancel = el('button', { className: 'btn btn-ghost',   textContent: 'Cancel' });
+    const btnStart  = el('button', { className: 'btn btn-primary', textContent: '▶ Start Timer', disabled: true });
+    btnCancel.addEventListener('click', () => { closeModal(); resolve(null); });
+    btnStart.addEventListener('click',  () => { closeModal(); resolve({ category: selectedCategory || 'work' }); });
+    openModal('Assembly Already in Progress', body, [btnCancel, btnStart]);
+  });
+}
+
+function openBulkUploadModal() {
+  const body = el('div', {});
+
+  // Instructions
+  const instructions = el('div', { style: 'background:var(--bg3);border-radius:8px;padding:14px;margin-bottom:16px;font-size:13px;color:var(--text2);line-height:1.6' });
+  instructions.innerHTML = `
+    <strong style="color:var(--text);display:block;margin-bottom:6px">CSV Format</strong>
+    Upload a CSV file with the following columns (header row required):<br>
+    <code style="color:var(--accent);font-size:12px">username, full_name, role, department, password</code><br><br>
+    <strong style="color:var(--text)">Valid roles:</strong> operator, supervisor, manager${state.user.role === 'superuser' ? ', administrator' : ''}<br>
+    <strong style="color:var(--text)">Valid departments:</strong> Production, Stores, Test and Inspection, PCB<br>
+    <strong style="color:var(--text)">Max rows:</strong> 200 per upload
+  `;
+  body.appendChild(instructions);
+
+  // Download template link
+  const tmplBtn = el('button', { className: 'btn btn-ghost btn-sm', textContent: '⬇ Download CSV Template', style: 'margin-bottom:16px' });
+  tmplBtn.addEventListener('click', () => {
+    const csv = [
+      'username,full_name,role,department,password',
+      'jsmith,John Smith,operator,Production,Temp1234!',
+      'ataylor,Anne Taylor,supervisor,Stores,Temp1234!',
+    ].join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'worktime-users-template.csv'; a.click();
+  });
+  body.appendChild(tmplBtn);
+
+  // File input
+  const fileLabel = el('label', { style: 'display:block;margin-bottom:16px' });
+  fileLabel.appendChild(el('div', { textContent: 'Select CSV file', style: 'font-size:13px;font-weight:600;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em' }));
+  const fileInput = el('input', { type: 'file', accept: '.csv,text/csv',
+    style: 'width:100%;padding:10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px;cursor:pointer' });
+  fileLabel.appendChild(fileInput);
+  body.appendChild(fileLabel);
+
+  // Preview area
+  const previewArea = el('div', { id: 'bulkPreviewArea' });
+  body.appendChild(previewArea);
+
+  const errDiv = el('div', { className: 'error-msg', style: 'margin-top:8px' });
+  body.appendChild(errDiv);
+
+  const btnCancel  = el('button', { className: 'btn btn-ghost',   textContent: 'Cancel' });
+  const btnPreview = el('button', { className: 'btn btn-ghost',   textContent: 'Validate CSV', disabled: true });
+  const btnConfirm = el('button', { className: 'btn btn-primary', textContent: 'Create Users', disabled: true });
+  btnCancel.addEventListener('click', closeModal);
+
+  let parsedRows = [];
+
+  // Parse CSV when file selected
+  fileInput.addEventListener('change', () => {
+    previewArea.innerHTML = '';
+    btnPreview.disabled = true;
+    btnConfirm.disabled = true;
+    errDiv.textContent = '';
+    const file = fileInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      const text = e.target.result;
+      const lines = text.trim().split(/\r?\n/).filter(l => l.trim());
+      if (lines.length < 2) { errDiv.textContent = 'File must have a header row and at least one data row.'; return; }
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g,''));
+      const required = ['username','full_name','role','department','password'];
+      const missing = required.filter(r => !headers.includes(r));
+      if (missing.length) { errDiv.textContent = `Missing columns: ${missing.join(', ')}`; return; }
+      parsedRows = lines.slice(1).map(line => {
+        // Handle quoted CSV fields
+        const vals = []; let cur = ''; let inQ = false;
+        for (let i = 0; i < line.length; i++) {
+          const ch = line[i];
+          if (ch === '"') { inQ = !inQ; }
+          else if (ch === ',' && !inQ) { vals.push(cur.trim()); cur = ''; }
+          else { cur += ch; }
+        }
+        vals.push(cur.trim());
+        const row = {};
+        headers.forEach((h, i) => { row[h] = (vals[i] || '').replace(/^"|"$/g,''); });
+        return row;
+      }).filter(r => Object.values(r).some(v => v));
+      if (!parsedRows.length) { errDiv.textContent = 'No data rows found.'; return; }
+      previewArea.appendChild(el('div', { textContent: `${parsedRows.length} row${parsedRows.length!==1?'s':''} found. Click Validate to check for errors.`,
+        style: 'font-size:13px;color:var(--text2);padding:8px 0' }));
+      btnPreview.disabled = false;
+    };
+    reader.readAsText(file);
+  });
+
+  // Validate (dry run)
+  btnPreview.addEventListener('click', async () => {
+    previewArea.innerHTML = '';
+    btnConfirm.disabled = true;
+    errDiv.textContent = '';
+    btnPreview.disabled = true;
+    btnPreview.textContent = 'Validating\u2026';
+    try {
+      const data = await api('POST', '/users/bulk-upload', { rows: parsedRows, dryRun: true });
+      renderBulkPreview(previewArea, data.results);
+      const validCount = data.validCount;
+      if (validCount === 0) {
+        errDiv.textContent = 'No valid rows to create. Please fix the errors above.';
+      } else {
+        btnConfirm.disabled = false;
+        btnConfirm.textContent = `Create ${validCount} User${validCount!==1?'s':''}`;
+      }
+    } catch (err) {
+      errDiv.textContent = err.message;
+    } finally {
+      btnPreview.disabled = false;
+      btnPreview.textContent = 'Validate CSV';
+    }
+  });
+
+  // Confirm upload
+  btnConfirm.addEventListener('click', async () => {
+    btnConfirm.disabled = true;
+    btnConfirm.textContent = 'Creating\u2026';
+    errDiv.textContent = '';
+    try {
+      const data = await api('POST', '/users/bulk-upload', { rows: parsedRows, dryRun: false });
+      closeModal();
+      toast(`${data.created} user${data.created!==1?'s':''} created${data.skipped?' ('+data.skipped+' skipped)':''}`, 'success');
+      loadAdminPage();
+    } catch (err) {
+      errDiv.textContent = err.message;
+      btnConfirm.disabled = false;
+      btnConfirm.textContent = 'Create Users';
+    }
+  });
+
+  openModal('Bulk Upload Users', body, [btnCancel, btnPreview, btnConfirm]);
+}
+
+function renderBulkPreview(container, results) {
+  container.innerHTML = '';
+  const validCount   = results.filter(r => r.valid).length;
+  const invalidCount = results.length - validCount;
+
+  // Summary banner
+  const summary = el('div', { style: `display:flex;gap:10px;margin-bottom:12px;padding:10px 14px;border-radius:8px;background:var(--bg3);font-size:13px` });
+  summary.appendChild(el('span', { textContent: `✓ ${validCount} valid`, style: 'color:var(--green);font-weight:700' }));
+  if (invalidCount) summary.appendChild(el('span', { textContent: `✗ ${invalidCount} invalid`, style: 'color:var(--red);font-weight:700' }));
+  container.appendChild(summary);
+
+  // Preview table
+  const wrap = el('div', { style: 'max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:8px' });
+  const tbl = el('table', { className: 'dash-table', style: 'margin:0' });
+  tbl.appendChild(el('thead', {}, el('tr', {},
+    el('th', { textContent: '#' }),
+    el('th', { textContent: 'Username' }),
+    el('th', { textContent: 'Full Name' }),
+    el('th', { textContent: 'Role' }),
+    el('th', { textContent: 'Department' }),
+    el('th', { textContent: 'Status' }),
+  )));
+  const tbody = el('tbody', {});
+  results.forEach(r => {
+    const tr = el('tr', { style: r.valid ? '' : 'background:rgba(239,68,68,.06)' });
+    tr.appendChild(el('td', { textContent: r.rowNum, style: 'color:var(--text2)' }));
+    tr.appendChild(el('td', { textContent: r.username || '\u2014', style: 'font-family:var(--font-mono,monospace)' }));
+    tr.appendChild(el('td', { textContent: r.fullName  || '\u2014' }));
+    tr.appendChild(el('td', { textContent: r.role      || '\u2014' }));
+    tr.appendChild(el('td', { textContent: r.department|| '\u2014' }));
+    const statusCell = el('td', {});
+    if (r.valid) {
+      statusCell.appendChild(el('span', { textContent: '✓ Ready', style: 'color:var(--green);font-weight:600;font-size:12px' }));
+    } else {
+      const errList = el('ul', { style: 'margin:0;padding-left:16px;list-style:disc' });
+      r.errors.forEach(e => errList.appendChild(el('li', { textContent: e, style: 'color:var(--red);font-size:12px' })));
+      statusCell.appendChild(errList);
+    }
+    tr.appendChild(statusCell);
+    tbody.appendChild(tr);
+  });
+  tbl.appendChild(tbody);
+  wrap.appendChild(tbl);
+  container.appendChild(wrap);
+}
 
 function renderUserList(users) {
   const container = document.getElementById('userList');
@@ -1282,6 +1570,7 @@ function renderEntryList(containerId, timers, showOperator = false) {
     if (t.workstation)     left.appendChild(el('div', { className: 'entry-meta-tag', textContent: '🖥 ' + t.workstation }));
     if (t.woNumber)        left.appendChild(el('div', { className: 'entry-meta-tag', textContent: '📋 W/O: ' + t.woNumber }));
     if (t.routeCardNumber) left.appendChild(el('div', { className: 'entry-meta-tag', textContent: '🔢 RC: ' + t.routeCardNumber }));
+    if (t.timerCategory === 'rework') left.appendChild(el('div', { className: 'entry-meta-tag', style: 'color:var(--amber);border-color:var(--amber)', textContent: '🔄 Rework' }));
     if (t.timeCheck)   left.appendChild(el('span', { className: 'badge badge-timecheck', textContent: '✓ Time Check' }));
     if (t.targetSeconds) left.appendChild(el('div', { className: 'entry-target',
       textContent: '🎯 Target: ' + formatHM(t.targetSeconds) }));
@@ -2827,17 +3116,19 @@ async function runReport() {
   if (to)   { const d = new Date(to); d.setHours(23,59,59,999); params.set('to', d.toISOString()); }
   const qs = params.toString();
 
-  ['reportStatCards','reportItemTable','reportOperatorTable','reportTrendTable','reportOverdueGrid']
-    .forEach(id => { const n = document.getElementById(id); if (n) n.innerHTML = '<div class="empty-state">Loading…</div>'; });
+  ['reportStatCards','reportItemTable','reportOperatorTable','reportTrendTable','reportOverdueGrid','reportAssemblyGrid','reportQualityGrid']
+    .forEach(id => { const n = document.getElementById(id); if (n) n.innerHTML = '<div class="empty-state">Loading\u2026</div>'; });
 
-  let stats, operators, trends, overdue, productivity;
+  let stats, operators, trends, overdue, productivity, assemblyData, qualityData;
   try {
-    [stats, operators, trends, overdue, productivity] = await Promise.all([
+    [stats, operators, trends, overdue, productivity, assemblyData, qualityData] = await Promise.all([
       GET(`/export/stats?${qs}`),
       GET(`/export/report/operators?${qs}`),
       GET(`/export/report/trends?${qs}`),
       GET(`/export/report/overdue?${qs}`),
       GET(`/export/productivity?${qs}&groupByDay=true`),
+      GET(`/export/assembly-summary?${qs}`),
+      GET(`/export/quality?${qs}`),
     ]);
   } catch (err) {
     console.error('Report fetch error:', err);
@@ -2849,6 +3140,8 @@ async function runReport() {
   operators    = operators    || [];
   overdue      = overdue      || { byItem: [], byOperator: [] };
   productivity = productivity || [];
+  assemblyData = assemblyData || { assemblies: [] };
+  qualityData  = qualityData  || { summary: {}, reworkByItem: [], reworkByOperator: [] };
 
   renderReportStatCards(stats);
   renderReportTrendTable(trends);
@@ -2856,6 +3149,8 @@ async function runReport() {
   renderReportOperatorTable(operators);
   renderReportOverdue(overdue);
   renderProductivityTable(productivity?.operators || [], productivity?.targetPct || 80, productivity?.operators?.[0]?.daily?.length > 0);
+  renderAssemblySummary(assemblyData?.assemblies || []);
+  renderQualityReport(qualityData);
 }
 
 async function runProductivitySection() {
@@ -3484,6 +3779,251 @@ function renderReportOverdue(overdue) {
     opCard.appendChild(table);
   }
   grid.appendChild(opCard);
+}
+function renderAssemblySummary(assemblies) {
+  const container = document.getElementById('reportAssemblyGrid');
+  if (!container) return;
+  container.innerHTML = '';
+
+  if (!assemblies || !assemblies.length) {
+    container.appendChild(el('div', { className: 'empty-state', textContent: 'No assemblies with W/O numbers found for this date range.' }));
+    return;
+  }
+
+  // CSV export button
+  const csvBtn = el('button', { className: 'btn btn-ghost btn-sm', textContent: '\u2193 Export CSV',
+    style: 'margin-bottom:12px' });
+  csvBtn.addEventListener('click', () => {
+    const from = document.getElementById('reportFrom')?.value;
+    const to   = document.getElementById('reportTo')?.value;
+    const ps   = new URLSearchParams();
+    if (from) ps.set('from', new Date(from).toISOString());
+    if (to)   { const d = new Date(to); d.setHours(23,59,59,999); ps.set('to', d.toISOString()); }
+    window.location.href = `/api/export/assembly-summary/csv?${ps}`;
+  });
+  container.appendChild(csvBtn);
+
+  // Filter bar
+  const filterBar = el('div', { style: 'display:flex;gap:8px;margin-bottom:14px;align-items:center;flex-wrap:wrap' });
+  const searchInput = el('input', { type: 'text', placeholder: 'Filter by item, W/O or route card\u2026',
+    style: 'flex:1;min-width:200px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px' });
+  const multiToggle = el('button', { className: 'btn btn-ghost btn-sm',
+    textContent: 'Multi-operator only',
+    style: 'white-space:nowrap' });
+  let showMultiOnly = false;
+  multiToggle.addEventListener('click', () => {
+    showMultiOnly = !showMultiOnly;
+    multiToggle.style.color = showMultiOnly ? 'var(--accent)' : '';
+    multiToggle.style.borderColor = showMultiOnly ? 'var(--accent)' : '';
+    renderCards();
+  });
+  filterBar.appendChild(searchInput);
+  filterBar.appendChild(multiToggle);
+  container.appendChild(filterBar);
+
+  const cardsWrap = el('div', {});
+  container.appendChild(cardsWrap);
+
+  function renderCards() {
+    cardsWrap.innerHTML = '';
+    const q = searchInput.value.toLowerCase();
+    const filtered = assemblies.filter(a => {
+      if (showMultiOnly && !a.multiOperator) return false;
+      if (q) {
+        const hay = [a.itemNumber, a.woNumber, a.routeCardNumber || ''].join(' ').toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+
+    if (!filtered.length) {
+      cardsWrap.appendChild(el('div', { className: 'empty-state', textContent: 'No assemblies match the current filter.' }));
+      return;
+    }
+
+    filtered.forEach(a => {
+      const card = el('div', { style: 'background:var(--bg2);border-radius:12px;padding:16px;margin-bottom:12px;border:1px solid var(--border)' });
+
+      // Card header
+      const hdr = el('div', { style: 'display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px' });
+      const left = el('div', {});
+      left.appendChild(el('div', { textContent: a.itemNumber,
+        style: 'font-size:18px;font-weight:700;color:var(--accent)' }));
+      const meta = el('div', { style: 'display:flex;gap:8px;margin-top:4px;flex-wrap:wrap' });
+      meta.appendChild(el('span', { textContent: 'W/O: ' + a.woNumber,
+        style: 'font-size:13px;color:var(--text2);background:var(--bg3);padding:2px 8px;border-radius:4px' }));
+      if (a.routeCardNumber) {
+        meta.appendChild(el('span', { textContent: 'RC: ' + a.routeCardNumber,
+          style: 'font-size:13px;color:var(--text2);background:var(--bg3);padding:2px 8px;border-radius:4px' }));
+      }
+      if (a.department) {
+        meta.appendChild(el('span', { textContent: a.department,
+          style: 'font-size:13px;color:var(--text2);background:var(--bg3);padding:2px 8px;border-radius:4px' }));
+      }
+      if (a.multiOperator) {
+        meta.appendChild(el('span', { textContent: '\uD83D\uDC65 Multi-operator',
+          style: 'font-size:12px;font-weight:700;color:var(--purple,#a855f7);background:rgba(168,85,247,.12);padding:2px 8px;border-radius:4px' }));
+      }
+      left.appendChild(meta);
+      hdr.appendChild(left);
+      card.appendChild(hdr);
+
+      // Time summary row
+      const times = el('div', { style: 'display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:14px' });
+      const timeItems = [
+        { label: 'Combined Time', value: a.combinedDisplay || '\u2014', color: 'var(--text)', tip: 'Total operator-hours across all contributors' },
+        { label: 'Elapsed Time',  value: a.elapsedDisplay  || '\u2014', color: 'var(--green)', tip: 'Wall-clock time from first start to last stop' },
+        { label: 'Overlap',       value: a.overlapSeconds > 0 ? a.overlapDisplay : 'None', color: a.overlapSeconds > 0 ? 'var(--amber)' : 'var(--text2)', tip: 'Time operators worked simultaneously' },
+        { label: 'Contributors',  value: a.operatorCount + ' operator' + (a.operatorCount !== 1 ? 's' : ''), color: 'var(--text)' },
+      ];
+      timeItems.forEach(({ label, value, color, tip }) => {
+        const box = el('div', { style: 'background:var(--bg3);border-radius:8px;padding:10px 12px' });
+        box.appendChild(el('div', { textContent: label, style: 'font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px' }));
+        const v = el('div', { textContent: value, style: `font-size:18px;font-weight:700;color:${color}` });
+        if (tip) v.title = tip;
+        box.appendChild(v);
+        times.appendChild(box);
+      });
+      card.appendChild(times);
+
+      // Operator breakdown table
+      const tbl = el('table', { className: 'dash-table' });
+      tbl.appendChild(el('thead', {}, el('tr', {},
+        el('th', { textContent: 'Operator' }),
+        el('th', { textContent: 'Workstation' }),
+        el('th', { textContent: 'Time on Assembly' }),
+        el('th', { textContent: 'Stints' }),
+        el('th', { textContent: '% of Combined' }),
+      )));
+      const tbody = el('tbody', {});
+      a.operators.forEach(op => {
+        const pct = a.combinedSeconds > 0
+          ? Math.round(op.totalSeconds / a.combinedSeconds * 100) : 0;
+        const barColor = pct > 60 ? 'var(--blue)' : 'var(--accent)';
+        const tr = el('tr', {});
+        tr.appendChild(el('td', { textContent: op.operatorName, style: 'font-weight:600' }));
+        tr.appendChild(el('td', { textContent: op.workstation || '\u2014', style: 'color:var(--text2)' }));
+        tr.appendChild(el('td', { textContent: op.totalDisplay || '\u2014', style: 'font-weight:700;color:var(--text)' }));
+        tr.appendChild(el('td', { textContent: op.stints.length, style: 'color:var(--text2)' }));
+        const pctCell = el('td', {});
+        const barWrap = el('div', { style: 'display:flex;align-items:center;gap:8px' });
+        const bar = el('div', { style: 'flex:1;background:var(--bg3);border-radius:3px;height:6px' });
+        bar.appendChild(el('div', { style: `width:${pct}%;background:${barColor};height:6px;border-radius:3px` }));
+        barWrap.appendChild(bar);
+        barWrap.appendChild(el('span', { textContent: pct + '%', style: 'min-width:36px;font-size:12px;color:var(--text2)' }));
+        pctCell.appendChild(barWrap);
+        tr.appendChild(pctCell);
+        tbody.appendChild(tr);
+      });
+      tbl.appendChild(tbody);
+      card.appendChild(tbl);
+      cardsWrap.appendChild(card);
+    });
+  }
+
+  searchInput.addEventListener('input', renderCards);
+  renderCards();
+}
+function renderQualityReport(data) {
+  const container = document.getElementById('reportQualityGrid');
+  if (!container) return;
+  container.innerHTML = '';
+
+  const s = data?.summary || {};
+  const reworkByItem     = data?.reworkByItem     || [];
+  const reworkByOperator = data?.reworkByOperator || [];
+
+  const rftRate  = s.rftRate  ?? 100;
+  const rftColor = rftRate >= 95 ? 'var(--green)' : rftRate >= 80 ? 'var(--amber)' : 'var(--red)';
+
+  // ── RFT summary cards ───────────────────────────────────────────────────
+  const cards = el('div', { style: 'display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:20px' });
+  [
+    { label: 'Right First Time',      value: rftRate + '%',                      color: rftColor,        tip: 'Assemblies with no rework timers' },
+    { label: 'Assemblies tracked',    value: s.totalAssemblies ?? 0,             color: 'var(--text)' },
+    { label: 'Passed first time',     value: s.rftCount ?? 0,                    color: 'var(--green)' },
+    { label: 'Required rework',       value: s.reworkAssemblies ?? 0,            color: s.reworkAssemblies ? 'var(--red)' : 'var(--text2)' },
+    { label: 'Total work time',       value: s.totalWorkDisplay   || '0m',       color: 'var(--text)' },
+    { label: 'Total rework time',     value: s.totalReworkDisplay || '0m',       color: s.totalReworkSecs ? 'var(--amber)' : 'var(--text2)' },
+    { label: 'Rework as % of hours',  value: (s.reworkPct ?? 0) + '%',          color: s.reworkPct ? 'var(--amber)' : 'var(--text2)' },
+  ].forEach(({ label, value, color, tip }) => {
+    const card = el('div', { style: 'background:var(--bg2);border-radius:10px;padding:14px 16px;border:1px solid var(--border)' });
+    card.appendChild(el('div', { textContent: label, style: 'font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px' }));
+    const v = el('div', { textContent: value, style: `font-size:22px;font-weight:700;color:${color}` });
+    if (tip) v.title = tip;
+    card.appendChild(v);
+    cards.appendChild(card);
+  });
+  container.appendChild(cards);
+
+  if (!s.totalAssemblies) {
+    container.appendChild(el('div', { className: 'empty-state', textContent: 'No assembly data with W/O numbers found for this period.' }));
+    return;
+  }
+
+  // ── RFT gauge bar ────────────────────────────────────────────────────────
+  const gaugeWrap = el('div', { style: 'background:var(--bg2);border-radius:10px;padding:16px;margin-bottom:16px;border:1px solid var(--border)' });
+  gaugeWrap.appendChild(el('div', { textContent: 'Right First Time Rate', style: 'font-size:13px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px' }));
+  const gaugeBar = el('div', { style: 'background:var(--bg3);border-radius:6px;height:24px;position:relative;overflow:hidden' });
+  gaugeBar.appendChild(el('div', { style: `width:${rftRate}%;background:${rftColor};height:24px;border-radius:6px;transition:width .6s ease` }));
+  const gaugeLabel = el('div', { textContent: rftRate + '%', style: `position:absolute;right:12px;top:3px;font-weight:700;font-size:14px;color:var(--text)` });
+  gaugeBar.appendChild(gaugeLabel);
+  gaugeWrap.appendChild(gaugeBar);
+  const targets = el('div', { style: 'display:flex;gap:16px;margin-top:8px;font-size:12px;color:var(--text2)' });
+  targets.appendChild(el('span', { textContent: '■ 95%+ Target', style: 'color:var(--green)' }));
+  targets.appendChild(el('span', { textContent: '■ 80-95% Acceptable', style: 'color:var(--amber)' }));
+  targets.appendChild(el('span', { textContent: '■ Below 80% Needs attention', style: 'color:var(--red)' }));
+  gaugeWrap.appendChild(targets);
+  container.appendChild(gaugeWrap);
+
+  if (!reworkByItem.length) {
+    container.appendChild(el('div', { className: 'empty-state', textContent: 'No rework timers recorded in this period.' }));
+    return;
+  }
+
+  // ── Two column tables ────────────────────────────────────────────────────
+  const cols = el('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:14px' });
+
+  // Rework by item
+  const itemCard = el('div', { style: 'background:var(--bg2);border-radius:10px;padding:16px;border:1px solid var(--border)' });
+  itemCard.appendChild(el('div', { textContent: 'Rework — by Item', style: 'font-size:13px;font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px' }));
+  const iTbl = el('table', { className: 'dash-table' });
+  iTbl.appendChild(el('thead', {}, el('tr', {},
+    el('th', { textContent: 'Item' }),
+    el('th', { textContent: 'Rework Jobs' }),
+    el('th', { textContent: 'Rework Time' }),
+  )));
+  const iTbody = el('tbody', {});
+  reworkByItem.forEach(r => {
+    iTbody.appendChild(el('tr', {},
+      el('td', { textContent: r.itemNumber, className: 'perf-item' }),
+      el('td', { textContent: r.reworkCount, style: 'color:var(--red);font-weight:700' }),
+      el('td', { textContent: r.reworkHoursDisplay }),
+    ));
+  });
+  iTbl.appendChild(iTbody); itemCard.appendChild(iTbl);
+  cols.appendChild(itemCard);
+
+  // Rework by operator
+  const opCard = el('div', { style: 'background:var(--bg2);border-radius:10px;padding:16px;border:1px solid var(--border)' });
+  opCard.appendChild(el('div', { textContent: 'Rework — by Operator', style: 'font-size:13px;font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px' }));
+  const oTbl = el('table', { className: 'dash-table' });
+  oTbl.appendChild(el('thead', {}, el('tr', {},
+    el('th', { textContent: 'Operator' }),
+    el('th', { textContent: 'Rework Jobs' }),
+    el('th', { textContent: 'Rework Time' }),
+  )));
+  const oTbody = el('tbody', {});
+  reworkByOperator.forEach(r => {
+    oTbody.appendChild(el('tr', {},
+      el('td', { textContent: r.operatorName, style: 'font-weight:600' }),
+      el('td', { textContent: r.reworkCount, style: 'color:var(--red);font-weight:700' }),
+      el('td', { textContent: r.reworkHoursDisplay }),
+    ));
+  });
+  oTbl.appendChild(oTbody); opCard.appendChild(oTbl);
+  cols.appendChild(opCard);
+  container.appendChild(cols);
 }
 
 

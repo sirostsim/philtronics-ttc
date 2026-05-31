@@ -842,4 +842,96 @@ router.get('/assembly-summary/csv', async (req, res) => {
   }
 });
 
+// ─── GET /api/export/quality ──────────────────────────────────────────────────
+// Right First Time rate + rework analysis
+router.get('/quality', async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    const fromDate = from ? new Date(from) : new Date(Date.now() - 30*24*60*60*1000);
+    const toDate   = to   ? new Date(to)   : new Date();
+
+    // All completed timers in range
+    const rows = await query(`
+      SELECT
+        t.id, t.item_number, t.wo_number, t.route_card_number,
+        t.operator_id, t.operator_name, t.department,
+        t.timer_category, t.duration_seconds,
+        t.started_at, t.completed_at
+      FROM timers t
+      WHERE t.status = 'completed'
+        AND t.completed_at >= $1 AND t.completed_at <= $2
+    `, [fromDate, toDate]);
+
+    // ── Right First Time ──────────────────────────────────────────────────
+    // Group by assembly (item + wo + rc). An assembly fails RFT if it has
+    // ANY rework timer. Only assemblies with a wo_number are counted.
+    const assemblyMap = {};
+    for (const r of rows) {
+      if (!r.wo_number) continue;
+      const key = [r.item_number, r.wo_number, r.route_card_number || ''].join('|||');
+      if (!assemblyMap[key]) assemblyMap[key] = { item: r.item_number, wo: r.wo_number, rc: r.route_card_number, hasRework: false, workSecs: 0, reworkSecs: 0 };
+      if (r.timer_category === 'rework') {
+        assemblyMap[key].hasRework = true;
+        assemblyMap[key].reworkSecs += (r.duration_seconds || 0);
+      } else {
+        assemblyMap[key].workSecs += (r.duration_seconds || 0);
+      }
+    }
+    const assemblies     = Object.values(assemblyMap);
+    const totalAssemblies= assemblies.length;
+    const reworkAssemblies=assemblies.filter(a => a.hasRework).length;
+    const rftCount       = totalAssemblies - reworkAssemblies;
+    const rftRate        = totalAssemblies > 0 ? Math.round(rftCount / totalAssemblies * 100) : 100;
+
+    // ── Rework by item ────────────────────────────────────────────────────
+    const itemRework = {};
+    for (const r of rows.filter(r => r.timer_category === 'rework')) {
+      if (!itemRework[r.item_number]) itemRework[r.item_number] = { itemNumber: r.item_number, reworkCount: 0, reworkSeconds: 0 };
+      itemRework[r.item_number].reworkCount++;
+      itemRework[r.item_number].reworkSeconds += (r.duration_seconds || 0);
+    }
+    const reworkByItem = Object.values(itemRework)
+      .sort((a, b) => b.reworkSeconds - a.reworkSeconds)
+      .map(r => ({ ...r, reworkHoursDisplay: fmtHM(r.reworkSeconds) }));
+
+    // ── Rework by operator ────────────────────────────────────────────────
+    const opRework = {};
+    for (const r of rows.filter(r => r.timer_category === 'rework')) {
+      if (!opRework[r.operator_id]) opRework[r.operator_id] = { operatorName: r.operator_name, reworkCount: 0, reworkSeconds: 0 };
+      opRework[r.operator_id].reworkCount++;
+      opRework[r.operator_id].reworkSeconds += (r.duration_seconds || 0);
+    }
+    const reworkByOperator = Object.values(opRework)
+      .sort((a, b) => b.reworkSeconds - a.reworkSeconds)
+      .map(r => ({ ...r, reworkHoursDisplay: fmtHM(r.reworkSeconds) }));
+
+    // ── Totals ────────────────────────────────────────────────────────────
+    const totalWorkSecs   = rows.filter(r => r.timer_category !== 'rework').reduce((s,r) => s + (r.duration_seconds||0), 0);
+    const totalReworkSecs = rows.filter(r => r.timer_category === 'rework').reduce((s,r) => s + (r.duration_seconds||0), 0);
+    const reworkPct = (totalWorkSecs + totalReworkSecs) > 0
+      ? Math.round(totalReworkSecs / (totalWorkSecs + totalReworkSecs) * 100) : 0;
+
+    res.json({
+      summary: {
+        totalAssemblies, rftCount, reworkAssemblies, rftRate,
+        totalWorkSecs, totalReworkSecs, reworkPct,
+        totalWorkDisplay:   fmtHM(totalWorkSecs),
+        totalReworkDisplay: fmtHM(totalReworkSecs),
+      },
+      reworkByItem,
+      reworkByOperator,
+    });
+  } catch (err) {
+    console.error('Quality report error:', err.message);
+    res.status(500).json({ error: 'Could not load quality data.' });
+  }
+});
+
+function fmtHM(s) {
+  if (!s) return '0m';
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return h > 0 ? `${h}h ${String(m).padStart(2,'0')}m` : `${m}m`;
+}
+
 module.exports = router;
