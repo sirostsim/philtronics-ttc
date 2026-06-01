@@ -6,6 +6,9 @@
 FROM node:20-alpine AS base
 WORKDIR /app
 
+# Install postgresql-client for pg_dump (required by backup.js)
+RUN apk add --no-cache postgresql-client
+
 # Install dependencies
 COPY server/package*.json ./server/
 RUN cd server && npm install --omit=dev
