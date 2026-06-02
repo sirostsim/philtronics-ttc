@@ -106,13 +106,14 @@ router.post('/:id/apply', async (req, res) => {
     );
 
     // Supersede any other pending reviews for the same item — the target is now set.
-    const superseded = await query(
+    const supersededRows = await query(
       `UPDATE timers
        SET tc_review_status = 'superseded', tc_reviewed_by = $1, tc_reviewed_at = NOW()
        WHERE item_number = $2 AND tc_review_status = 'pending' AND id <> $3
        RETURNING id`,
       [userId, item, timer.id]
     );
+    const supersededCount = supersededRows.length;
 
     await writeAudit(timer.id, 'target_set_from_timecheck', userId, null, {
       itemNumber:            item,
@@ -120,10 +121,10 @@ router.post('/:id/apply', async (req, res) => {
       appliedSeconds,
       previousTargetSeconds,
       adjusted:              appliedSeconds !== timer.duration_seconds,
-      supersededCount:       superseded.rows.length,
+      supersededCount,
     });
 
-    res.json({ ok: true, itemNumber: item, appliedSeconds, supersededCount: superseded.rows.length });
+    res.json({ ok: true, itemNumber: item, appliedSeconds, supersededCount });
   } catch (err) {
     console.error('POST /time-checks/apply error:', err.message);
     res.status(500).json({ error: 'Could not set the target time.' });
