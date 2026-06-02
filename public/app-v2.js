@@ -2261,6 +2261,156 @@ function showHandRaisedPopup(data) {
   setTimeout(() => { if (popup.isConnected) popup.remove(); }, 30000);
 }
 
+/* ─── Time Check target review ─────────────────────────────────────────────── */
+
+// Seconds -> nearest whole-minute {hours, minutes}, never zero.
+function tcSecsToHM(s) {
+  const totalMin = Math.max(1, Math.round((s || 0) / 60));
+  return { hours: Math.floor(totalMin / 60), minutes: totalMin % 60 };
+}
+
+// Update just the homepage count card (used after live events / actions).
+function refreshTimeCheckCount() {
+  if (!hasRole('manager')) return;
+  if (!document.getElementById('homeTimeChecks')) return; // not on home
+  GET('/time-checks/pending').then(renderHomeTimeChecks).catch(() => {});
+}
+
+function renderHomeTimeChecks(list) {
+  const card = document.getElementById('homeTimeChecks'); if (!card) return;
+  const body = card.querySelector('.home-card-body'); body.innerHTML = '';
+  const count = list ? list.length : 0;
+  const tile = el('div', { className: 'home-tc-tile' + (count > 0 ? ' active' : '') });
+  const left = el('div', { className: 'home-tc-left' });
+  left.appendChild(el('div', { className: 'home-tc-icon', textContent: '\u23F1' }));
+  const info = el('div', {});
+  info.appendChild(el('div', { className: 'home-tc-value', textContent: count }));
+  info.appendChild(el('div', { className: 'home-tc-label', textContent: count === 1 ? 'measured run to review' : 'measured runs to review' }));
+  left.appendChild(info); tile.appendChild(left);
+  if (count > 0) {
+    const reviewBtn = el('button', { className: 'btn btn-primary btn-sm', textContent: 'Review' });
+    reviewBtn.addEventListener('click', () => openTimeCheckModal());
+    tile.appendChild(reviewBtn);
+  }
+  body.appendChild(tile);
+}
+
+// Live popup nudging an online manager. The queue card is the durable record.
+function showTimeCheckPopup(data) {
+  const popup = el('div', { className: 'time-check-popup', role: 'alertdialog', 'aria-label': 'Time Check completed' });
+  const icon  = el('div', { className: 'tcp-icon', textContent: '\u23F1' });
+  const bodyEl = el('div', { className: 'tcp-body' });
+  bodyEl.appendChild(el('div', { className: 'tcp-title', textContent: 'Time Check Completed' }));
+  bodyEl.appendChild(el('div', { className: 'tcp-name', textContent: esc(data.itemNumber) + '  \u00B7  ' + esc(data.operatorName) }));
+  const cur = data.currentTargetSeconds != null ? formatHM(data.currentTargetSeconds) : 'none set';
+  bodyEl.appendChild(el('div', { className: 'tcp-meta', textContent: 'Measured ' + formatDuration(data.measuredSeconds) + '  (current target: ' + cur + ')' }));
+  const actions = el('div', { className: 'tcp-actions' });
+  const setBtn = el('button', { className: 'btn btn-primary btn-sm', textContent: '\u2713 Set as Target' });
+  setBtn.addEventListener('click', async () => {
+    const hm = tcSecsToHM(data.measuredSeconds);
+    setBtn.disabled = true;
+    const ok = await applyTimeCheck(data.timerId, hm.hours, hm.minutes);
+    if (ok) popup.remove(); else setBtn.disabled = false;
+  });
+  const adjBtn = el('button', { className: 'btn btn-ghost btn-sm', textContent: 'Adjust\u2026' });
+  adjBtn.addEventListener('click', () => { popup.remove(); openTimeCheckModal(); });
+  actions.appendChild(setBtn); actions.appendChild(adjBtn);
+  bodyEl.appendChild(actions);
+  const closeBtn = el('button', { className: 'tcp-close', textContent: '\u2715', 'aria-label': 'Dismiss notification' });
+  closeBtn.addEventListener('click', () => popup.remove()); // leaves it in the queue
+  popup.appendChild(icon); popup.appendChild(bodyEl); popup.appendChild(closeBtn);
+  document.body.appendChild(popup);
+  playPing('message');
+  setTimeout(() => { if (popup.isConnected) popup.remove(); }, 30000);
+}
+
+async function applyTimeCheck(timerId, hours, minutes) {
+  try {
+    const r = await POST(`/time-checks/${timerId}/apply`, { hours, minutes });
+    let msg = `Target set to ${formatHM(r.appliedSeconds)} for ${r.itemNumber}.`;
+    if (r.supersededCount > 0) msg += ` ${r.supersededCount} other review${r.supersededCount !== 1 ? 's' : ''} for this item cleared.`;
+    toast(msg, 'success');
+    refreshTimeCheckCount();
+    return true;
+  } catch (err) { toast(err.message, 'error'); refreshTimeCheckCount(); return false; }
+}
+
+async function dismissTimeCheck(timerId) {
+  try {
+    await POST(`/time-checks/${timerId}/dismiss`, {});
+    toast('Time Check dismissed.', '');
+    refreshTimeCheckCount();
+    return true;
+  } catch (err) { toast(err.message, 'error'); refreshTimeCheckCount(); return false; }
+}
+
+function openTimeCheckModal() {
+  GET('/time-checks/pending')
+    .then(list => {
+      if (!list || !list.length) { toast('No Time Checks left to review.', ''); closeModal(); refreshTimeCheckCount(); return; }
+      openModal('Time Checks to Review', buildTimeCheckModalBody(list), []);
+    })
+    .catch(err => toast(err.message, 'error'));
+}
+
+function buildTimeCheckModalBody(list) {
+  const wrap = el('div', { className: 'tcr-list' });
+  wrap.appendChild(el('p', { className: 'tcr-intro', textContent: 'Set a measured run as the new Target Time for its item. Adjust the time first if you want to add an allowance.' }));
+  list.forEach(r => {
+    const row = el('div', { className: 'tcr-row' });
+    const head = el('div', { className: 'tcr-head' });
+    head.appendChild(el('span', { className: 'tcr-item', textContent: r.itemNumber }));
+    head.appendChild(el('span', { className: 'tcr-op', textContent: r.operatorName }));
+    row.appendChild(head);
+
+    const cur = r.currentTargetSeconds != null ? formatHM(r.currentTargetSeconds) : 'none';
+    const measured = formatDuration(r.measuredSeconds);
+    let deltaTxt = '';
+    if (r.currentTargetSeconds != null) {
+      const d = r.measuredSeconds - r.currentTargetSeconds;
+      deltaTxt = d === 0 ? ' (on target)' : `  (${d > 0 ? '+' : '-'}${formatDuration(Math.abs(d))} vs target)`;
+    }
+    row.appendChild(el('div', { className: 'tcr-meta', textContent: `Measured ${measured} \u00B7 current target ${cur}${deltaTxt}` }));
+
+    const hm = tcSecsToHM(r.measuredSeconds);
+    const controls = el('div', { className: 'tcr-controls' });
+    const hInput = el('input', { type: 'number', min: '0', max: '99', value: String(hm.hours), className: 'tcr-num', 'aria-label': 'Target hours' });
+    const mInput = el('input', { type: 'number', min: '0', max: '59', value: String(hm.minutes), className: 'tcr-num', 'aria-label': 'Target minutes' });
+    controls.appendChild(el('span', { className: 'tcr-lbl', textContent: 'Target:' }));
+    controls.appendChild(hInput); controls.appendChild(el('span', { textContent: 'h' }));
+    controls.appendChild(mInput); controls.appendChild(el('span', { textContent: 'm' }));
+
+    const applyBtn = el('button', { className: 'btn btn-primary btn-sm', textContent: 'Set as Target' });
+    applyBtn.addEventListener('click', async () => {
+      applyBtn.disabled = true;
+      const ok = await applyTimeCheck(r.timerId, parseInt(hInput.value, 10), parseInt(mInput.value, 10));
+      if (ok) refreshTimeCheckModal(); else applyBtn.disabled = false;
+    });
+    const dismissBtn = el('button', { className: 'btn btn-ghost btn-sm', textContent: 'Dismiss' });
+    dismissBtn.addEventListener('click', async () => {
+      dismissBtn.disabled = true;
+      const ok = await dismissTimeCheck(r.timerId);
+      if (ok) refreshTimeCheckModal(); else dismissBtn.disabled = false;
+    });
+    controls.appendChild(applyBtn); controls.appendChild(dismissBtn);
+    row.appendChild(controls);
+    wrap.appendChild(row);
+  });
+  return wrap;
+}
+
+// Re-fetch after an action so superseded siblings disappear; close when empty.
+function refreshTimeCheckModal() {
+  GET('/time-checks/pending')
+    .then(list => {
+      refreshTimeCheckCount();
+      if (!list || !list.length) { closeModal(); return; }
+      const body = document.getElementById('modalBody');
+      if (body) { body.innerHTML = ''; body.appendChild(buildTimeCheckModalBody(list)); }
+    })
+    .catch(() => {});
+}
+
 document.getElementById('btnRaiseHand').addEventListener('click', async () => {
   if (!state.activeTimerId) return;
   const btn = document.getElementById('btnRaiseHand'); btn.disabled = true;
@@ -2289,6 +2439,9 @@ async function loadHomePage() {
   if (hasRole('manager'))       renderHomeProductivity(productivity?.operators || [], productivity?.targetPct || 80);
   if (hasRole('administrator')) renderHomeUsers(users);
   renderHomeQuickActions();
+  if (hasRole('manager')) {
+    GET('/time-checks/pending').then(renderHomeTimeChecks).catch(() => renderHomeTimeChecks([]));
+  }
 }
 
 function renderHomeSkeleton() {
@@ -2304,6 +2457,7 @@ function renderHomeSkeleton() {
       <div class="home-card home-card-full" id="homeActiveJobs"><div class="home-card-title">Active Jobs</div><div class="home-card-body"><div class="empty-state">Loading...</div></div></div>
       <div class="home-card" id="homeTodayStats"><div class="home-card-title">Today at a Glance</div><div class="home-card-body"><div class="empty-state">Loading...</div></div></div>
       <div class="home-card" id="homeQuickActions"><div class="home-card-title">Quick Actions</div><div class="home-card-body"></div></div>
+      ${hasRole('manager') ? '<div class="home-card" id="homeTimeChecks"><div class="home-card-title">Time Checks to Review</div><div class="home-card-body"><div class="empty-state">Loading...</div></div></div>' : ''}
       ${hasRole('manager') ? '<div class="home-card home-card-full" id="homePerformance"><div class="home-card-title">Performance</div><div class="home-card-body"><div class="empty-state">Loading...</div></div></div>' : ''}
       ${hasRole('manager') ? '<div class="home-card home-card-full" id="homeProductivity"><div class="home-card-title">Operator Productivity — Today</div><div class="home-card-body"><div class="empty-state">Loading...</div></div></div>' : ''}
       ${hasRole('administrator') ? '<div class="home-card home-card-full" id="homeUsers"><div class="home-card-title">User Status</div><div class="home-card-body"><div class="empty-state">Loading...</div></div></div>' : ''}
@@ -2945,6 +3099,9 @@ function handleIncomingSSE(data) {
     case 'hand_raised':
       if (hasRole('supervisor')) showHandRaisedPopup(data);
       return; // no ping for hand_raised — the popup is notification enough
+    case 'time_check_review':
+      if (hasRole('manager')) { showTimeCheckPopup(data); refreshTimeCheckCount(); }
+      return; // popup carries its own ping
   }
   playPing(data.type);
 }

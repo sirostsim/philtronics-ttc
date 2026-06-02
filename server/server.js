@@ -66,6 +66,7 @@ app.use('/api/timers',   require('./routes/timers'));
 app.use('/api/export',   require('./routes/export'));
 app.use('/api/users',    require('./routes/users'));
 app.use('/api/targets',  require('./routes/targets'));
+app.use('/api/time-checks', require('./routes/timechecks'));
 app.use('/api/messages', require('./routes/messages'));
 app.use('/api/pause',    require('./routes/pause'));
 

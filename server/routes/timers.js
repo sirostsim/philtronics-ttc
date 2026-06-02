@@ -149,6 +149,29 @@ router.post('/:id/stop', validate(schemas.stopTimer), async (req, res) => {
     );
 
     const updated = await queryOne('SELECT * FROM timers WHERE id = $1', [timer.id]);
+
+    // Time Check jobs become a pending target review for managers.
+    if (updated.time_check) {
+      await query(
+        `UPDATE timers SET tc_review_status = 'pending' WHERE id = $1`,
+        [updated.id]
+      );
+      const tgt = await queryOne(
+        'SELECT hours, minutes FROM target_times WHERE item_number = $1',
+        [updated.item_number]
+      );
+      // Live nudge to any connected managers; the homepage queue is the durable copy.
+      pushToRole('manager', {
+        type:                 'time_check_review',
+        timerId:              updated.id,
+        itemNumber:           updated.item_number,
+        operatorName:         updated.operator_name,
+        measuredSeconds:      updated.duration_seconds,
+        currentTargetSeconds: tgt ? (tgt.hours * 3600) + (tgt.minutes * 60) : null,
+        completedAt:          updated.completed_at,
+      });
+    }
+
     res.json(formatTimer(updated));
   } catch (err) {
     console.error('Stop timer error:', err.message);

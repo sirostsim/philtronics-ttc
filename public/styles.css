@@ -2659,3 +2659,120 @@ button.topbar-brand:focus-visible {
   color: var(--text2);
   margin-top: 3px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TIME CHECK REVIEW  (homepage card, live popup, review modal)
+   Uses the blue palette to distinguish from the purple hand-raise alerts.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.home-tc-tile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  transition: all .2s;
+}
+.home-tc-tile.active {
+  background: rgba(59,130,246,.08);
+  border-color: var(--blue);
+}
+.home-tc-left { display: flex; align-items: center; gap: 12px; }
+.home-tc-icon { font-size: 28px; line-height: 1; }
+.home-tc-value {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1;
+  font-family: var(--font-mono);
+}
+.home-tc-tile.active .home-tc-value { color: var(--blue); }
+.home-tc-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  margin-top: 2px;
+}
+
+.time-check-popup {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9000;
+  background: var(--bg2);
+  border: 2px solid var(--blue);
+  border-radius: 14px;
+  padding: 16px 16px 16px 18px;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  max-width: 360px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.4), 0 0 0 1px rgba(59,130,246,.3);
+  animation: hrp-slide-in .3s cubic-bezier(.16,1,.3,1);
+}
+.tcp-icon { font-size: 32px; line-height: 1; flex-shrink: 0; }
+.tcp-body { flex: 1; min-width: 0; }
+.tcp-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--blue);
+  margin-bottom: 4px;
+}
+.tcp-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tcp-meta { font-size: 12px; color: var(--text2); margin-bottom: 10px; }
+.tcp-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.tcp-close {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text3);
+  font-size: 14px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all .15s;
+}
+.tcp-close:hover { background: var(--bg3); border-color: var(--blue); color: var(--blue); }
+
+.tcr-list { display: flex; flex-direction: column; gap: 12px; }
+.tcr-intro { font-size: 13px; color: var(--text2); margin: 0 0 4px; }
+.tcr-row {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.tcr-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+.tcr-item { font-weight: 700; color: var(--text); font-family: var(--font-mono); }
+.tcr-op { font-size: 13px; color: var(--text2); }
+.tcr-meta { font-size: 12px; color: var(--text2); margin-bottom: 10px; }
+.tcr-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tcr-lbl { font-size: 13px; color: var(--text2); }
+.tcr-num {
+  width: 56px;
+  padding: 6px 8px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  text-align: center;
+}
