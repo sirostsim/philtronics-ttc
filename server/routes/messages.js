@@ -60,8 +60,12 @@ router.get('/listen', requireAuth, (req, res) => {
   const userId = req.user.id;
 
   res.setHeader('Content-Type',      'text/event-stream');
-  res.setHeader('Cache-Control',     'no-cache');
-  res.setHeader('Connection',        'keep-alive');
+  res.setHeader('Cache-Control',     'no-cache, no-transform');
+  // NB: do NOT set a 'Connection' header here. It is a connection-specific
+  // header that is illegal under HTTP/2 (which Railway serves), and including
+  // it causes the browser to abort the stream with ERR_HTTP2_PROTOCOL_ERROR.
+  // HTTP/2 keeps the stream open via multiplexing; HTTP/1.1 keeps an
+  // event-stream open without it too.
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
   res.write(': connected\n\n');
