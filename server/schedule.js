@@ -67,11 +67,12 @@ async function runSchedule() {
 
     if (!working) {
       // Outside working hours — pause all active, unpaused timers
-      // EXCEPT those the operator has explicitly marked as overtime override
+      // EXCEPT those the operator has explicitly marked as overtime override.
       const rows = await query(
         `SELECT id FROM timers
          WHERE status = 'active'
-           AND paused_at IS NULL`,
+           AND paused_at IS NULL
+           AND (pause_type IS DISTINCT FROM 'overtime_override')`,
         []
       );
       if (rows.length) {
@@ -81,7 +82,8 @@ async function runSchedule() {
              pause_reason = 'Outside working hours — tap Override to work overtime',
              pause_type   = 'schedule',
              updated_at   = NOW()
-           WHERE status = 'active' AND paused_at IS NULL`,
+           WHERE status = 'active' AND paused_at IS NULL
+             AND (pause_type IS DISTINCT FROM 'overtime_override')`,
           []
         );
         console.log(`[schedule] Auto-paused ${rows.length} timer(s) — outside working hours`);

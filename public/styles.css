@@ -14,6 +14,7 @@
   --text2:       #9aa0b8;
   --text3:       #5a6078;
   --accent:      #f0b429;    /* amber – shopfloor warning palette */
+  --amber:       #f0b429;    /* alias of --accent; referenced throughout JS/CSS */
   --accent2:     #d49a10;
   --green:       #22c55e;
   --green-dim:   #16532d;
@@ -2812,3 +2813,23 @@ button.topbar-brand:focus-visible {
 .rh-meta { font-size: 12px; color: var(--text2); }
 .rh-time { font-size: 11px; color: var(--text3); margin-top: 2px; }
 .rh-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   OVERTIME OVERRIDE BUTTON
+   Shown on the operator timer when a job is auto-paused outside working hours.
+   Full-width, on its own row below the Stop/Pause/Raise Hand actions, amber so
+   it clearly reads as an out-of-hours prompt.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.btn-overtime {
+  width: 100%;
+  margin-top: 12px;
+  padding: 16px 24px;
+  font-size: 16px;
+  background: var(--amber);
+  color: #1a1205;
+  border: 2px solid var(--amber);
+  box-shadow: 0 2px 10px rgba(240,180,41,.25);
+}
+.btn-overtime:hover  { background: #ffc740; border-color: #ffc740; }
+.btn-overtime:active { transform: translateY(1px); }
+.btn-overtime:disabled { opacity: .6; cursor: default; }

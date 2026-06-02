@@ -2154,9 +2154,8 @@ function updatePauseUI() {
   if (isPaused && pauseType === 'schedule') {
     const otBtn = el('button', {
       id: 'btnOvertimeOverride',
-      className: 'btn btn-primary btn-full',
+      className: 'btn btn-overtime',
       textContent: '\u23F1 Override \u2014 Working Overtime',
-      style: 'margin-top:10px;background:var(--amber);color:#000;font-weight:700',
     });
     otBtn.addEventListener('click', async () => {
       otBtn.disabled = true;
@@ -2173,10 +2172,15 @@ function updatePauseUI() {
         otBtn.disabled = false;
       }
     });
-    // Insert below the pause button
-    const pauseBtnEl = document.getElementById('btnPauseTimer');
-    if (pauseBtnEl && pauseBtnEl.parentNode) {
-      pauseBtnEl.parentNode.insertBefore(otBtn, pauseBtnEl.nextSibling);
+    // Place it on its own row BELOW the action buttons, not inside that flex row.
+    const actionsRow = document.querySelector('#pageTimer .active-actions');
+    if (actionsRow && actionsRow.parentNode) {
+      actionsRow.parentNode.insertBefore(otBtn, actionsRow.nextSibling);
+    } else {
+      const pauseBtnEl = document.getElementById('btnPauseTimer');
+      if (pauseBtnEl && pauseBtnEl.parentNode) {
+        pauseBtnEl.parentNode.insertBefore(otBtn, pauseBtnEl.nextSibling);
+      }
     }
   }
 
