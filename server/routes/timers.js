@@ -345,7 +345,7 @@ router.get('/raised-hands', async (req, res) => {
       params.push(req.user.department || 'Production');
     }
     const rows = await query(
-      `SELECT t.id, t.item_number, t.operator_name, t.workstation, t.department, t.started_at
+      `SELECT t.id, t.item_number, t.operator_id, t.operator_name, t.workstation, t.department, t.started_at
        FROM timers t
        WHERE ${conditions.join(' AND ')}
        ORDER BY t.started_at ASC`,
@@ -354,6 +354,7 @@ router.get('/raised-hands', async (req, res) => {
     res.json(rows.map(r => ({
       timerId:      r.id,
       itemNumber:   r.item_number,
+      operatorId:   r.operator_id,
       operatorName: r.operator_name,
       workstation:  r.workstation || null,
       department:   r.department || null,

@@ -2811,3 +2811,4 @@ button.topbar-brand:focus-visible {
 .rh-op { font-weight: 700; color: var(--text); }
 .rh-meta { font-size: 12px; color: var(--text2); }
 .rh-time { font-size: 11px; color: var(--text3); margin-top: 2px; }
+.rh-actions { display: flex; gap: 6px; flex-shrink: 0; }

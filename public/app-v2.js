@@ -2360,9 +2360,16 @@ function buildRaisedHandsModalBody(list) {
       info.appendChild(el('div', { className: 'rh-time', textContent: 'Job started ' + new Date(r.startedAt).toLocaleTimeString('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit' }) }));
     }
     row.appendChild(info);
+    const actions = el('div', { className: 'rh-actions' });
+    if (r.operatorId) {
+      const msgBtn = el('button', { className: 'btn btn-ghost btn-sm', textContent: '\u2709 Message' });
+      msgBtn.addEventListener('click', () => openSendMessageModal(r.operatorId, r.operatorName));
+      actions.appendChild(msgBtn);
+    }
     const lowerBtn = el('button', { className: 'btn btn-ghost btn-sm', textContent: 'Lower' });
     lowerBtn.addEventListener('click', async () => { lowerBtn.disabled = true; await lowerOneHand(r.timerId); });
-    row.appendChild(lowerBtn);
+    actions.appendChild(lowerBtn);
+    row.appendChild(actions);
     wrap.appendChild(row);
   });
   return wrap;
