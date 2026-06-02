@@ -2523,7 +2523,9 @@ function renderHomeTodayStats(stats, activeTimers = []) {
     grid.appendChild(item);
   });
   body.appendChild(grid);
+  // "Needs attention" tiles (Raised Hands, Time Checks) sit side by side.
   if (hasRole('supervisor')) {
+    const attnRow = el('div', { className: 'home-attn-row', id: 'homeAttnRow' });
     const handTile = el('div', { className: 'home-hand-tile' + (raisedCount > 0 ? ' active' : '') });
     const handLeft = el('div', { className: 'home-hand-left' });
     handLeft.appendChild(el('div', { className: 'home-hand-icon', textContent: '\u270b' }));
@@ -2540,12 +2542,10 @@ function renderHomeTodayStats(stats, activeTimers = []) {
       });
       handTile.appendChild(lowerBtn);
     }
-    body.appendChild(handTile);
-  }
-  // Manager-only: Time Checks awaiting review, grouped with Raised Hands as
-  // the "needs attention" tiles within Today at a Glance.
-  if (hasRole('manager')) {
-    body.appendChild(buildTimeCheckTile());
+    attnRow.appendChild(handTile);
+    // Manager-only: Time Checks awaiting review, beside Raised Hands.
+    if (hasRole('manager')) attnRow.appendChild(buildTimeCheckTile());
+    body.appendChild(attnRow);
   }
 }
 

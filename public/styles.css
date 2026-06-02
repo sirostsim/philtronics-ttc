@@ -2391,17 +2391,29 @@ button.topbar-brand:focus-visible {
 }
 
 /* Home page raised hands tile */
+.home-attn-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+/* If only one tile is present (e.g. a supervisor without the manager-only
+   Time Checks tile), let it span the full width rather than sit half-empty. */
+.home-attn-row > :only-child { grid-column: 1 / -1; }
+@media (max-width: 560px) {
+  .home-attn-row { grid-template-columns: 1fr; }
+}
 .home-hand-tile {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 12px;
   padding: 14px 16px;
   background: var(--bg2);
   border: 1px solid var(--border);
   border-radius: 10px;
   transition: all .2s;
+  flex-wrap: wrap;
 }
 .home-hand-tile.active {
   background: rgba(139,92,246,.08);
@@ -2669,12 +2681,12 @@ button.topbar-brand:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 12px;
   padding: 14px 16px;
   background: var(--bg2);
   border: 1px solid var(--border);
   border-radius: 10px;
   transition: all .2s;
+  flex-wrap: wrap;
 }
 .home-tc-tile.active {
   background: rgba(59,130,246,.08);
