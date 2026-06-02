@@ -2269,30 +2269,19 @@ function tcSecsToHM(s) {
   return { hours: Math.floor(totalMin / 60), minutes: totalMin % 60 };
 }
 
-// Update just the homepage count card (used after live events / actions).
+// Cached pending Time Check reviews, used to build the tile in Today at a Glance.
+let _pendingTimeChecks = [];
+
+// Re-fetch pending reviews and update just the tile (used after live events / actions).
 function refreshTimeCheckCount() {
   if (!hasRole('manager')) return;
-  if (!document.getElementById('homeTimeChecks')) return; // not on home
-  GET('/time-checks/pending').then(renderHomeTimeChecks).catch(() => {});
-}
-
-function renderHomeTimeChecks(list) {
-  const card = document.getElementById('homeTimeChecks'); if (!card) return;
-  const body = card.querySelector('.home-card-body'); body.innerHTML = '';
-  const count = list ? list.length : 0;
-  const tile = el('div', { className: 'home-tc-tile' + (count > 0 ? ' active' : '') });
-  const left = el('div', { className: 'home-tc-left' });
-  left.appendChild(el('div', { className: 'home-tc-icon', textContent: '\u23F1' }));
-  const info = el('div', {});
-  info.appendChild(el('div', { className: 'home-tc-value', textContent: count }));
-  info.appendChild(el('div', { className: 'home-tc-label', textContent: count === 1 ? 'measured run to review' : 'measured runs to review' }));
-  left.appendChild(info); tile.appendChild(left);
-  if (count > 0) {
-    const reviewBtn = el('button', { className: 'btn btn-primary btn-sm', textContent: 'Review' });
-    reviewBtn.addEventListener('click', () => openTimeCheckModal());
-    tile.appendChild(reviewBtn);
-  }
-  body.appendChild(tile);
+  const existing = document.getElementById('homeTcTile');
+  if (!existing) return; // not on the home page
+  GET('/time-checks/pending').then(list => {
+    _pendingTimeChecks = list || [];
+    const fresh = buildTimeCheckTile();
+    existing.replaceWith(fresh);
+  }).catch(() => {});
 }
 
 // Live popup nudging an online manager. The queue card is the durable record.
@@ -2433,15 +2422,16 @@ async function loadHomePage() {
     hasRole('administrator') ? GET('/users').catch(() => []) : Promise.resolve([]),
     hasRole('manager') ? GET(`/export/productivity?from=${today}&to=${today}`).catch(() => ({ targetPct:80, operators:[] })) : Promise.resolve({ targetPct:80, operators:[] }),
   ]);
+  // Pending Time Check reviews feed a tile inside Today at a Glance (manager+).
+  if (hasRole('manager')) {
+    _pendingTimeChecks = await GET('/time-checks/pending').catch(() => []);
+  }
   renderHomeActiveJobs(activeTimers);
   renderHomeTodayStats(stats, activeTimers);
   if (hasRole('manager'))       renderHomePerformance(stats);
   if (hasRole('manager'))       renderHomeProductivity(productivity?.operators || [], productivity?.targetPct || 80);
   if (hasRole('administrator')) renderHomeUsers(users);
   renderHomeQuickActions();
-  if (hasRole('manager')) {
-    GET('/time-checks/pending').then(renderHomeTimeChecks).catch(() => renderHomeTimeChecks([]));
-  }
 }
 
 function renderHomeSkeleton() {
@@ -2457,7 +2447,6 @@ function renderHomeSkeleton() {
       <div class="home-card home-card-full" id="homeActiveJobs"><div class="home-card-title">Active Jobs</div><div class="home-card-body"><div class="empty-state">Loading...</div></div></div>
       <div class="home-card" id="homeTodayStats"><div class="home-card-title">Today at a Glance</div><div class="home-card-body"><div class="empty-state">Loading...</div></div></div>
       <div class="home-card" id="homeQuickActions"><div class="home-card-title">Quick Actions</div><div class="home-card-body"></div></div>
-      ${hasRole('manager') ? '<div class="home-card" id="homeTimeChecks"><div class="home-card-title">Time Checks to Review</div><div class="home-card-body"><div class="empty-state">Loading...</div></div></div>' : ''}
       ${hasRole('manager') ? '<div class="home-card home-card-full" id="homePerformance"><div class="home-card-title">Performance</div><div class="home-card-body"><div class="empty-state">Loading...</div></div></div>' : ''}
       ${hasRole('manager') ? '<div class="home-card home-card-full" id="homeProductivity"><div class="home-card-title">Operator Productivity — Today</div><div class="home-card-body"><div class="empty-state">Loading...</div></div></div>' : ''}
       ${hasRole('administrator') ? '<div class="home-card home-card-full" id="homeUsers"><div class="home-card-title">User Status</div><div class="home-card-body"><div class="empty-state">Loading...</div></div></div>' : ''}
@@ -2553,6 +2542,29 @@ function renderHomeTodayStats(stats, activeTimers = []) {
     }
     body.appendChild(handTile);
   }
+  // Manager-only: Time Checks awaiting review, grouped with Raised Hands as
+  // the "needs attention" tiles within Today at a Glance.
+  if (hasRole('manager')) {
+    body.appendChild(buildTimeCheckTile());
+  }
+}
+
+// Builds the Time Checks tile from the cached pending list.
+function buildTimeCheckTile() {
+  const count = _pendingTimeChecks ? _pendingTimeChecks.length : 0;
+  const tile = el('div', { className: 'home-tc-tile' + (count > 0 ? ' active' : ''), id: 'homeTcTile' });
+  const left = el('div', { className: 'home-tc-left' });
+  left.appendChild(el('div', { className: 'home-tc-icon', textContent: '\u23F1' }));
+  const info = el('div', {});
+  info.appendChild(el('div', { className: 'home-tc-value', textContent: count }));
+  info.appendChild(el('div', { className: 'home-tc-label', textContent: count === 1 ? 'Time Check to Review' : 'Time Checks to Review' }));
+  left.appendChild(info); tile.appendChild(left);
+  if (count > 0) {
+    const reviewBtn = el('button', { className: 'btn btn-primary btn-sm', textContent: 'Review' });
+    reviewBtn.addEventListener('click', () => openTimeCheckModal());
+    tile.appendChild(reviewBtn);
+  }
+  return tile;
 }
 
 function renderHomePerformance(stats) {

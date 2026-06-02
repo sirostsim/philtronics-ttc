@@ -2669,6 +2669,7 @@ button.topbar-brand:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  margin-top: 12px;
   padding: 14px 16px;
   background: var(--bg2);
   border: 1px solid var(--border);
