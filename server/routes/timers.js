@@ -328,6 +328,43 @@ router.get('/', async (req, res) => {
   }
 });
 
+// ─── GET /api/timers/raised-hands ────────────────────────────────────────────
+// Supervisor+ : current raised-hand jobs (for the homepage tile + modal list).
+// Defined BEFORE GET /:id so "raised-hands" isn't captured as an :id param.
+// Supervisors are scoped to their own department; manager+ see all.
+router.get('/raised-hands', async (req, res) => {
+  try {
+    if (!hasRole(req.user, 'supervisor')) {
+      return res.status(403).json({ error: 'Supervisors and above only.' });
+    }
+    const isManagerPlus = hasRole(req.user, 'manager');
+    const conditions = [`t.status = 'active'`, `t.hand_raised = TRUE`];
+    const params = [];
+    if (!isManagerPlus) {
+      conditions.push(`t.department = $1`);
+      params.push(req.user.department || 'Production');
+    }
+    const rows = await query(
+      `SELECT t.id, t.item_number, t.operator_name, t.workstation, t.department, t.started_at
+       FROM timers t
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY t.started_at ASC`,
+      params
+    );
+    res.json(rows.map(r => ({
+      timerId:      r.id,
+      itemNumber:   r.item_number,
+      operatorName: r.operator_name,
+      workstation:  r.workstation || null,
+      department:   r.department || null,
+      startedAt:    r.started_at,
+    })));
+  } catch (err) {
+    console.error('GET /timers/raised-hands error:', err.message);
+    res.status(500).json({ error: 'Could not load raised hands.' });
+  }
+});
+
 // ─── GET /api/timers/:id ──────────────────────────────────────────────────────
 router.get('/:id', async (req, res) => {
   try {
@@ -388,7 +425,9 @@ router.post('/lower-all-hands', async (req, res) => {
        RETURNING id`,
       []
     );
-    const count = result.rows.length;
+    const count = result.length;
+    // Tell all connected supervisors+ to refresh their raised-hands tile/list.
+    pushToRole('supervisor', { type: 'hands_changed' });
     res.json({ ok: true, count, message: `${count} hand${count !== 1 ? 's' : ''} lowered.` });
   } catch (err) {
     console.error('Lower all hands error:', err.message);
@@ -443,6 +482,9 @@ router.post('/:id/lower-hand', async (req, res) => {
 
     await query('UPDATE timers SET hand_raised = FALSE WHERE id = $1', [timer.id]);
     await writeAudit(timer.id, 'hand_lowered', req.user.id, null, null);
+
+    // Refresh supervisors' raised-hands tile/list in real time.
+    pushToRole('supervisor', { type: 'hands_changed' });
 
     res.json({ ok: true, handRaised: false });
   } catch (err) {

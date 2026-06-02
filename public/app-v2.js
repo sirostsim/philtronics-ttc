@@ -2272,6 +2272,111 @@ function tcSecsToHM(s) {
 // Cached pending Time Check reviews, used to build the tile in Today at a Glance.
 let _pendingTimeChecks = [];
 
+// Cached raised hands, used to build the clickable Raised Hands tile + modal.
+let _raisedHands = [];
+
+// Builds the clickable Raised Hands tile from the cached list. Clicking the tile
+// (other than the Lower All button) opens a modal listing each raised hand.
+function buildHandTile() {
+  const count = _raisedHands ? _raisedHands.length : 0;
+  const tile = el('div', { className: 'home-hand-tile' + (count > 0 ? ' active' : ''), id: 'homeHandTile' });
+  if (count > 0) {
+    tile.style.cursor = 'pointer';
+    tile.setAttribute('role', 'button');
+    tile.setAttribute('tabindex', '0');
+    tile.addEventListener('click', e => { if (!e.target.closest('.home-lower-all-btn')) openRaisedHandsModal(); });
+    tile.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && !e.target.closest('.home-lower-all-btn')) { e.preventDefault(); openRaisedHandsModal(); } });
+  }
+  const handLeft = el('div', { className: 'home-hand-left' });
+  handLeft.appendChild(el('div', { className: 'home-hand-icon', textContent: '\u270b' }));
+  const handInfo = el('div', {});
+  handInfo.appendChild(el('div', { className: 'home-hand-value', textContent: count }));
+  handInfo.appendChild(el('div', { className: 'home-hand-label', textContent: count === 1 ? 'Raised Hand' : 'Raised Hands' }));
+  handLeft.appendChild(handInfo); tile.appendChild(handLeft);
+  if (count > 0) {
+    const lowerBtn = el('button', { className: 'btn btn-ghost btn-sm home-lower-all-btn', textContent: '\u270b Lower All' });
+    lowerBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      lowerBtn.disabled = true; lowerBtn.textContent = 'Lowering\u2026';
+      try { const r = await POST('/timers/lower-all-hands', {}); toast(r.message, 'success'); refreshRaisedHands(); }
+      catch (err) { toast(err.message, 'error'); lowerBtn.disabled = false; lowerBtn.textContent = '\u270b Lower All'; }
+    });
+    tile.appendChild(lowerBtn);
+  }
+  return tile;
+}
+
+// Re-fetch raised hands and swap the tile in place (used after live events / actions).
+function refreshRaisedHands() {
+  if (!hasRole('supervisor')) return;
+  const existing = document.getElementById('homeHandTile');
+  if (!existing) return; // not on the home page
+  GET('/timers/raised-hands').then(list => {
+    _raisedHands = list || [];
+    existing.replaceWith(buildHandTile());
+    // If the modal is open, refresh its contents too.
+    if (document.getElementById('raisedHandsModalBody')) refreshRaisedHandsModal();
+  }).catch(() => {});
+}
+
+async function lowerOneHand(timerId) {
+  try {
+    await POST(`/timers/${timerId}/lower-hand`, {});
+    toast('Hand lowered.', '');
+    refreshRaisedHands();
+    return true;
+  } catch (err) { toast(err.message, 'error'); refreshRaisedHands(); return false; }
+}
+
+function openRaisedHandsModal() {
+  GET('/timers/raised-hands')
+    .then(list => {
+      _raisedHands = list || [];
+      const existing = document.getElementById('homeHandTile');
+      if (existing) existing.replaceWith(buildHandTile());
+      if (!_raisedHands.length) { toast('No raised hands right now.', ''); closeModal(); return; }
+      openModal('Raised Hands', buildRaisedHandsModalBody(_raisedHands), []);
+    })
+    .catch(err => toast(err.message, 'error'));
+}
+
+function buildRaisedHandsModalBody(list) {
+  const wrap = el('div', { className: 'rh-list', id: 'raisedHandsModalBody' });
+  wrap.appendChild(el('p', { className: 'rh-intro', textContent: 'Operators currently requesting attention. Lower a hand once the operator has been helped.' }));
+  list.forEach(r => {
+    const row = el('div', { className: 'rh-row' });
+    const info = el('div', { className: 'rh-info' });
+    const head = el('div', { className: 'rh-head' });
+    head.appendChild(el('span', { className: 'rh-op', textContent: '\u270b ' + r.operatorName }));
+    info.appendChild(head);
+    const meta = [];
+    if (r.itemNumber)  meta.push('\uD83D\uDCE6 ' + r.itemNumber);
+    if (r.workstation) meta.push('\uD83D\uDDA5 ' + r.workstation);
+    if (r.department)  meta.push(r.department);
+    const metaLine = el('div', { className: 'rh-meta' });
+    metaLine.appendChild(el('span', { textContent: meta.join('  \u00B7  ') }));
+    info.appendChild(metaLine);
+    if (r.startedAt) {
+      info.appendChild(el('div', { className: 'rh-time', textContent: 'Job started ' + new Date(r.startedAt).toLocaleTimeString('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit' }) }));
+    }
+    row.appendChild(info);
+    const lowerBtn = el('button', { className: 'btn btn-ghost btn-sm', textContent: 'Lower' });
+    lowerBtn.addEventListener('click', async () => { lowerBtn.disabled = true; await lowerOneHand(r.timerId); });
+    row.appendChild(lowerBtn);
+    wrap.appendChild(row);
+  });
+  return wrap;
+}
+
+// Refresh the open modal's contents from the cache; close it when empty.
+function refreshRaisedHandsModal() {
+  const body = document.getElementById('modalBody');
+  if (!body || !document.getElementById('raisedHandsModalBody')) return;
+  if (!_raisedHands.length) { closeModal(); return; }
+  body.innerHTML = '';
+  body.appendChild(buildRaisedHandsModalBody(_raisedHands));
+}
+
 // Re-fetch pending reviews and update just the tile (used after live events / actions).
 function refreshTimeCheckCount() {
   if (!hasRole('manager')) return;
@@ -2426,6 +2531,10 @@ async function loadHomePage() {
   if (hasRole('manager')) {
     _pendingTimeChecks = await GET('/time-checks/pending').catch(() => []);
   }
+  // Raised hands feed the clickable Raised Hands tile (supervisor+).
+  if (hasRole('supervisor')) {
+    _raisedHands = await GET('/timers/raised-hands').catch(() => []);
+  }
   renderHomeActiveJobs(activeTimers);
   renderHomeTodayStats(stats, activeTimers);
   if (hasRole('manager'))       renderHomePerformance(stats);
@@ -2510,7 +2619,6 @@ function renderHomeTodayStats(stats, activeTimers = []) {
   const card = document.getElementById('homeTodayStats'); if (!card) return;
   const body = card.querySelector('.home-card-body'); body.innerHTML = '';
   if (!stats) { body.appendChild(el('div', { className: 'empty-state', textContent: 'Could not load stats.' })); return; }
-  const raisedCount = activeTimers.filter(t => t.handRaised).length;
   const grid = el('div', { className: 'home-stats-grid' });
   [{ icon: '\u25b6', label: 'Active Now', value: stats.activeCount, cls: 'stat-active' },
    { icon: '\u2713', label: 'Completed Today', value: stats.total24h, cls: 'stat-done' },
@@ -2526,23 +2634,7 @@ function renderHomeTodayStats(stats, activeTimers = []) {
   // "Needs attention" tiles (Raised Hands, Time Checks) sit side by side.
   if (hasRole('supervisor')) {
     const attnRow = el('div', { className: 'home-attn-row', id: 'homeAttnRow' });
-    const handTile = el('div', { className: 'home-hand-tile' + (raisedCount > 0 ? ' active' : '') });
-    const handLeft = el('div', { className: 'home-hand-left' });
-    handLeft.appendChild(el('div', { className: 'home-hand-icon', textContent: '\u270b' }));
-    const handInfo = el('div', {});
-    handInfo.appendChild(el('div', { className: 'home-hand-value', textContent: raisedCount }));
-    handInfo.appendChild(el('div', { className: 'home-hand-label', textContent: raisedCount === 1 ? 'Raised Hand' : 'Raised Hands' }));
-    handLeft.appendChild(handInfo); handTile.appendChild(handLeft);
-    if (raisedCount > 0) {
-      const lowerBtn = el('button', { className: 'btn btn-ghost btn-sm home-lower-all-btn', textContent: '\u270b Lower All' });
-      lowerBtn.addEventListener('click', async () => {
-        lowerBtn.disabled = true; lowerBtn.textContent = 'Lowering\u2026';
-        try { const r = await POST('/timers/lower-all-hands', {}); toast(r.message, 'success'); loadHomePage(); }
-        catch (err) { toast(err.message, 'error'); lowerBtn.disabled = false; lowerBtn.textContent = '\u270b Lower All'; }
-      });
-      handTile.appendChild(lowerBtn);
-    }
-    attnRow.appendChild(handTile);
+    attnRow.appendChild(buildHandTile());
     // Manager-only: Time Checks awaiting review, beside Raised Hands.
     if (hasRole('manager')) attnRow.appendChild(buildTimeCheckTile());
     body.appendChild(attnRow);
@@ -3109,8 +3201,11 @@ function handleIncomingSSE(data) {
       handleConversationClosed(data);
       break;
     case 'hand_raised':
-      if (hasRole('supervisor')) showHandRaisedPopup(data);
-      return; // no ping for hand_raised — the popup is notification enough
+      if (hasRole('supervisor')) { showHandRaisedPopup(data); refreshRaisedHands(); }
+      return; // no ping beyond the popup
+    case 'hands_changed':
+      if (hasRole('supervisor')) refreshRaisedHands();
+      return; // silent tile/list refresh (a hand was lowered elsewhere)
     case 'time_check_review':
       if (hasRole('manager')) { showTimeCheckPopup(data); refreshTimeCheckCount(); }
       return; // popup carries its own ping

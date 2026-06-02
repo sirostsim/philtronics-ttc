@@ -2789,3 +2789,25 @@ button.topbar-brand:focus-visible {
   font-family: var(--font-mono);
   text-align: center;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   RAISED HANDS MODAL  (per-row list with Lower action)
+   ═══════════════════════════════════════════════════════════════════════════ */
+.rh-list { display: flex; flex-direction: column; gap: 10px; }
+.rh-intro { font-size: 13px; color: var(--text2); margin: 0 0 4px; }
+.rh-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-left: 3px solid #7c3aed;
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.rh-info { min-width: 0; }
+.rh-head { margin-bottom: 3px; }
+.rh-op { font-weight: 700; color: var(--text); }
+.rh-meta { font-size: 12px; color: var(--text2); }
+.rh-time { font-size: 11px; color: var(--text3); margin-top: 2px; }
