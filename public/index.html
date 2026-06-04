@@ -115,6 +115,9 @@
   <section id="pageTimer" class="page" aria-label="Timer" hidden>
     <div class="page-content">
 
+      <!-- Operator availability status (stage 2) -->
+      <div id="availabilityBar" class="availability-bar" hidden></div>
+
       <!-- Start Job Panel -->
       <div id="panelStart" class="timer-panel">
         <h2 class="panel-title">Start Job</h2>
@@ -545,6 +548,13 @@
       </div>
       <p class="section-desc">Set a target completion time per item number. Targets are displayed on the Wall Board, timer cards, and the active job panel.</p>
       <div id="targetTimesPageList" class="target-times-list" style="margin-top:16px;"></div>
+
+      <div class="page-heading-row" style="margin-top:40px;">
+        <h2 class="page-heading">Productivity Reasons</h2>
+        <button id="btnAddReason" class="btn btn-primary">+ Add Reason</button>
+      </div>
+      <p class="section-desc">Reasons operators choose when pausing or marking themselves unavailable. Reasons marked <strong>excluded</strong> do not count against productivity (training, meetings, absence); the rest count as available-but-idle time.</p>
+      <div id="reasonsList" class="reasons-list" style="margin-top:16px;"></div>
     </div>
   </section>
 

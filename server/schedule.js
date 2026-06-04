@@ -88,6 +88,21 @@ async function runSchedule() {
         );
         console.log(`[schedule] Auto-paused ${rows.length} timer(s) — outside working hours`);
       }
+
+      // Close any operator-declared "unavailable" periods left open at end of
+      // day, so a forgotten declaration doesn't bleed into the next day's
+      // productivity. (Productivity clipping already bounds it to working hours.)
+      try {
+        const closed = await query(
+          `UPDATE unavailability_periods SET ended_at = NOW()
+           WHERE source = 'manual' AND ended_at IS NULL
+           RETURNING id`,
+          []
+        );
+        if (closed.length) {
+          console.log(`[schedule] Auto-closed ${closed.length} open unavailable period(s) — end of day`);
+        }
+      } catch (e) { /* table may not exist yet — non-fatal */ }
     } else {
       // Within working hours — auto-resume any schedule-paused timers
       // Also clear any overtime_override flags at the start of the working day
