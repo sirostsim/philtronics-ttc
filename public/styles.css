@@ -2833,3 +2833,22 @@ button.topbar-brand:focus-visible {
 .btn-overtime:hover  { background: #ffc740; border-color: #ffc740; }
 .btn-overtime:active { transform: translateY(1px); }
 .btn-overtime:disabled { opacity: .6; cursor: default; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PAUSE REASON PICKER
+   ═══════════════════════════════════════════════════════════════════════════ */
+.pause-reason-list { display: flex; flex-direction: column; gap: 8px; }
+.pause-reason-intro { font-size: 13px; color: var(--text2); margin: 0 0 6px; }
+.pause-reason-btn {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: 100%; text-align: left;
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px 16px; color: var(--text); font-size: 15px; font-weight: 600;
+  cursor: pointer; transition: all .15s;
+}
+.pause-reason-btn:hover { border-color: var(--blue); background: var(--bg2); }
+.pause-reason-btn.pause-reason-na { border-left: 3px solid var(--amber); }
+.pause-reason-tag {
+  font-size: 11px; font-weight: 600; color: var(--amber);
+  text-transform: uppercase; letter-spacing: .04em; white-space: nowrap;
+}

@@ -389,6 +389,49 @@ function calcActiveSecondsForDay(timerList, dayStr) {
   return secs;
 }
 
+// Fetch non-available periods for the given operators within the window.
+// Returns { operatorId: [{started_at, ended_at}, ...] }. Safe if the table
+// does not exist yet (returns {}).
+async function fetchUnavailabilityByOp(opIds, fromDt, toDt) {
+  const byOp = {};
+  if (!opIds || !opIds.length) return byOp;
+  try {
+    const rows = await query(
+      `SELECT operator_id, started_at, ended_at
+       FROM unavailability_periods
+       WHERE operator_id = ANY($1)
+         AND started_at <= $3
+         AND (ended_at IS NULL OR ended_at >= $2)`,
+      [opIds, fromDt.toISOString(), toDt.toISOString()]
+    );
+    for (const r of rows) {
+      if (!byOp[r.operator_id]) byOp[r.operator_id] = [];
+      byOp[r.operator_id].push(r);
+    }
+  } catch (_) { /* table not present yet — no adjustment */ }
+  return byOp;
+}
+
+// Minutes of non-available time for one operator on one day, clipped to that
+// day's working-hours window. An open period (ended_at NULL) is treated as
+// running up to "now".
+function unavailableMinutesForDay(periods, dayStr) {
+  if (!periods || !periods.length) return 0;
+  const window = workDayWindow(dayStr);
+  if (!window) return 0;
+  const winStart = window.start.getTime();
+  const winEnd   = window.end.getTime();
+  let overlapMs = 0;
+  for (const p of periods) {
+    const s = new Date(p.started_at).getTime();
+    const e = (p.ended_at ? new Date(p.ended_at) : new Date()).getTime();
+    const lo = Math.max(s, winStart);
+    const hi = Math.min(e, winEnd);
+    if (hi > lo) overlapMs += (hi - lo);
+  }
+  return Math.round(overlapMs / 60000);
+}
+
 router.get('/productivity', async (req, res) => {
   try {
     const { from, to, department, groupByDay } = req.query;
@@ -438,6 +481,10 @@ router.get('/productivity', async (req, res) => {
       timersByOp[t.operator_id].push(t);
     }
 
+    // Non-available periods (training, meetings, absence, half-days) to subtract
+    // from each operator's available-time denominator.
+    const unavailByOp = await fetchUnavailabilityByOp(opIds, fromDt, toDt);
+
     // Build working days list
     const days = [];
     let totalAvailableMins = 0;
@@ -452,17 +499,25 @@ router.get('/productivity', async (req, res) => {
 
     const result = operators.map(op => {
       const opTimers = timersByOp[op.id] || [];
+      const opUnavail = unavailByOp[op.id] || [];
       let totalActiveSeconds = 0;
+      let opAvailableMins = 0;        // per-operator denominator
+      let opUnavailableMins = 0;      // excluded (training/absence/etc.)
 
       // Daily breakdown
       const daily = byDay ? days.map(({ date, availableMins }) => {
         const activeSecs = calcActiveSecondsForDay(opTimers, date);
         const activeMins = Math.round(activeSecs / 60);
-        const pct = availableMins > 0 ? Math.min(100, Math.round(activeMins / availableMins * 100)) : 0;
+        const unavailMins = Math.min(availableMins, unavailableMinutesForDay(opUnavail, date));
+        const dayAvailable = Math.max(0, availableMins - unavailMins);
+        const pct = dayAvailable > 0 ? Math.min(100, Math.round(activeMins / dayAvailable * 100)) : 0;
         totalActiveSeconds += activeSecs;
+        opAvailableMins   += dayAvailable;
+        opUnavailableMins += unavailMins;
         return {
           date,
-          availableMins,
+          availableMins: dayAvailable,
+          unavailableMins: unavailMins,
           activeMinutes: activeMins,
           productivityPct: pct,
           vsTarget: pct - targetPct,
@@ -470,16 +525,19 @@ router.get('/productivity', async (req, res) => {
       }) : null;
 
       if (!byDay) {
-        // Aggregate without daily breakdown
-        for (const t of opTimers) {
-          const ds = new Date(t.started_at).toISOString().slice(0,10);
-          totalActiveSeconds += calcActiveSecondsForDay([t], ds);
+        // Aggregate: walk every working day in the window so we can subtract
+        // this operator's non-available minutes per day from the denominator.
+        for (const { date, availableMins } of days) {
+          totalActiveSeconds += calcActiveSecondsForDay(opTimers, date);
+          const unavailMins = Math.min(availableMins, unavailableMinutesForDay(opUnavail, date));
+          opAvailableMins   += Math.max(0, availableMins - unavailMins);
+          opUnavailableMins += unavailMins;
         }
       }
 
       const totalActiveMins = Math.round(totalActiveSeconds / 60);
-      const overallPct = totalAvailableMins > 0
-        ? Math.min(100, Math.round(totalActiveMins / totalAvailableMins * 100))
+      const overallPct = opAvailableMins > 0
+        ? Math.min(100, Math.round(totalActiveMins / opAvailableMins * 100))
         : 0;
 
       return {
@@ -488,8 +546,9 @@ router.get('/productivity', async (req, res) => {
         department:            op.department,
         activeMinutes:         totalActiveMins,
         activeHoursDisplay:    `${Math.floor(totalActiveMins/60)}h ${totalActiveMins%60}m`,
-        availableMinutes:      totalAvailableMins,
-        availableHoursDisplay: `${Math.floor(totalAvailableMins/60)}h ${totalAvailableMins%60}m`,
+        availableMinutes:      opAvailableMins,
+        availableHoursDisplay: `${Math.floor(opAvailableMins/60)}h ${opAvailableMins%60}m`,
+        unavailableMinutes:    opUnavailableMins,
         productivityPct:       overallPct,
         vsTarget:              overallPct - targetPct,
         timerCount:            opTimers.length,
@@ -557,6 +616,8 @@ router.get('/productivity/csv', async (req, res) => {
       if (!timersByOp[t.operator_id]) timersByOp[t.operator_id] = [];
       timersByOp[t.operator_id].push(t);
     }
+
+    const unavailByOp = await fetchUnavailabilityByOp(opIds, fromDt, toDt);
 
     // Build working days
     const days = [];

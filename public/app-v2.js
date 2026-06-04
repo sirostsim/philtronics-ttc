@@ -2195,19 +2195,50 @@ function updatePauseUI() {
 
 document.getElementById('btnPauseTimer').addEventListener('click', async () => {
   if (!state.activeTimerId) return;
-  const btn = document.getElementById('btnPauseTimer'); btn.disabled = true;
-  try {
-    if (state.activeIsPaused) {
+  const btn = document.getElementById('btnPauseTimer');
+  if (state.activeIsPaused) {
+    btn.disabled = true;
+    try {
       const t = await POST('/pause/' + state.activeTimerId + '/resume', {});
       state.activeIsPaused = false; state.activePausedAt = null; state.activeTotalPausedSeconds = t.totalPausedSeconds || 0;
       updatePauseUI(); toast('Timer resumed.', 'success');
-    } else {
-      const t = await POST('/pause/' + state.activeTimerId + '/pause', { reason: 'Manual pause' });
-      state.activeIsPaused = true; state.activePausedAt = t.pausedAt;
-      updatePauseUI(); toast('Timer paused.', '');
-    }
-  } catch (err) { toast(err.message, 'error'); } finally { btn.disabled = false; }
+    } catch (err) { toast(err.message, 'error'); } finally { btn.disabled = false; }
+  } else {
+    // Ask for a reason so training/meetings/absence can be excluded from
+    // productivity availability. Reasons are the managed list from the server.
+    openPauseReasonPicker();
+  }
 });
+
+let _pauseReasons = null;
+async function loadPauseReasons() {
+  if (_pauseReasons) return _pauseReasons;
+  try { _pauseReasons = await GET('/pause/reasons'); }
+  catch (_) { _pauseReasons = [{ id: null, label: 'Break', isAvailable: true }, { id: null, label: 'Other', isAvailable: true }]; }
+  return _pauseReasons;
+}
+
+async function openPauseReasonPicker() {
+  const reasons = await loadPauseReasons();
+  const wrap = el('div', { className: 'pause-reason-list' });
+  wrap.appendChild(el('p', { className: 'pause-reason-intro', textContent: 'Why are you pausing? This keeps productivity figures fair.' }));
+  reasons.forEach(r => {
+    const row = el('button', { className: 'pause-reason-btn' + (r.isAvailable ? '' : ' pause-reason-na') });
+    row.appendChild(el('span', { className: 'pause-reason-label', textContent: r.label }));
+    if (!r.isAvailable) row.appendChild(el('span', { className: 'pause-reason-tag', textContent: 'excluded from productivity' }));
+    row.addEventListener('click', async () => {
+      closeModal();
+      const btn = document.getElementById('btnPauseTimer'); btn.disabled = true;
+      try {
+        const t = await POST('/pause/' + state.activeTimerId + '/pause', { reason: r.label, reasonId: r.id });
+        state.activeIsPaused = true; state.activePausedAt = t.pausedAt;
+        updatePauseUI(); toast('Timer paused: ' + r.label, '');
+      } catch (err) { toast(err.message, 'error'); } finally { btn.disabled = false; }
+    });
+    wrap.appendChild(row);
+  });
+  openModal('Pause Job', wrap, []);
+}
 
 let pausePollInterval = null;
 function startPausePoll() {
