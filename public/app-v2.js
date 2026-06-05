@@ -689,9 +689,13 @@ async function showActivePanel() {
       if (t.timerCategory === 'rework') metaParts.push('🔄 REWORK');
       document.getElementById('activeMeta').textContent = metaParts.join('  ·  ');
       state.activeTargetSeconds = t.targetSeconds || null;
+      state._activeTimerObj = t;
       updateActiveTargetDisplay();
       updatePauseUI();
       updateHandUI();
+      // Adjust button — supervisors and above only (corrects a rogue timer).
+      const adjBtnEl = document.getElementById('btnAdjustTimer');
+      if (adjBtnEl) adjBtnEl.hidden = !hasRole('supervisor');
     } else if (state.activeTimerId) {
       // Both fetches found nothing — timer genuinely gone
       state.activeTimerId   = null;
@@ -873,6 +877,11 @@ document.getElementById('btnStop').addEventListener('click', async () => {
 });
 
 // ─── Cancel timer ────────────────────────────────────────────────────────
+document.getElementById('btnAdjustTimer') && document.getElementById('btnAdjustTimer').addEventListener('click', () => {
+  if (!state.activeTimerId || !state._activeTimerObj) return;
+  openAdjustTimerModal(state._activeTimerObj, null);
+});
+
 document.getElementById('btnCancelTimer').addEventListener('click', () => {
   if (!state.activeTimerId) return;
   const ageMs  = state.activeStartedAt
@@ -1712,6 +1721,18 @@ function renderEntryList(containerId, timers, showOperator = false) {
       el('span', { className: `badge badge-${t.status}`, textContent: t.status })
     ));
 
+    // Adjust times — supervisors and above (corrects a rogue/incorrect timer)
+    if (hasRole('supervisor')) {
+      const adjBtn = el('button', {
+        className: 'btn-adjust-timer',
+        textContent: '\u270e',
+        title: 'Adjust start / finish time',
+        'aria-label': 'Adjust times for ' + t.itemNumber,
+      });
+      adjBtn.addEventListener('click', () => openAdjustTimerModal(t, containerId));
+      right.appendChild(adjBtn);
+    }
+
     // Delete button — administrators only
     if (isAdmin) {
       const delBtn = el('button', {
@@ -1728,6 +1749,77 @@ function renderEntryList(containerId, timers, showOperator = false) {
     card.appendChild(right);
     container.appendChild(card);
   });
+}
+
+// ─── Adjust timer times (supervisor+) ─────────────────────────────────────────
+// Corrects a rogue or mistaken timer's start / finish time. Reason is mandatory
+// and the change is audit-logged on the server.
+function toLocalInputValue(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  // datetime-local needs YYYY-MM-DDTHH:MM in local time
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function openAdjustTimerModal(t, containerId) {
+  const isCompleted = !!t.completedAt;
+  const wrap = el('div', { className: 'adjust-form' });
+  wrap.appendChild(el('p', { className: 'adjust-intro',
+    textContent: 'Correct the start or finish time for this job. A reason is required and the change is recorded.' }));
+
+  const summary = el('div', { className: 'adjust-summary' });
+  summary.appendChild(el('div', { className: 'adjust-summary-item', textContent: t.itemNumber }));
+  summary.appendChild(el('div', { className: 'adjust-summary-op', textContent: t.operatorName }));
+  wrap.appendChild(summary);
+
+  wrap.appendChild(el('label', { className: 'adjust-label', textContent: 'Start time' }));
+  const startInput = el('input', { type: 'datetime-local', className: 'adjust-input', value: toLocalInputValue(t.startedAt) });
+  wrap.appendChild(startInput);
+
+  let endInput = null;
+  if (isCompleted) {
+    wrap.appendChild(el('label', { className: 'adjust-label', textContent: 'Finish time' }));
+    endInput = el('input', { type: 'datetime-local', className: 'adjust-input', value: toLocalInputValue(t.completedAt) });
+    wrap.appendChild(endInput);
+  } else {
+    wrap.appendChild(el('p', { className: 'adjust-note', textContent: 'This job is still running, so only its start time can be adjusted. The finish time can be corrected once the job is stopped.' }));
+  }
+
+  wrap.appendChild(el('label', { className: 'adjust-label', textContent: 'Reason (required)' }));
+  const reasonInput = el('input', { type: 'text', maxlength: '500', className: 'adjust-input', placeholder: 'e.g. Operator forgot to stop the timer overnight' });
+  wrap.appendChild(reasonInput);
+
+  const errLine = el('div', { className: 'adjust-error', style: 'display:none;' });
+  wrap.appendChild(errLine);
+
+  const saveBtn = el('button', { className: 'btn btn-primary', textContent: 'Save Adjustment' });
+  saveBtn.addEventListener('click', async () => {
+    errLine.style.display = 'none';
+    const reason = reasonInput.value.trim();
+    if (!reason) { errLine.textContent = 'Please give a reason for the adjustment.'; errLine.style.display = 'block'; return; }
+    const body = { reason };
+    if (startInput.value) body.startedAt = new Date(startInput.value).toISOString();
+    if (endInput && endInput.value) body.completedAt = new Date(endInput.value).toISOString();
+    // Client-side guard: finish must not precede start
+    if (body.startedAt && body.completedAt && new Date(body.completedAt) < new Date(body.startedAt)) {
+      errLine.textContent = 'The finish time cannot be before the start time.'; errLine.style.display = 'block'; return;
+    }
+    saveBtn.disabled = true;
+    try {
+      await PATCH('/timers/' + t.id, body);
+      closeModal();
+      toast('Timer adjusted.', 'success');
+      // Refresh whatever view we came from
+      if (containerId === 'historyList') searchHistory();
+      else if (containerId === 'todayList') loadTodayEntries();
+      if (state.activeTimerId === t.id) loadTimerPage();
+    } catch (err) {
+      errLine.textContent = err.message; errLine.style.display = 'block'; saveBtn.disabled = false;
+    }
+  });
+  wrap.appendChild(saveBtn);
+  openModal('Adjust Times', wrap, []);
 }
 
 // ─── Delete timer confirmation ────────────────────────────────────────────────

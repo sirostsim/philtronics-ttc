@@ -2905,3 +2905,47 @@ button.topbar-brand:focus-visible {
 .shb-info { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .shb-text { font-weight: 700; color: var(--text); }
 .shb-text-muted { font-size: 14px; color: var(--text2); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ADJUST TIMER (supervisor+) — row button, active-panel button, and modal form
+   ═══════════════════════════════════════════════════════════════════════════ */
+.btn-adjust-timer {
+  background: transparent;
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  color: var(--text3);
+  font-size: 15px;
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  margin-top: 6px;
+  margin-left: auto;
+  transition: all var(--transition);
+  flex-shrink: 0;
+}
+.btn-adjust-timer:hover { border-color: var(--blue); color: var(--blue); }
+.btn-adjust-sm {
+  background: transparent;
+  border: 1px solid var(--border2);
+  color: var(--text2);
+  font-size: 14px;
+  padding: 14px 20px;
+}
+.btn-adjust-sm:hover { border-color: var(--blue); color: var(--blue); }
+
+.adjust-form { display: flex; flex-direction: column; gap: 6px; }
+.adjust-intro { font-size: 13px; color: var(--text2); margin: 0 0 6px; }
+.adjust-summary {
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 12px; margin-bottom: 8px;
+}
+.adjust-summary-item { font-family: var(--font-mono); color: var(--accent); font-weight: 700; }
+.adjust-summary-op { font-size: 13px; color: var(--text2); }
+.adjust-label { font-size: 13px; font-weight: 600; color: var(--text2); margin-top: 8px; }
+.adjust-input {
+  width: 100%; padding: 10px 12px; background: var(--bg3);
+  border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 15px;
+}
+.adjust-note { font-size: 12px; color: var(--text3); font-style: italic; margin: 4px 0 0; }
+.adjust-error { color: var(--red, #ef4444); font-size: 13px; margin-top: 8px; }
+.adjust-form .btn { margin-top: 14px; }
