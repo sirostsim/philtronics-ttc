@@ -503,9 +503,50 @@ async function loadTimerPage() {
 
   loadTodayEntries();
   refreshAvailabilityBar();
+  refreshStandaloneHandBar();
   // Poll for auto-pause changes from the schedule
   if (state.activeTimerId) startPausePoll();
   else stopPausePoll();
+}
+
+/* ─── Raise hand without a running job (standalone hands) ─────────────────── */
+// Only relevant on the start panel (no active timer). Lets an operator signal
+// for help before starting a job; the hand carries onto the job when they start.
+async function refreshStandaloneHandBar() {
+  const bar = document.getElementById('standaloneHandBar');
+  if (!bar) return;
+  // Only operators, and only when no job is running (start panel showing).
+  if ((state.user && state.user.role !== 'operator') || state.activeTimerId) { bar.hidden = true; return; }
+  let status = { raised: false };
+  try { status = await GET('/timers/my-hand'); } catch (_) {}
+  bar.hidden = false;
+  bar.innerHTML = '';
+  if (status.raised) {
+    bar.className = 'standalone-hand-bar raised';
+    const info = el('div', { className: 'shb-info' });
+    info.appendChild(el('span', { className: 'shb-text', textContent: '\u270b Your hand is raised — a supervisor has been notified.' }));
+    bar.appendChild(info);
+    const btn = el('button', { className: 'btn btn-ghost btn-sm', textContent: 'Lower Hand' });
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try { await POST('/timers/lower-hand-standalone', {}); toast('Hand lowered.', ''); refreshStandaloneHandBar(); }
+      catch (err) { toast(err.message, 'error'); btn.disabled = false; }
+    });
+    bar.appendChild(btn);
+  } else {
+    bar.className = 'standalone-hand-bar';
+    const info = el('div', { className: 'shb-info' });
+    info.appendChild(el('span', { className: 'shb-text-muted', textContent: 'Need help before starting a job?' }));
+    bar.appendChild(info);
+    const btn = el('button', { className: 'btn btn-overtime btn-sm', textContent: '\u270b Raise Hand' });
+    btn.style.width = 'auto';
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try { await POST('/timers/raise-hand-standalone', {}); toast('Hand raised — a supervisor has been notified.', 'success'); refreshStandaloneHandBar(); }
+      catch (err) { toast(err.message, 'error'); btn.disabled = false; }
+    });
+    bar.appendChild(btn);
+  }
 }
 
 /* ─── Operator availability (stage 2) ─────────────────────────────────────── */
@@ -2526,11 +2567,12 @@ function buildRaisedHandsModalBody(list) {
     if (r.itemNumber)  meta.push('\uD83D\uDCE6 ' + r.itemNumber);
     if (r.workstation) meta.push('\uD83D\uDDA5 ' + r.workstation);
     if (r.department)  meta.push(r.department);
+    if (r.standalone)  meta.push('no active job');
     const metaLine = el('div', { className: 'rh-meta' });
     metaLine.appendChild(el('span', { textContent: meta.join('  \u00B7  ') }));
     info.appendChild(metaLine);
     if (r.startedAt) {
-      info.appendChild(el('div', { className: 'rh-time', textContent: 'Job started ' + new Date(r.startedAt).toLocaleTimeString('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit' }) }));
+      info.appendChild(el('div', { className: 'rh-time', textContent: (r.standalone ? 'Raised ' : 'Job started ') + new Date(r.startedAt).toLocaleTimeString('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit' }) }));
     }
     row.appendChild(info);
     const actions = el('div', { className: 'rh-actions' });
@@ -2540,7 +2582,15 @@ function buildRaisedHandsModalBody(list) {
       actions.appendChild(msgBtn);
     }
     const lowerBtn = el('button', { className: 'btn btn-ghost btn-sm', textContent: 'Lower' });
-    lowerBtn.addEventListener('click', async () => { lowerBtn.disabled = true; await lowerOneHand(r.timerId); });
+    lowerBtn.addEventListener('click', async () => {
+      lowerBtn.disabled = true;
+      if (r.standalone) {
+        try { await POST('/timers/lower-hand-standalone', { standaloneId: r.standaloneId }); refreshRaisedHands(); }
+        catch (err) { toast(err.message, 'error'); refreshRaisedHands(); }
+      } else {
+        await lowerOneHand(r.timerId);
+      }
+    });
     actions.appendChild(lowerBtn);
     row.appendChild(actions);
     wrap.appendChild(row);
@@ -3385,6 +3435,7 @@ function handleIncomingSSE(data) {
       return; // no ping beyond the popup
     case 'hands_changed':
       if (hasRole('supervisor')) refreshRaisedHands();
+      else refreshStandaloneHandBar(); // operator: their hand may have been lowered
       return; // silent tile/list refresh (a hand was lowered elsewhere)
     case 'time_check_review':
       if (hasRole('manager')) { showTimeCheckPopup(data); refreshTimeCheckCount(); }

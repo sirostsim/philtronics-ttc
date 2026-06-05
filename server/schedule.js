@@ -103,6 +103,17 @@ async function runSchedule() {
           console.log(`[schedule] Auto-closed ${closed.length} open unavailable period(s) — end of day`);
         }
       } catch (e) { /* table may not exist yet — non-fatal */ }
+
+      // Clear any forgotten standalone (no-job) raised hands at end of day.
+      try {
+        const lowered = await query(
+          `UPDATE standalone_hands SET lowered_at = NOW() WHERE lowered_at IS NULL RETURNING id`,
+          []
+        );
+        if (lowered.length) {
+          console.log(`[schedule] Auto-cleared ${lowered.length} standalone hand(s) — end of day`);
+        }
+      } catch (e) { /* table may not exist yet — non-fatal */ }
     } else {
       // Within working hours — auto-resume any schedule-paused timers
       // Also clear any overtime_override flags at the start of the working day

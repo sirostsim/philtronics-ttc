@@ -94,6 +94,20 @@ router.post('/start', validate(schemas.startTimer), async (req, res) => {
       [id, itemNumber, user.id, user.full_name, startedAt, timeCheck || false, workstation || null, woNumber || null, routeCardNumber || null, timerCategory || 'work', department, user.id]
     );
 
+    // If the operator had a standalone hand raised, carry it onto this job and
+    // close the standalone record (so the hand stays raised seamlessly).
+    try {
+      const carried = await query(
+        `UPDATE standalone_hands SET lowered_at = NOW(), transferred = TRUE
+         WHERE operator_id = $1 AND lowered_at IS NULL RETURNING id`,
+        [user.id]
+      );
+      if (carried.length) {
+        await query('UPDATE timers SET hand_raised = TRUE WHERE id = $1', [id]);
+        pushToRole('supervisor', { type: 'hands_changed' });
+      }
+    } catch (_) { /* table not present yet */ }
+
     const timer = await queryOne('SELECT * FROM timers WHERE id = $1', [id]);
     res.status(201).json(formatTimer(timer));
   } catch (err) {
@@ -368,7 +382,7 @@ router.get('/raised-hands', async (req, res) => {
        ORDER BY t.started_at ASC`,
       params
     );
-    res.json(rows.map(r => ({
+    const timerHands = rows.map(r => ({
       timerId:      r.id,
       itemNumber:   r.item_number,
       operatorId:   r.operator_id,
@@ -376,10 +390,127 @@ router.get('/raised-hands', async (req, res) => {
       workstation:  r.workstation || null,
       department:   r.department || null,
       startedAt:    r.started_at,
-    })));
+      standalone:   false,
+    }));
+
+    // Union in standalone hands (raised with no active job). Same department scope.
+    let standaloneHands = [];
+    try {
+      const sConds = [`lowered_at IS NULL`];
+      const sParams = [];
+      if (!isManagerPlus) { sConds.push(`department = $1`); sParams.push(req.user.department || 'Production'); }
+      const sRows = await query(
+        `SELECT id, operator_id, operator_name, department, raised_at
+         FROM standalone_hands WHERE ${sConds.join(' AND ')} ORDER BY raised_at ASC`,
+        sParams
+      );
+      standaloneHands = sRows.map(r => ({
+        timerId:      null,
+        standaloneId: r.id,
+        itemNumber:   null,
+        operatorId:   r.operator_id,
+        operatorName: r.operator_name,
+        workstation:  null,
+        department:   r.department || null,
+        startedAt:    r.raised_at,
+        standalone:   true,
+      }));
+    } catch (_) { /* table not present yet */ }
+
+    res.json([...standaloneHands, ...timerHands]);
   } catch (err) {
     console.error('GET /timers/raised-hands error:', err.message);
     res.status(500).json({ error: 'Could not load raised hands.' });
+  }
+});
+
+// ─── Standalone hands (raised with no active timer) ──────────────────────────
+// GET  /api/timers/my-hand     – operator's own standalone hand status
+// POST /api/timers/raise-hand-standalone
+// POST /api/timers/lower-hand-standalone
+// Defined before GET /:id so the literal paths aren't captured as :id.
+
+router.get('/my-hand', async (req, res) => {
+  try {
+    const row = await queryOne(
+      `SELECT id, raised_at FROM standalone_hands
+       WHERE operator_id = $1 AND lowered_at IS NULL
+       ORDER BY raised_at DESC LIMIT 1`,
+      [req.user.id]
+    );
+    res.json(row ? { raised: true, id: row.id, raisedAt: row.raised_at } : { raised: false });
+  } catch (e) {
+    res.json({ raised: false });
+  }
+});
+
+router.post('/raise-hand-standalone', async (req, res) => {
+  try {
+    // Don't allow a standalone hand if the operator already has an active timer —
+    // they should raise it on the job instead.
+    const active = await queryOne(
+      `SELECT id FROM timers WHERE operator_id = $1 AND status = 'active'`,
+      [req.user.id]
+    );
+    if (active) {
+      return res.status(409).json({ error: 'You have an active job — raise your hand on the job instead.' });
+    }
+
+    const existing = await queryOne(
+      `SELECT id FROM standalone_hands WHERE operator_id = $1 AND lowered_at IS NULL`,
+      [req.user.id]
+    );
+    if (existing) return res.json({ ok: true, handRaised: true }); // already raised — idempotent
+
+    const id = uuidv4();
+    await query(
+      `INSERT INTO standalone_hands (id, operator_id, operator_name, department, raised_at)
+       VALUES ($1, $2, $3, $4, NOW())`,
+      [id, req.user.id, req.user.full_name, req.user.department || null]
+    );
+
+    pushToRole('supervisor', {
+      type:         'hand_raised',
+      timerId:      null,
+      standaloneId: id,
+      operatorName: req.user.full_name,
+      itemNumber:   null,
+      workstation:  null,
+      raisedAt:     new Date().toISOString(),
+    });
+
+    res.json({ ok: true, handRaised: true });
+  } catch (err) {
+    console.error('Raise standalone hand error:', err.message);
+    res.status(500).json({ error: 'Could not raise hand.' });
+  }
+});
+
+router.post('/lower-hand-standalone', async (req, res) => {
+  try {
+    // Supervisors+ may lower a specific standalone hand by id; operators lower
+    // their own (no id needed).
+    const byId = req.body && req.body.standaloneId;
+    if (byId) {
+      if (!hasRole(req.user, 'supervisor')) {
+        return res.status(403).json({ error: 'Supervisors and above only.' });
+      }
+      await query(
+        `UPDATE standalone_hands SET lowered_at = NOW() WHERE id = $1 AND lowered_at IS NULL`,
+        [byId]
+      );
+    } else {
+      await query(
+        `UPDATE standalone_hands SET lowered_at = NOW()
+         WHERE operator_id = $1 AND lowered_at IS NULL`,
+        [req.user.id]
+      );
+    }
+    pushToRole('supervisor', { type: 'hands_changed' });
+    res.json({ ok: true, handRaised: false });
+  } catch (err) {
+    console.error('Lower standalone hand error:', err.message);
+    res.status(500).json({ error: 'Could not lower hand.' });
   }
 });
 
@@ -443,7 +574,15 @@ router.post('/lower-all-hands', async (req, res) => {
        RETURNING id`,
       []
     );
-    const count = result.length;
+    let count = result.length;
+    // Also clear any standalone (no-job) hands.
+    try {
+      const s = await query(
+        `UPDATE standalone_hands SET lowered_at = NOW() WHERE lowered_at IS NULL RETURNING id`,
+        []
+      );
+      count += s.length;
+    } catch (_) { /* table not present yet */ }
     // Tell all connected supervisors+ to refresh their raised-hands tile/list.
     pushToRole('supervisor', { type: 'hands_changed' });
     res.json({ ok: true, count, message: `${count} hand${count !== 1 ? 's' : ''} lowered.` });
