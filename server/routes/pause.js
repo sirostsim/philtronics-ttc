@@ -11,6 +11,7 @@
 'use strict';
 
 const express = require('express');
+const { v4: uuidv4 } = require('uuid');
 const { query, queryOne } = require('../db');
 const { requireAuth } = require('../middleware/auth');
 
@@ -19,6 +20,28 @@ router.use(requireAuth);
 
 const ROLE_LEVEL = { operator: 1, supervisor: 2, manager: 3, administrator: 4, superuser: 5 };
 function roleLevel(role) { return ROLE_LEVEL[role] || 0; }
+
+// ── GET /api/pause/reasons ────────────────────────────────────────────────────
+// The managed list of pause / unavailability reasons for the pause dialog.
+// is_available = false means the time is excluded from productivity availability.
+router.get('/reasons', async (req, res) => {
+  try {
+    const rows = await query(
+      `SELECT id, label, is_available
+       FROM availability_reasons
+       WHERE is_active = TRUE
+       ORDER BY sort_order, label`
+    );
+    res.json(rows.map(r => ({ id: r.id, label: r.label, isAvailable: r.is_available })));
+  } catch (e) {
+    // Table not present yet — return a safe default so the UI still works.
+    res.json([
+      { id: null, label: 'Break',                 isAvailable: true  },
+      { id: null, label: 'Waiting for materials', isAvailable: true  },
+      { id: null, label: 'Other',                 isAvailable: true  },
+    ]);
+  }
+});
 
 // ── POST /api/pause/:timerId/pause ────────────────────────────────────────────
 router.post('/:timerId/pause', async (req, res) => {
@@ -41,12 +64,37 @@ router.post('/:timerId/pause', async (req, res) => {
 
     const reason    = req.body.reason || 'Manual pause';
     const pauseType = req.body.pauseType || 'manual';
+    const reasonId  = req.body.reasonId || null;
 
     await query(
       `UPDATE timers SET paused_at = NOW(), pause_reason = $1, pause_type = $2,
        updated_at = NOW(), updated_by = $3 WHERE id = $4`,
       [reason, pauseType, req.user.id, timer.id]
     );
+
+    // If this pause reason is flagged non-available (training, meeting, absence,
+    // etc.), open an unavailability period so the time is excluded from the
+    // operator's available-time denominator in productivity. Available-but-idle
+    // reasons (break, waiting for materials) record nothing — they still count.
+    if (reasonId) {
+      try {
+        const ar = await queryOne(
+          `SELECT id, label, is_available FROM availability_reasons WHERE id = $1`,
+          [reasonId]
+        );
+        if (ar && ar.is_available === false) {
+          await query(
+            `INSERT INTO unavailability_periods
+               (id, operator_id, reason_id, reason_label, started_at, source, timer_id, created_by)
+             VALUES ($1, $2, $3, $4, NOW(), 'pause', $5, $6)`,
+            [uuidv4(), timer.operator_id, ar.id, ar.label, timer.id, req.user.id]
+          );
+        }
+      } catch (e) {
+        // availability_reasons table may not exist yet on first deploy — non-fatal
+        console.error('Unavailability record (pause) skipped:', e.message);
+      }
+    }
 
     const updated = await queryOne('SELECT * FROM timers WHERE id = $1', [timer.id]);
     res.json(formatTimer(updated));
@@ -72,6 +120,18 @@ router.post('/:timerId/resume', async (req, res) => {
 
     if (!timer.paused_at) {
       return res.status(409).json({ error: 'Timer is not paused.' });
+    }
+
+    // Close any open (pause-sourced) unavailability period for this timer.
+    try {
+      await query(
+        `UPDATE unavailability_periods
+         SET ended_at = NOW()
+         WHERE timer_id = $1 AND source = 'pause' AND ended_at IS NULL`,
+        [timer.id]
+      );
+    } catch (e) {
+      console.error('Unavailability close (resume) skipped:', e.message);
     }
 
     // If the operator is choosing to work overtime, mark the timer with

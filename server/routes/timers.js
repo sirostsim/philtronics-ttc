@@ -148,6 +148,16 @@ router.post('/:id/stop', validate(schemas.stopTimer), async (req, res) => {
       [completedAt, durationSeconds, notes || null, user.id, timer.id]
     );
 
+    // Close any open unavailability period for this timer (e.g. stopped while
+    // paused under a non-available reason).
+    try {
+      await query(
+        `UPDATE unavailability_periods SET ended_at = NOW()
+         WHERE timer_id = $1 AND ended_at IS NULL`,
+        [timer.id]
+      );
+    } catch (e) { /* table may not exist yet — non-fatal */ }
+
     const updated = await queryOne('SELECT * FROM timers WHERE id = $1', [timer.id]);
 
     // Time Check jobs become a pending target review for managers.
@@ -207,6 +217,13 @@ router.post('/:id/cancel', validate(schemas.cancelTimer), async (req, res) => {
       `UPDATE timers SET status = 'cancelled', updated_at = NOW(), updated_by = $1 WHERE id = $2`,
       [user.id, timer.id]
     );
+    try {
+      await query(
+        `UPDATE unavailability_periods SET ended_at = NOW()
+         WHERE timer_id = $1 AND ended_at IS NULL`,
+        [timer.id]
+      );
+    } catch (e) { /* table may not exist yet — non-fatal */ }
     await writeAudit(timer.id, 'cancel', user.id, reason, { ageSeconds });
 
     res.json({ ok: true, timerId: timer.id });

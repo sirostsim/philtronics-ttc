@@ -502,9 +502,76 @@ async function loadTimerPage() {
   }
 
   loadTodayEntries();
+  refreshAvailabilityBar();
   // Poll for auto-pause changes from the schedule
   if (state.activeTimerId) startPausePoll();
   else stopPausePoll();
+}
+
+/* ─── Operator availability (stage 2) ─────────────────────────────────────── */
+// Lets an operator declare themselves unavailable (training, meeting, half-day,
+// late start) when no job is running — the gap a paused timer can't reach.
+let _availReasons = null;
+
+async function loadAvailReasons() {
+  if (_availReasons) return _availReasons;
+  try {
+    const all = await GET('/pause/reasons');
+    _availReasons = all.filter(r => r.id && r.isAvailable === false); // non-available only
+  } catch (_) { _availReasons = []; }
+  return _availReasons;
+}
+
+async function refreshAvailabilityBar() {
+  const bar = document.getElementById('availabilityBar');
+  if (!bar) return;
+  // Only operators declare their own availability.
+  if (state.user && state.user.role !== 'operator') { bar.hidden = true; return; }
+  let status = { active: false };
+  try { status = await GET('/availability/me'); } catch (_) {}
+  bar.hidden = false;
+  bar.innerHTML = '';
+  if (status.active) {
+    bar.className = 'availability-bar unavailable';
+    const info = el('div', { className: 'avail-info' });
+    info.appendChild(el('span', { className: 'avail-dot' }));
+    info.appendChild(el('span', { className: 'avail-text', textContent: 'You are marked unavailable: ' + status.reasonLabel }));
+    bar.appendChild(info);
+    const btn = el('button', { className: 'btn btn-primary btn-sm', textContent: "I'm back — Available" });
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try { await POST('/availability/end', {}); toast('Welcome back — marked available.', 'success'); refreshAvailabilityBar(); }
+      catch (err) { toast(err.message, 'error'); btn.disabled = false; }
+    });
+    bar.appendChild(btn);
+  } else {
+    bar.className = 'availability-bar available';
+    const info = el('div', { className: 'avail-info' });
+    info.appendChild(el('span', { className: 'avail-text-muted', textContent: 'Not working a job right now? Mark training, a meeting or time away so it does not count against your productivity.' }));
+    bar.appendChild(info);
+    const btn = el('button', { className: 'btn btn-ghost btn-sm', textContent: 'Mark Unavailable' });
+    btn.addEventListener('click', () => openUnavailablePicker());
+    bar.appendChild(btn);
+  }
+}
+
+async function openUnavailablePicker() {
+  const reasons = await loadAvailReasons();
+  if (!reasons.length) { toast('No unavailable reasons are configured.', ''); return; }
+  const wrap = el('div', { className: 'pause-reason-list' });
+  wrap.appendChild(el('p', { className: 'pause-reason-intro', textContent: 'Why are you unavailable? This time will be excluded from your productivity.' }));
+  reasons.forEach(r => {
+    const row = el('button', { className: 'pause-reason-btn pause-reason-na' });
+    row.appendChild(el('span', { className: 'pause-reason-label', textContent: r.label }));
+    row.appendChild(el('span', { className: 'pause-reason-tag', textContent: 'excluded from productivity' }));
+    row.addEventListener('click', async () => {
+      closeModal();
+      try { await POST('/availability/start', { reasonId: r.id }); toast('Marked unavailable: ' + r.label, ''); refreshAvailabilityBar(); }
+      catch (err) { toast(err.message, 'error'); }
+    });
+    wrap.appendChild(row);
+  });
+  openModal('Mark Unavailable', wrap, []);
 }
 
 function showStartPanel() {
@@ -2028,8 +2095,79 @@ function renderTargetList(targets, containerId = 'targetTimesList') {
     row.appendChild(info); row.appendChild(actions); container.appendChild(row);
   });
 }
-function loadTargetsPage() { loadTargetTimes('targetTimesPageList'); }
+function loadTargetsPage() { loadTargetTimes('targetTimesPageList'); loadReasonsAdmin(); }
+
+/* ─── Productivity reasons management (manager+) ───────────────────────────── */
+async function loadReasonsAdmin() {
+  const list = document.getElementById('reasonsList');
+  if (!list) return;
+  list.innerHTML = '<div class="empty-state">Loading...</div>';
+  let reasons = [];
+  try { reasons = await GET('/admin/reasons'); }
+  catch (err) { list.innerHTML = '<div class="empty-state">Could not load reasons.</div>'; return; }
+  list.innerHTML = '';
+  reasons.forEach(r => list.appendChild(renderReasonRow(r)));
+}
+
+function renderReasonRow(r) {
+  const row = el('div', { className: 'reason-row' + (r.isActive ? '' : ' reason-inactive') });
+  const left = el('div', { className: 'reason-left' });
+  left.appendChild(el('span', { className: 'reason-label', textContent: r.label }));
+  const tag = r.isAvailable
+    ? el('span', { className: 'reason-tag reason-tag-counts', textContent: 'Counts' })
+    : el('span', { className: 'reason-tag reason-tag-excluded', textContent: 'Excluded' });
+  left.appendChild(tag);
+  if (!r.isActive) left.appendChild(el('span', { className: 'reason-tag reason-tag-off', textContent: 'Hidden' }));
+  row.appendChild(left);
+
+  const actions = el('div', { className: 'reason-actions' });
+  const editBtn = el('button', { className: 'btn btn-ghost btn-sm', textContent: 'Edit' });
+  editBtn.addEventListener('click', () => openReasonEditor(r));
+  actions.appendChild(editBtn);
+  const toggleBtn = el('button', { className: 'btn btn-ghost btn-sm', textContent: r.isActive ? 'Hide' : 'Show' });
+  toggleBtn.addEventListener('click', async () => {
+    toggleBtn.disabled = true;
+    try { await PATCH('/admin/reasons/' + r.id, { isActive: !r.isActive }); loadReasonsAdmin(); }
+    catch (err) { toast(err.message, 'error'); toggleBtn.disabled = false; }
+  });
+  actions.appendChild(toggleBtn);
+  row.appendChild(actions);
+  return row;
+}
+
+function openReasonEditor(existing) {
+  const isNew = !existing;
+  const wrap = el('div', { className: 'reason-editor' });
+  const labelInput = el('input', { type: 'text', maxlength: '60', className: 'reason-input',
+    placeholder: 'e.g. Training', value: existing ? existing.label : '' });
+  wrap.appendChild(el('label', { className: 'reason-field-label', textContent: 'Label' }));
+  wrap.appendChild(labelInput);
+
+  wrap.appendChild(el('label', { className: 'reason-field-label', textContent: 'Does this count toward productivity?' }));
+  const select = el('select', { className: 'reason-input' });
+  const optCounts = el('option', { value: 'true', textContent: 'Counts (available but idle — e.g. break)' });
+  const optExcl = el('option', { value: 'false', textContent: 'Excluded (not available — e.g. training)' });
+  select.appendChild(optCounts); select.appendChild(optExcl);
+  select.value = existing ? String(existing.isAvailable) : 'false';
+  wrap.appendChild(select);
+
+  const saveBtn = el('button', { className: 'btn btn-primary', textContent: isNew ? 'Add Reason' : 'Save Changes' });
+  saveBtn.addEventListener('click', async () => {
+    const label = labelInput.value.trim();
+    if (!label) { toast('A label is required.', 'error'); return; }
+    saveBtn.disabled = true;
+    const body = { label, isAvailable: select.value === 'true' };
+    try {
+      if (isNew) await POST('/admin/reasons', body);
+      else       await PATCH('/admin/reasons/' + existing.id, body);
+      closeModal(); toast('Reason saved.', 'success'); _availReasons = null; _pauseReasons = null; loadReasonsAdmin();
+    } catch (err) { toast(err.message, 'error'); saveBtn.disabled = false; }
+  });
+  wrap.appendChild(saveBtn);
+  openModal(isNew ? 'Add Reason' : 'Edit Reason', wrap, []);
+}
 document.getElementById('btnAddTargetPage') && document.getElementById('btnAddTargetPage').addEventListener('click', () => openTargetModal(null, 'targetTimesPageList'));
+document.getElementById('btnAddReason') && document.getElementById('btnAddReason').addEventListener('click', () => openReasonEditor(null));
 document.getElementById('btnAddTarget') && document.getElementById('btnAddTarget').addEventListener('click', () => openTargetModal(null, 'targetTimesList'));
 function openTargetModal(existing, containerId = 'targetTimesList') {
   const isNew = !existing, body = el('div', {});
@@ -2195,19 +2333,50 @@ function updatePauseUI() {
 
 document.getElementById('btnPauseTimer').addEventListener('click', async () => {
   if (!state.activeTimerId) return;
-  const btn = document.getElementById('btnPauseTimer'); btn.disabled = true;
-  try {
-    if (state.activeIsPaused) {
+  const btn = document.getElementById('btnPauseTimer');
+  if (state.activeIsPaused) {
+    btn.disabled = true;
+    try {
       const t = await POST('/pause/' + state.activeTimerId + '/resume', {});
       state.activeIsPaused = false; state.activePausedAt = null; state.activeTotalPausedSeconds = t.totalPausedSeconds || 0;
       updatePauseUI(); toast('Timer resumed.', 'success');
-    } else {
-      const t = await POST('/pause/' + state.activeTimerId + '/pause', { reason: 'Manual pause' });
-      state.activeIsPaused = true; state.activePausedAt = t.pausedAt;
-      updatePauseUI(); toast('Timer paused.', '');
-    }
-  } catch (err) { toast(err.message, 'error'); } finally { btn.disabled = false; }
+    } catch (err) { toast(err.message, 'error'); } finally { btn.disabled = false; }
+  } else {
+    // Ask for a reason so training/meetings/absence can be excluded from
+    // productivity availability. Reasons are the managed list from the server.
+    openPauseReasonPicker();
+  }
 });
+
+let _pauseReasons = null;
+async function loadPauseReasons() {
+  if (_pauseReasons) return _pauseReasons;
+  try { _pauseReasons = await GET('/pause/reasons'); }
+  catch (_) { _pauseReasons = [{ id: null, label: 'Break', isAvailable: true }, { id: null, label: 'Other', isAvailable: true }]; }
+  return _pauseReasons;
+}
+
+async function openPauseReasonPicker() {
+  const reasons = await loadPauseReasons();
+  const wrap = el('div', { className: 'pause-reason-list' });
+  wrap.appendChild(el('p', { className: 'pause-reason-intro', textContent: 'Why are you pausing? This keeps productivity figures fair.' }));
+  reasons.forEach(r => {
+    const row = el('button', { className: 'pause-reason-btn' + (r.isAvailable ? '' : ' pause-reason-na') });
+    row.appendChild(el('span', { className: 'pause-reason-label', textContent: r.label }));
+    if (!r.isAvailable) row.appendChild(el('span', { className: 'pause-reason-tag', textContent: 'excluded from productivity' }));
+    row.addEventListener('click', async () => {
+      closeModal();
+      const btn = document.getElementById('btnPauseTimer'); btn.disabled = true;
+      try {
+        const t = await POST('/pause/' + state.activeTimerId + '/pause', { reason: r.label, reasonId: r.id });
+        state.activeIsPaused = true; state.activePausedAt = t.pausedAt;
+        updatePauseUI(); toast('Timer paused: ' + r.label, '');
+      } catch (err) { toast(err.message, 'error'); } finally { btn.disabled = false; }
+    });
+    wrap.appendChild(row);
+  });
+  openModal('Pause Job', wrap, []);
+}
 
 let pausePollInterval = null;
 function startPausePoll() {
