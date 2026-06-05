@@ -2833,3 +2833,62 @@ button.topbar-brand:focus-visible {
 .btn-overtime:hover  { background: #ffc740; border-color: #ffc740; }
 .btn-overtime:active { transform: translateY(1px); }
 .btn-overtime:disabled { opacity: .6; cursor: default; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PAUSE REASON PICKER
+   ═══════════════════════════════════════════════════════════════════════════ */
+.pause-reason-list { display: flex; flex-direction: column; gap: 8px; }
+.pause-reason-intro { font-size: 13px; color: var(--text2); margin: 0 0 6px; }
+.pause-reason-btn {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: 100%; text-align: left;
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px 16px; color: var(--text); font-size: 15px; font-weight: 600;
+  cursor: pointer; transition: all .15s;
+}
+.pause-reason-btn:hover { border-color: var(--blue); background: var(--bg2); }
+.pause-reason-btn.pause-reason-na { border-left: 3px solid var(--amber); }
+.pause-reason-tag {
+  font-size: 11px; font-weight: 600; color: var(--amber);
+  text-transform: uppercase; letter-spacing: .04em; white-space: nowrap;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   OPERATOR AVAILABILITY BAR (stage 2)
+   ═══════════════════════════════════════════════════════════════════════════ */
+.availability-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 16px; border-radius: 10px; margin-top: 16px; margin-bottom: 16px;
+  border: 1px solid var(--border); background: var(--bg2); flex-wrap: wrap;
+}
+.availability-bar.unavailable { border-color: var(--amber); background: rgba(240,180,41,.10); }
+.avail-info { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.avail-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--amber); flex-shrink: 0; box-shadow: 0 0 6px rgba(240,180,41,.6); }
+.avail-text { font-weight: 700; color: var(--text); }
+.avail-text-muted { font-size: 13px; color: var(--text2); }
+
+/* Productivity reasons management */
+.reasons-list { display: flex; flex-direction: column; gap: 8px; }
+.reason-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+  padding: 12px 16px;
+}
+.reason-row.reason-inactive { opacity: .55; }
+.reason-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.reason-label { font-weight: 700; color: var(--text); }
+.reason-tag {
+  font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  padding: 2px 8px; border-radius: 4px;
+}
+.reason-tag-counts   { background: var(--bg3); color: var(--text2); }
+.reason-tag-excluded { background: rgba(240,180,41,.18); color: var(--amber); }
+.reason-tag-off      { background: var(--bg3); color: var(--text3); }
+.reason-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.reason-editor { display: flex; flex-direction: column; gap: 8px; }
+.reason-field-label { font-size: 13px; font-weight: 600; color: var(--text2); margin-top: 6px; }
+.reason-input {
+  width: 100%; padding: 10px 12px; background: var(--bg3);
+  border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 15px;
+}
+.reason-editor .btn { margin-top: 12px; }
