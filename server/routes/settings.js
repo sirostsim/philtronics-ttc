@@ -74,14 +74,26 @@ function serialise(key, value) {
 }
 
 // Update one or more settings. Body: { settings: { key: value, ... } }
+// Keys that only a superuser may change: the commercial feature toggles and
+// the security-sensitive 2FA setting. Operational keys (branding, thresholds)
+// remain editable by administrators (the customer's own admin).
+const SUPERUSER_ONLY_KEYS = new Set([
+  'feature_time_check', 'feature_raised_hands', 'feature_messaging',
+  'feature_availability', 'feature_quality_rft', 'feature_two_factor',
+]);
+
 router.put('/', requireAuth, requireRole('administrator'), async (req, res) => {
   const updates = req.body && req.body.settings;
   if (!updates || typeof updates !== 'object') {
     return res.status(400).json({ error: 'settings object is required.' });
   }
   const keys = Object.keys(updates);
+  const isSuperuser = req.user.role === 'superuser';
   for (const k of keys) {
     if (!(k in VALIDATORS)) return res.status(400).json({ error: `Unknown setting: ${k}` });
+    if (SUPERUSER_ONLY_KEYS.has(k) && !isSuperuser) {
+      return res.status(403).json({ error: 'That setting can only be changed by a superuser.' });
+    }
     if (!VALIDATORS[k](updates[k])) return res.status(400).json({ error: `Invalid value for ${k}` });
   }
   try {

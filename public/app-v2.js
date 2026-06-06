@@ -2339,8 +2339,8 @@ async function loadSystemSettings() {
   const noTgtInput = el('input', { type: 'number', min: '1', max: '1440', className: 'setting-input', value: s.no_target_warning_minutes });
   panel.appendChild(mk('No-target warning after (minutes)', noTgtInput));
 
-  // Feature toggles
-  panel.appendChild(el('h3', { className: 'settings-group-title', textContent: 'Features' }));
+  // Feature toggles — superuser only (commercial / security levers).
+  const isSuperuser = hasRole('superuser');
   const featureDefs = [
     ['feature_time_check', 'Time Check review'],
     ['feature_raised_hands', 'Raised hands'],
@@ -2350,19 +2350,24 @@ async function loadSystemSettings() {
     ['feature_two_factor', 'Two-factor authentication'],
   ];
   const featInputs = {};
-  featureDefs.forEach(([key, label]) => {
-    const cb = el('input', { type: 'checkbox' });
-    cb.checked = s[key] === true;
-    featInputs[key] = cb;
-    const row = el('label', { className: 'setting-toggle' });
-    row.appendChild(cb);
-    row.appendChild(el('span', { textContent: label }));
-    panel.appendChild(row);
-  });
+  if (isSuperuser) {
+    panel.appendChild(el('h3', { className: 'settings-group-title', textContent: 'Features & security (superuser)' }));
+    panel.appendChild(el('p', { className: 'settings-note', textContent: 'These control licensed features and security for the whole instance.' }));
+    featureDefs.forEach(([key, label]) => {
+      const cb = el('input', { type: 'checkbox' });
+      cb.checked = s[key] === true;
+      featInputs[key] = cb;
+      const row = el('label', { className: 'setting-toggle' });
+      row.appendChild(cb);
+      row.appendChild(el('span', { textContent: label }));
+      panel.appendChild(row);
+    });
+  }
 
   const saveBtn = el('button', { className: 'btn btn-primary', textContent: 'Save Settings', style: 'margin-top:16px;' });
   const msg = el('span', { className: 'settings-msg', style: 'margin-left:12px;' });
   saveBtn.addEventListener('click', async () => {
+    // Operational settings — editable by the customer's administrator.
     const payload = {
       brand_customer_name: nameInput.value.trim(),
       brand_primary_colour: colourInput.value.trim(),
@@ -2372,7 +2377,10 @@ async function loadSystemSettings() {
       overdue_threshold_pct: parseInt(overdueInput.value, 10),
       no_target_warning_minutes: parseInt(noTgtInput.value, 10),
     };
-    featureDefs.forEach(([key]) => { payload[key] = featInputs[key].checked; });
+    // Feature/security keys only included when a superuser is editing them.
+    if (isSuperuser) {
+      featureDefs.forEach(([key]) => { payload[key] = featInputs[key].checked; });
+    }
     saveBtn.disabled = true; msg.textContent = '';
     try {
       await api('PUT', '/settings', { settings: payload });
