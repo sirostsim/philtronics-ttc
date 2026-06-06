@@ -19,7 +19,23 @@ const state = {
   activePausedAt:           null,
   activeTotalPausedSeconds: 0,
   activeHandRaised:         false,
+  features:                 {},
+  thresholds:               {},
 };
+
+// Per-instance thresholds (WT-DESIGN-001) with current Philtronics defaults.
+// Returned as fractions / seconds ready for comparison against progress.
+function warnFrac()    { return (state.thresholds.warningPct != null ? state.thresholds.warningPct : 80) / 100; }
+function overdueFrac() { return (state.thresholds.overduePct != null ? state.thresholds.overduePct : 100) / 100; }
+function noTargetWarnSecs() { return (state.thresholds.noTargetWarningMinutes != null ? state.thresholds.noTargetWarningMinutes : 120) * 60; }
+function noTargetOverdueSecs() { return noTargetWarnSecs() * 2; } // reference: 2x the warning point
+
+// Terminology override (WT-DESIGN-001). Returns the customer's preferred label
+// for a term, or the built-in default. e.g. term('routeCard', 'Route Card').
+function term(key, fallback) {
+  const t = state.terminology || {};
+  return (t && t[key]) ? t[key] : fallback;
+}
 
 // Wallboard interval handles — declared here so navigateTo can always access them
 let wallboardInterval  = null; // kept for legacy — managed via _wbIntervals now
@@ -301,12 +317,64 @@ document.getElementById('btnLogout').addEventListener('click', doLogout);
    AUTH
    ═══════════════════════════════════════════════════════════════════════════ */
 async function init() {
+  await applyBranding();
   try {
     state.user = await GET('/me');
     onLoggedIn();
   } catch {
     showLoginPage();
   }
+}
+
+// Apply per-instance branding (WT-DESIGN-001). Defaults reproduce the current
+// Philtronics look, so this is inert until an instance overrides a value.
+let _branding = null;
+async function applyBranding() {
+  try { _branding = await GET('/settings/public'); }
+  catch (_) { return; }
+  if (!_branding) return;
+  // Primary colour → CSS variable used across the theme.
+  if (_branding.primaryColour) {
+    document.documentElement.style.setProperty('--blue', _branding.primaryColour);
+    document.documentElement.style.setProperty('--accent-blue', _branding.primaryColour);
+  }
+  // Customer name → the "Developed for" client-brand label on login.
+  const clientLabel = document.querySelector('.login-client-brand-label');
+  if (clientLabel && _branding.customerName) clientLabel.textContent = 'For ' + _branding.customerName;
+  // Optional login welcome text.
+  if (_branding.loginText) {
+    let lt = document.getElementById('loginCustomText');
+    if (!lt) {
+      const sub = document.querySelector('.login-subtitle') || document.querySelector('.login-title');
+      if (sub && sub.parentNode) {
+        lt = el('p', { id: 'loginCustomText', className: 'login-custom-text' });
+        sub.parentNode.insertBefore(lt, sub.nextSibling);
+      }
+    }
+    if (lt) lt.textContent = _branding.loginText;
+  }
+  // Optional customer logo (replaces the client logo if provided).
+  if (_branding.logoUrl) {
+    document.querySelectorAll('.login-client-logo').forEach(img => { img.src = _branding.logoUrl; });
+  }
+  // Stash enabled features for feature-toggle checks elsewhere.
+  state.features = _branding.features || {};
+  state.thresholds = _branding.thresholds || {};
+  applyFeatureToggles();
+}
+
+// Hide UI for features switched off for this instance. Defaults are all-on.
+function applyFeatureToggles() {
+  const f = state.features || {};
+  const toggle = (on, selector) => {
+    if (on === false) document.querySelectorAll(selector).forEach(el => { el.hidden = true; el.style.display = 'none'; });
+  };
+  // These are best-effort hides; the server still enforces availability.
+  toggle(f.messaging,   '[data-feature="messaging"]');
+  toggle(f.raisedHands, '[data-feature="raised-hands"]');
+  toggle(f.timeCheck,   '[data-feature="time-check"]');
+  toggle(f.availability,'[data-feature="availability"]');
+  toggle(f.qualityRft,  '[data-feature="quality-rft"]');
 }
 
 function showLoginPage() {
@@ -981,7 +1049,7 @@ function updateActiveTargetDisplay(elapsed) {
   const fill = document.getElementById('activeTargetFill');
   if (fill) {
     fill.style.width = Math.round(Math.min(1, pct) * 100) + '%';
-    fill.className   = 'active-target-fill' + (over ? ' over' : pct >= 0.8 ? ' warn' : '');
+    fill.className   = 'active-target-fill' + (over ? ' over' : pct >= warnFrac() ? ' warn' : '');
   }
 
   // Percentage label
@@ -996,7 +1064,7 @@ function updateActiveTargetDisplay(elapsed) {
       lbl.className   = 'active-target-label overdue';
     } else {
       lbl.textContent = '🎯 ' + formatHM(remaining) + ' remaining (target: ' + formatHM(tgt) + ')';
-      lbl.className   = 'active-target-label' + (pct >= 0.8 ? ' warn' : '');
+      lbl.className   = 'active-target-label' + (pct >= warnFrac() ? ' warn' : '');
     }
   }
 }
@@ -2228,7 +2296,96 @@ function renderTargetList(targets, containerId = 'targetTimesList') {
     row.appendChild(info); row.appendChild(actions); container.appendChild(row);
   });
 }
-function loadTargetsPage() { loadTargetTimes('targetTimesPageList'); loadReasonsAdmin(); }
+function loadTargetsPage() { loadTargetTimes('targetTimesPageList'); loadReasonsAdmin(); loadSystemSettings(); }
+
+/* ─── System settings (administrator+) ─────────────────────────────────────── */
+async function loadSystemSettings() {
+  const panel = document.getElementById('systemSettings');
+  if (!panel) return;
+  const isAdmin = hasRole('administrator');
+  // Show the admin-only blocks only to administrators+
+  document.querySelectorAll('[data-admin-only]').forEach(elm => { elm.hidden = !isAdmin; });
+  if (!isAdmin) return;
+
+  let s;
+  try { s = await GET('/settings'); }
+  catch (err) { panel.innerHTML = '<div class="empty-state">Could not load settings.</div>'; return; }
+
+  panel.innerHTML = '';
+  const mk = (labelText, input) => {
+    const row = el('div', { className: 'setting-row' });
+    row.appendChild(el('label', { className: 'setting-label', textContent: labelText }));
+    row.appendChild(input);
+    return row;
+  };
+
+  // Branding
+  panel.appendChild(el('h3', { className: 'settings-group-title', textContent: 'Branding' }));
+  const nameInput = el('input', { type: 'text', className: 'setting-input', value: s.brand_customer_name || '' });
+  panel.appendChild(mk('Customer name', nameInput));
+  const colourInput = el('input', { type: 'text', className: 'setting-input', value: s.brand_primary_colour || '', placeholder: '#2e75b6' });
+  panel.appendChild(mk('Primary colour (hex)', colourInput));
+  const loginInput = el('input', { type: 'text', className: 'setting-input', maxlength: '300', value: s.brand_login_text || '' });
+  panel.appendChild(mk('Login screen text', loginInput));
+
+  // Thresholds
+  panel.appendChild(el('h3', { className: 'settings-group-title', textContent: 'Thresholds' }));
+  const targetInput = el('input', { type: 'number', min: '1', max: '100', className: 'setting-input', value: s.productivity_target_pct });
+  panel.appendChild(mk('Productivity target %', targetInput));
+  const warnInput = el('input', { type: 'number', min: '1', max: '100', className: 'setting-input', value: s.warning_threshold_pct });
+  panel.appendChild(mk('Wall board warning at % of target', warnInput));
+  const overdueInput = el('input', { type: 'number', min: '1', max: '200', className: 'setting-input', value: s.overdue_threshold_pct });
+  panel.appendChild(mk('Wall board overdue at % of target', overdueInput));
+  const noTgtInput = el('input', { type: 'number', min: '1', max: '1440', className: 'setting-input', value: s.no_target_warning_minutes });
+  panel.appendChild(mk('No-target warning after (minutes)', noTgtInput));
+
+  // Feature toggles
+  panel.appendChild(el('h3', { className: 'settings-group-title', textContent: 'Features' }));
+  const featureDefs = [
+    ['feature_time_check', 'Time Check review'],
+    ['feature_raised_hands', 'Raised hands'],
+    ['feature_messaging', 'Messaging'],
+    ['feature_availability', 'Productivity availability'],
+    ['feature_quality_rft', 'Quality (RFT) reporting'],
+    ['feature_two_factor', 'Two-factor authentication'],
+  ];
+  const featInputs = {};
+  featureDefs.forEach(([key, label]) => {
+    const cb = el('input', { type: 'checkbox' });
+    cb.checked = s[key] === true;
+    featInputs[key] = cb;
+    const row = el('label', { className: 'setting-toggle' });
+    row.appendChild(cb);
+    row.appendChild(el('span', { textContent: label }));
+    panel.appendChild(row);
+  });
+
+  const saveBtn = el('button', { className: 'btn btn-primary', textContent: 'Save Settings', style: 'margin-top:16px;' });
+  const msg = el('span', { className: 'settings-msg', style: 'margin-left:12px;' });
+  saveBtn.addEventListener('click', async () => {
+    const payload = {
+      brand_customer_name: nameInput.value.trim(),
+      brand_primary_colour: colourInput.value.trim(),
+      brand_login_text: loginInput.value.trim(),
+      productivity_target_pct: parseInt(targetInput.value, 10),
+      warning_threshold_pct: parseInt(warnInput.value, 10),
+      overdue_threshold_pct: parseInt(overdueInput.value, 10),
+      no_target_warning_minutes: parseInt(noTgtInput.value, 10),
+    };
+    featureDefs.forEach(([key]) => { payload[key] = featInputs[key].checked; });
+    saveBtn.disabled = true; msg.textContent = '';
+    try {
+      await api('PUT', '/settings', { settings: payload });
+      msg.textContent = 'Saved. Some changes apply after a refresh.'; msg.style.color = 'var(--green, #22a06b)';
+      toast('Settings saved.', 'success');
+    } catch (err) {
+      msg.textContent = err.message; msg.style.color = 'var(--red, #ef4444)';
+    } finally { saveBtn.disabled = false; }
+  });
+  const actions = el('div', {});
+  actions.appendChild(saveBtn); actions.appendChild(msg);
+  panel.appendChild(actions);
+}
 
 /* ─── Productivity reasons management (manager+) ───────────────────────────── */
 async function loadReasonsAdmin() {
@@ -2895,11 +3052,11 @@ function renderHomeActiveJobs(timers) {
     const elA = now - new Date(a.startedAt).getTime(), elB = now - new Date(b.startedAt).getTime();
     function homeScore(t, elMs) {
       const elS = elMs / 1000 - (t.totalPausedSeconds || 0);
-      const pct = t.targetSeconds ? elS / t.targetSeconds : elS / (4 * 3600);
+      const pct = t.targetSeconds ? elS / t.targetSeconds : elS / noTargetOverdueSecs();
       if (t.handRaised)                             return [1,  0];
       if (t.timerCategory==='rework' && !t.isPaused)return [2, -elS];
-      if (pct >= 1.0 && !t.isPaused)                return [3, -elS];
-      if (pct >= 0.8 && !t.isPaused)                return [4, -elS];
+      if (pct >= overdueFrac() && !t.isPaused)        return [3, -elS];
+      if (pct >= warnFrac() && !t.isPaused)           return [4, -elS];
       if (!t.isPaused)                              return [5, -elS];
       if (t.timerCategory==='rework')               return [6, -elS];
       return                                               [7, -elS];
@@ -2914,8 +3071,8 @@ function renderHomeActiveJobs(timers) {
     const refMs   = t.isPaused && t.pausedAt ? new Date(t.pausedAt).getTime() : now;
     const localEl = Math.max(0, Math.floor((refMs - new Date(t.startedAt).getTime()) / 1000)) - (t.totalPausedSeconds || 0);
     const elapsed = t.netElapsedSeconds != null ? t.netElapsedSeconds : localEl;
-    const isOver  = t.targetSeconds ? elapsed >= t.targetSeconds : elapsed > 4 * 3600;
-    const isWarn  = !isOver && (t.targetSeconds ? elapsed / t.targetSeconds >= 0.8 : elapsed > 2 * 3600);
+    const isOver  = t.targetSeconds ? elapsed >= t.targetSeconds : elapsed > noTargetOverdueSecs();
+    const isWarn  = !isOver && (t.targetSeconds ? elapsed / t.targetSeconds >= warnFrac() : elapsed > noTargetWarnSecs());
     const row = el('div', { className: 'home-active-row' + (isOver ? ' over' : isWarn ? ' warn' : '') + (t.handRaised ? ' hand-raised' : '') });
     row.appendChild(el('span', { className: 'home-active-dot' + (isOver ? ' dot-red' : isWarn ? ' dot-amber' : ' dot-green') }));
     const info = el('div', { className: 'home-active-info' });
@@ -3182,11 +3339,11 @@ async function refreshDeptWallboard(dept) {
     function _tileScore(t) {
       const elapsedMs = _now - new Date(t.startedAt).getTime();
       const elapsedS  = elapsedMs / 1000 - (t.totalPausedSeconds || 0);
-      const pct       = t.targetSeconds ? elapsedS / t.targetSeconds : (elapsedS / (4 * 3600));
+      const pct       = t.targetSeconds ? elapsedS / t.targetSeconds : (elapsedS / noTargetOverdueSecs());
       if (t.handRaised)               return [1,  0];           // hand raised — top priority
       if (t.timerCategory==='rework' && !t.isPaused) return [2, -elapsedS]; // active rework
-      if (pct >= 1.0 && !t.isPaused)  return [3, -elapsedS];   // active overdue
-      if (pct >= 0.8 && !t.isPaused)  return [4, -elapsedS];   // active warning
+      if (pct >= overdueFrac() && !t.isPaused)  return [3, -elapsedS];   // active overdue
+      if (pct >= warnFrac() && !t.isPaused)  return [4, -elapsedS];   // active warning
       if (!t.isPaused)                return [5, -elapsedS];   // active on track
       if (t.timerCategory==='rework') return [6, -elapsedS];   // paused rework (above plain paused)
       return                                 [7, -elapsedS];   // paused standard, longest first
@@ -3213,11 +3370,11 @@ async function refreshDeptWallboard(dept) {
       if (!t.isPaused) {
         if (t.targetSeconds) {
           const pct = elapsed / t.targetSeconds;
-          if (pct >= 1.0)      tile.classList.add('tile-overdue');
-          else if (pct >= 0.8) tile.classList.add('tile-warning');
+          if (pct >= overdueFrac()) tile.classList.add('tile-overdue');
+          else if (pct >= warnFrac()) tile.classList.add('tile-warning');
         } else {
-          if (elapsed > 4 * 3600)      tile.classList.add('tile-overdue');
-          else if (elapsed > 2 * 3600) tile.classList.add('tile-warning');
+          if (elapsed > noTargetOverdueSecs()) tile.classList.add('tile-overdue');
+          else if (elapsed > noTargetWarnSecs()) tile.classList.add('tile-warning');
         }
       }
 
@@ -3338,8 +3495,8 @@ function startDeptWallboardTick(dept, pageKey) {
       const tgt  = fill ? parseInt(fill.getAttribute('data-targetseconds'), 10) : 0;
       if (tgt) {
         const pct = elapsed / tgt;
-        if (pct >= 1.0)      tile.classList.add('tile-overdue');
-        else if (pct >= 0.8) tile.classList.add('tile-warning');
+        if (pct >= overdueFrac()) tile.classList.add('tile-overdue');
+        else if (pct >= warnFrac()) tile.classList.add('tile-warning');
         fill.style.width = Math.round(Math.min(1, pct) * 100) + '%';
         fill.classList.toggle('over', pct >= 1);
         const lbl = tile.querySelector('.wb-target-label');
@@ -3349,8 +3506,8 @@ function startDeptWallboardTick(dept, pageKey) {
           lbl.className   = 'wb-target-label' + (rem <= 0 ? ' overdue' : '');
         }
       } else {
-        if (elapsed > 4 * 3600)      tile.classList.add('tile-overdue');
-        else if (elapsed > 2 * 3600) tile.classList.add('tile-warning');
+        if (elapsed > noTargetOverdueSecs()) tile.classList.add('tile-overdue');
+        else if (elapsed > noTargetWarnSecs()) tile.classList.add('tile-warning');
       }
     });
   }, 1000);
@@ -3393,11 +3550,11 @@ async function refreshDeptWallboardCompact(dept) {
     function _tileScore(t) {
       const elapsedMs = _now - new Date(t.startedAt).getTime();
       const elapsedS  = elapsedMs / 1000 - (t.totalPausedSeconds || 0);
-      const pct       = t.targetSeconds ? elapsedS / t.targetSeconds : (elapsedS / (4 * 3600));
+      const pct       = t.targetSeconds ? elapsedS / t.targetSeconds : (elapsedS / noTargetOverdueSecs());
       if (t.handRaised)               return [1,  0];           // hand raised — top priority
       if (t.timerCategory==='rework' && !t.isPaused) return [2, -elapsedS]; // active rework
-      if (pct >= 1.0 && !t.isPaused)  return [3, -elapsedS];   // active overdue
-      if (pct >= 0.8 && !t.isPaused)  return [4, -elapsedS];   // active warning
+      if (pct >= overdueFrac() && !t.isPaused)  return [3, -elapsedS];   // active overdue
+      if (pct >= warnFrac() && !t.isPaused)  return [4, -elapsedS];   // active warning
       if (!t.isPaused)                return [5, -elapsedS];   // active on track
       if (t.timerCategory==='rework') return [6, -elapsedS];   // paused rework (above plain paused)
       return                                 [7, -elapsedS];   // paused standard, longest first
@@ -3417,11 +3574,11 @@ async function refreshDeptWallboardCompact(dept) {
       if (!t.isPaused) {
         if (t.targetSeconds) {
           const pct = elapsed / t.targetSeconds;
-          if (pct >= 1.0)      tile.classList.add('tile-overdue');
-          else if (pct >= 0.8) tile.classList.add('tile-warning');
+          if (pct >= overdueFrac()) tile.classList.add('tile-overdue');
+          else if (pct >= warnFrac()) tile.classList.add('tile-warning');
         } else {
-          if (elapsed > 4 * 3600)      tile.classList.add('tile-overdue');
-          else if (elapsed > 2 * 3600) tile.classList.add('tile-warning');
+          if (elapsed > noTargetOverdueSecs()) tile.classList.add('tile-overdue');
+          else if (elapsed > noTargetWarnSecs()) tile.classList.add('tile-warning');
         }
       }
       const opRow = el('div', { className: 'wb-operator-row' });
@@ -3468,11 +3625,11 @@ function startDeptWallboardCompactTick(dept, pageKey, tilesId) {
       const tgt = parseInt(node.getAttribute('data-targetseconds'), 10) || 0;
       if (tgt) {
         const pct = elapsed / tgt;
-        if (pct >= 1.0)      tile.classList.add('tile-overdue');
-        else if (pct >= 0.8) tile.classList.add('tile-warning');
+        if (pct >= overdueFrac()) tile.classList.add('tile-overdue');
+        else if (pct >= warnFrac()) tile.classList.add('tile-warning');
       } else {
-        if (elapsed > 4 * 3600)      tile.classList.add('tile-overdue');
-        else if (elapsed > 2 * 3600) tile.classList.add('tile-warning');
+        if (elapsed > noTargetOverdueSecs()) tile.classList.add('tile-overdue');
+        else if (elapsed > noTargetWarnSecs()) tile.classList.add('tile-warning');
       }
     });
   }, 1000);

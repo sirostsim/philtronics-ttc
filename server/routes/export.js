@@ -8,6 +8,7 @@ const express = require('express');
 const { stringify } = require('csv-stringify/sync');
 const { query, queryOne } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const settings = require('../settings');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('manager'));
@@ -355,20 +356,25 @@ router.get('/report/csv', async (req, res) => {
 const TZ = 'Europe/London';
 
 function workDayMinutes(dateStr) {
-  const dow = new Intl.DateTimeFormat('en-GB', { weekday: 'short', timeZone: TZ })
-    .format(new Date(dateStr + 'T12:00:00Z')).toLowerCase();
-  if (dow === 'sat' || dow === 'sun') return 0;
-  return dow === 'fri' ? 300 : 480;
+  // Per-instance productivity baseline (clock window minus break/lunch).
+  // Falls back to Philtronics defaults (480 Mon-Thu, 300 Fri) when unset.
+  const s = settings.peek();
+  const noonUTC = new Date(dateStr + 'T12:00:00Z');
+  return settings.productivityBaselineMinutes(s, noonUTC);
 }
 
 function workDayWindow(dateStr) {
-  const dow = new Intl.DateTimeFormat('en-GB', { weekday: 'short', timeZone: TZ })
-    .format(new Date(dateStr + 'T12:00:00Z')).toLowerCase();
-  if (dow === 'sat' || dow === 'sun') return null;
-  const endTime = dow === 'fri' ? '13:00' : '16:30';
+  // Per-instance working window (falls back to Philtronics defaults).
+  const s = settings.peek();
+  const noonUTC = new Date(dateStr + 'T12:00:00Z');
+  const info = settings.workingDayInfo(s, noonUTC);
+  if (!info.isWorkingDay) return null;
+  const pad = n => String(n).padStart(2, '0');
+  const startStr = `${pad(Math.floor(info.startMin/60))}:${pad(info.startMin%60)}`;
+  const endStr   = `${pad(Math.floor(info.endMin/60))}:${pad(info.endMin%60)}`;
   return {
-    start: new Date(`${dateStr}T07:45:00`),
-    end:   new Date(`${dateStr}T${endTime}:00`),
+    start: new Date(`${dateStr}T${startStr}:00`),
+    end:   new Date(`${dateStr}T${endStr}:00`),
   };
 }
 
@@ -434,6 +440,7 @@ function unavailableMinutesForDay(periods, dayStr) {
 
 router.get('/productivity', async (req, res) => {
   try {
+    await settings.get(); // warm per-instance hours/baseline cache
     const { from, to, department, groupByDay } = req.query;
     const byDay = groupByDay === 'true';
 
@@ -570,6 +577,7 @@ router.get('/productivity', async (req, res) => {
 // ─── GET /api/export/productivity/csv ────────────────────────────────────────
 router.get('/productivity/csv', async (req, res) => {
   try {
+    await settings.get(); // warm per-instance hours/baseline cache
     const { from, to, department } = req.query;
 
     const fromDt = from ? new Date(from) : new Date(Date.now() - 30 * 24 * 3600 * 1000);

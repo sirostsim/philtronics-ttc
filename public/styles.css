@@ -2949,3 +2949,19 @@ button.topbar-brand:focus-visible {
 .adjust-note { font-size: 12px; color: var(--text3); font-style: italic; margin: 4px 0 0; }
 .adjust-error { color: var(--red, #ef4444); font-size: 13px; margin-top: 8px; }
 .adjust-form .btn { margin-top: 14px; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SYSTEM SETTINGS PANEL (administrator+) — WT-DESIGN-001
+   ═══════════════════════════════════════════════════════════════════════════ */
+.system-settings { display: flex; flex-direction: column; gap: 10px; max-width: 520px; margin-top: 12px; }
+.settings-group-title { font-size: 15px; color: var(--blue); margin: 18px 0 4px; font-weight: 700; }
+.setting-row { display: flex; flex-direction: column; gap: 4px; }
+.setting-label { font-size: 13px; font-weight: 600; color: var(--text2); }
+.setting-input {
+  width: 100%; padding: 9px 12px; background: var(--bg3);
+  border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 15px;
+}
+.setting-toggle { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--text); cursor: pointer; padding: 4px 0; }
+.setting-toggle input { width: 18px; height: 18px; }
+.settings-msg { font-size: 13px; }
+.login-custom-text { font-size: 14px; color: var(--text2); text-align: center; margin: 6px 0 0; }

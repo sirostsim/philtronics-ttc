@@ -14,51 +14,41 @@
 const { query, queryOne } = require('./db');
 
 const TZ = 'Europe/London';
+const settings = require('./settings');
 
-// Returns true if the current moment is within working hours
+// Returns true if the current moment is within working hours.
+// Uses per-instance configured hours (falls back to Philtronics defaults).
 function isWorkingHours() {
-  const now    = new Date();
-  const london = new Intl.DateTimeFormat('en-GB', {
-    timeZone: TZ,
-    hour: 'numeric', minute: 'numeric',
-    weekday: 'short', hour12: false,
-  }).formatToParts(now);
+  const s = settings.peek();
+  const now = new Date();
+  const info = settings.workingDayInfo(s, now);
+  if (!info.isWorkingDay) return false;
 
   const parts = {};
-  london.forEach(p => { parts[p.type] = p.value; });
+  new Intl.DateTimeFormat('en-GB', {
+    timeZone: info.timezone || TZ, hour: 'numeric', minute: 'numeric', hour12: false,
+  }).formatToParts(now).forEach(p => { parts[p.type] = p.value; });
 
-  const weekday = parts.weekday;
-  if (['Sat', 'Sun'].includes(weekday)) return false;
-
-  const h       = parseInt(parts.hour,   10);
-  const m       = parseInt(parts.minute, 10);
-  const nowMins = h * 60 + m;
-  const startMin = 7 * 60 + 45;  // 07:45
-  const endMin   = weekday === 'Fri' ? 13 * 60 : 16 * 60 + 30; // Fri 13:00, else 16:30
-
-  return nowMins >= startMin && nowMins < endMin;
+  const nowMins = parseInt(parts.hour, 10) * 60 + parseInt(parts.minute, 10);
+  return nowMins >= info.startMin && nowMins < info.endMin;
 }
 
-// Returns true if we are at the start of a new working day
-// Used to clear overnight overtime overrides
+// Returns true if we are at the start of a new working day (the configured
+// start minute). Used to clear overnight overtime overrides.
 function isStartOfWorkingDay() {
-  const now    = new Date();
-  const london = new Intl.DateTimeFormat('en-GB', {
-    timeZone: TZ,
-    hour: 'numeric', minute: 'numeric',
-    weekday: 'short', hour12: false,
-  }).formatToParts(now);
+  const s = settings.peek();
+  const now = new Date();
+  const info = settings.workingDayInfo(s, now);
+  if (!info.isWorkingDay) return false;
 
   const parts = {};
-  london.forEach(p => { parts[p.type] = p.value; });
+  new Intl.DateTimeFormat('en-GB', {
+    timeZone: info.timezone || TZ, hour: 'numeric', minute: 'numeric', hour12: false,
+  }).formatToParts(now).forEach(p => { parts[p.type] = p.value; });
 
-  const weekday = parts.weekday;
-  if (['Sat', 'Sun'].includes(weekday)) return false;
-
-  const h = parseInt(parts.hour,   10);
-  const m = parseInt(parts.minute, 10);
-  // True for the 07:45 minute window (schedule runs every 60s)
-  return h === 7 && m >= 45 && m < 46;
+  const nowMins = parseInt(parts.hour, 10) * 60 + parseInt(parts.minute, 10);
+  // True for the single minute at the configured start (schedule runs every 60s).
+  return nowMins === info.startMin;
 }
 
 async function runSchedule() {

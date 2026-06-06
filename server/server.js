@@ -35,6 +35,7 @@ app.use((req, res, next) => {
 // ─── API routes ───────────────────────────────────────────────────────────────
 app.use('/api/auth',     require('./routes/auth'));
 app.use('/api/config',   require('./routes/config'));
+app.use('/api/settings', require('./routes/settings'));
 
 // /api/me — the frontend calls this path directly after login
 app.get('/api/me', requireAuth, async (req, res) => {
@@ -111,6 +112,7 @@ app.use((err, req, res, next) => {
 runMigrations()
   .then(async () => {
     await seedSuperuser();
+    await require('./settings').load(); // warm the per-instance settings cache
     const { startSchedule } = require('./schedule');
     startSchedule();
     app.listen(PORT, () => {
