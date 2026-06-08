@@ -1776,6 +1776,9 @@ button.topbar-brand:focus-visible {
   margin-bottom: 12px;
   animation: pause-pulse 2s ease-in-out infinite;
 }
+/* The HTML `hidden` attribute must win over `display: flex` above, otherwise
+   the banner never disappears on resume. */
+.pause-banner[hidden] { display: none; }
 .pause-banner-icon { font-size: 20px; }
 #pauseBannerText {
   font-size: 13px;
@@ -2966,3 +2969,9 @@ button.topbar-brand:focus-visible {
 .settings-msg { font-size: 13px; }
 .login-custom-text { font-size: 14px; color: var(--text2); text-align: center; margin: 6px 0 0; }
 .settings-note { font-size: 12px; color: var(--text3); font-style: italic; margin: 0 0 8px; }
+
+/* Ensure the HTML `hidden` attribute always wins over `display: flex` on these
+   toggled bars, otherwise they won't disappear when hidden (same class of bug
+   as the pause banner). */
+.availability-bar[hidden],
+.standalone-hand-bar[hidden] { display: none; }
