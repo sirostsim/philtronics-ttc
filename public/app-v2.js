@@ -37,6 +37,9 @@ function term(key, fallback) {
   return (t && t[key]) ? t[key] : fallback;
 }
 
+// True while the Adjust Times modal is open, used to pause wallboard refresh.
+let _adjustModalOpen = false;
+
 // Wallboard interval handles — declared here so navigateTo can always access them
 let wallboardInterval  = null; // kept for legacy — managed via _wbIntervals now
 let wallboardTick      = null;
@@ -154,7 +157,17 @@ function openModal(title, bodyEl, footerEls = []) {
   footerEls.forEach(b => footer.appendChild(b));
   document.getElementById('modal').hidden = false;
 }
-function closeModal() { document.getElementById('modal').hidden = true; }
+function closeModal() {
+  document.getElementById('modal').hidden = true;
+  if (_adjustModalOpen) {
+    _adjustModalOpen = false;
+    // If a full wallboard is showing, refresh it so an adjusted start time appears.
+    const p = state.currentPage;
+    if (p && p.startsWith('wb-') && PAGES[p] && PAGES[p].dept) {
+      refreshDeptWallboard(PAGES[p].dept);
+    }
+  }
+}
 
 document.getElementById('btnModalClose').addEventListener('click', closeModal);
 document.getElementById('modal').addEventListener('click', e => {
@@ -1831,6 +1844,7 @@ function toLocalInputValue(iso) {
 }
 
 function openAdjustTimerModal(t, containerId) {
+  _adjustModalOpen = true; // pause wallboard auto-refresh while editing
   const isCompleted = !!t.completedAt;
   const wrap = el('div', { className: 'adjust-form' });
   wrap.appendChild(el('p', { className: 'adjust-intro',
@@ -3318,6 +3332,7 @@ async function loadDeptWallboard(dept) {
 }
 
 async function refreshDeptWallboard(dept) {
+  if (_adjustModalOpen) return; // don't redraw tiles while a supervisor is mid-edit
   const { tilesId, countId, updatedId, pageKey } = deptIds(dept);
   const container = document.getElementById(tilesId);
   const countEl   = document.getElementById(countId);
@@ -3472,6 +3487,23 @@ async function refreshDeptWallboard(dept) {
           onclick: () => openSendMessageModal(t.operatorId, t.operatorName),
         }));
         tile.appendChild(btnRow);
+      }
+
+      // Supervisors+ can click a tile to adjust the running job's start time
+      // (corrects a rogue timer). Clicks on the tile's own buttons are ignored.
+      if (hasRole('supervisor')) {
+        tile.classList.add('wb-tile-adjustable');
+        tile.setAttribute('title', 'Click to adjust this job\u2019s start time');
+        tile.addEventListener('click', e => {
+          if (e.target.closest('button')) return; // let tile buttons do their own thing
+          openAdjustTimerModal({
+            id: t.id,
+            itemNumber: t.itemNumber,
+            operatorName: t.operatorName,
+            startedAt: t.startedAt,
+            completedAt: null, // running job — only the start time is adjustable
+          }, null);
+        });
       }
       container.appendChild(tile);
     });

@@ -2975,3 +2975,7 @@ button.topbar-brand:focus-visible {
    as the pause banner). */
 .availability-bar[hidden],
 .standalone-hand-bar[hidden] { display: none; }
+
+/* Wallboard tiles are clickable (supervisors+) to adjust a running job's start time */
+.wb-tile-adjustable { cursor: pointer; }
+.wb-tile-adjustable:hover { outline: 2px solid var(--blue); outline-offset: -2px; }
