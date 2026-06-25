@@ -197,6 +197,7 @@ const PAGES = {
   targets:        { id: 'pageTargets',           label: 'Target Times',                  minRole: 'manager'     },
   reports:        { id: 'pageReports',           label: 'Reports',                       minRole: 'manager'     },
   charts:         { id: 'pageCharts',            label: 'Charts',                        minRole: 'manager'     },
+  devrequests:    { id: 'pageDevRequests',       label: '💡 Dev Requests',               minRole: 'supervisor'  },
   admin:          { id: 'pageAdmin',             label: 'Admin',                         minRole: 'administrator' },
 };
 
@@ -214,7 +215,7 @@ function buildNav() {
   list.innerHTML = '';
 
   // Non-wallboard pages — render as normal nav items
-  const topPages    = ['home','timer','history','dashboard','targets','reports','charts','admin'];
+  const topPages    = ['home','timer','history','dashboard','targets','reports','charts','devrequests','admin'];
   const wbPageKeys  = Object.keys(PAGES).filter(k => k.startsWith('wb-') || k.startsWith('wbc-'));
   const visibleWbs  = wbPageKeys.filter(k => canSeePage(PAGES[k]));
 
@@ -309,6 +310,7 @@ function navigateTo(page) {
   else if (page === 'targets')   loadTargetsPage();
   else if (page === 'reports')   loadReportsPage();
   else if (page === 'charts')    loadChartsPage();
+  else if (page === 'devrequests') loadDevRequestsPage();
   else if (page === 'admin')     loadAdminPage();
   else if (page.startsWith('wb-'))  loadDeptWallboard(PAGES[page].dept);
   else if (page.startsWith('wbc-')) loadDeptWallboardCompact(PAGES[page].dept);
@@ -1280,6 +1282,314 @@ function renderDashTable(rows) {
 /* ═══════════════════════════════════════════════════════════════════════════
    ADMIN PAGE
    ═══════════════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════════
+   DEV REQUESTS  (mini-forum: supervisor and above)
+   ═══════════════════════════════════════════════════════════════════════════ */
+const DEV_STATUS = {
+  requested:    { label: 'Requested',    cls: 'st-requested'   },
+  under_review: { label: 'Under Review', cls: 'st-review'      },
+  planned:      { label: 'Planned',      cls: 'st-planned'     },
+  in_progress:  { label: 'In Progress',  cls: 'st-progress'    },
+  done:         { label: 'Done',         cls: 'st-done'        },
+  declined:     { label: 'Declined',     cls: 'st-declined'    },
+};
+const DEV_STATUS_ORDER = ['requested','under_review','planned','in_progress','done','declined'];
+const _devState = { sort: 'active', status: '', currentId: null };
+
+function devTimeAgo(iso) {
+  if (!iso) return '';
+  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return 'just now';
+  const m = Math.floor(s/60); if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m/60); if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h/24); if (d < 30) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString('en-GB');
+}
+
+function devStatusBadge(status) {
+  const s = DEV_STATUS[status] || DEV_STATUS.requested;
+  return el('span', { className: `dev-status-badge ${s.cls}`, textContent: s.label });
+}
+
+async function loadDevRequestsPage() {
+  document.getElementById('devReqDetailView').hidden = true;
+  document.getElementById('devReqListView').hidden = false;
+  _devState.currentId = null;
+
+  // Wire toolbar once
+  const sortTabs = document.getElementById('devSortTabs');
+  if (sortTabs && !sortTabs._wired) {
+    sortTabs._wired = true;
+    sortTabs.addEventListener('click', e => {
+      const b = e.target.closest('.dev-sort-tab'); if (!b) return;
+      _devState.sort = b.getAttribute('data-sort');
+      sortTabs.querySelectorAll('.dev-sort-tab').forEach(t => t.classList.toggle('active', t === b));
+      renderDevReqList();
+    });
+  }
+  const filter = document.getElementById('devStatusFilter');
+  if (filter && !filter._wired) {
+    filter._wired = true;
+    filter.addEventListener('change', () => { _devState.status = filter.value; renderDevReqList(); });
+  }
+  const newBtn = document.getElementById('btnNewDevRequest');
+  if (newBtn && !newBtn._wired) {
+    newBtn._wired = true;
+    newBtn.addEventListener('click', () => openDevRequestForm(null));
+  }
+
+  renderDevReqList();
+}
+
+async function renderDevReqList() {
+  const list = document.getElementById('devReqList');
+  list.innerHTML = '';
+  list.appendChild(el('div', { className: 'empty-state', textContent: 'Loading…' }));
+  try {
+    const params = new URLSearchParams();
+    params.set('sort', _devState.sort);
+    if (_devState.status) params.set('status', _devState.status);
+    const requests = await GET(`/dev-requests?${params}`);
+    list.innerHTML = '';
+    if (!requests.length) {
+      list.appendChild(el('div', { className: 'empty-state', textContent: 'No requests yet. Be the first to suggest an improvement.' }));
+      return;
+    }
+    for (const r of requests) list.appendChild(devReqCard(r));
+  } catch (err) {
+    list.innerHTML = '';
+    list.appendChild(el('div', { className: 'error-msg', textContent: err.message }));
+  }
+}
+
+function devReqCard(r) {
+  const voteBtn = el('button', {
+    className: 'dev-vote' + (r.hasVoted ? ' voted' : ''),
+    title: r.hasVoted ? 'Remove your vote' : 'Upvote this request',
+    onclick: async (e) => { e.stopPropagation(); await toggleDevVote(r.id, voteBtn); },
+  },
+    el('span', { className: 'dev-vote-arrow', textContent: '▲' }),
+    el('span', { className: 'dev-vote-count', textContent: String(r.voteCount) })
+  );
+
+  const meta = el('div', { className: 'dev-card-meta' },
+    devStatusBadge(r.status),
+    el('span', { className: 'dev-card-author', textContent: r.authorName }),
+    el('span', { className: 'dev-card-dot', textContent: '·' }),
+    el('span', { className: 'dev-card-time', textContent: devTimeAgo(r.lastActivityAt) }),
+    el('span', { className: 'dev-card-comments', textContent: `💬 ${r.commentCount}` }),
+  );
+
+  const body = el('div', { className: 'dev-card-body' },
+    el('h3', { className: 'dev-card-title', textContent: r.title }),
+    meta,
+  );
+
+  const card = el('div', { className: 'dev-req-card', onclick: () => openDevRequest(r.id) }, voteBtn, body);
+  return card;
+}
+
+async function toggleDevVote(id, btnEl) {
+  try {
+    const res = await POST(`/dev-requests/${id}/vote`);
+    btnEl.classList.toggle('voted', res.hasVoted);
+    const countEl = btnEl.querySelector('.dev-vote-count');
+    if (countEl) countEl.textContent = String(res.voteCount);
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function openDevRequest(id) {
+  _devState.currentId = id;
+  const listView = document.getElementById('devReqListView');
+  const detail   = document.getElementById('devReqDetailView');
+  listView.hidden = true;
+  detail.hidden = false;
+  detail.innerHTML = '<div class="empty-state">Loading…</div>';
+  try {
+    const r = await GET(`/dev-requests/${id}`);
+    renderDevRequestDetail(r);
+  } catch (err) {
+    detail.innerHTML = '';
+    detail.appendChild(el('div', { className: 'error-msg', textContent: err.message }));
+  }
+}
+
+function renderDevRequestDetail(r) {
+  const detail = document.getElementById('devReqDetailView');
+  detail.innerHTML = '';
+
+  // Back link
+  detail.appendChild(el('button', {
+    className: 'dev-back', textContent: '← Back to all requests',
+    onclick: () => loadDevRequestsPage(),
+  }));
+
+  // Header: vote + title + status
+  const voteBtn = el('button', {
+    className: 'dev-vote dev-vote-lg' + (r.hasVoted ? ' voted' : ''),
+    title: r.hasVoted ? 'Remove your vote' : 'Upvote this request',
+    onclick: async () => { await toggleDevVote(r.id, voteBtn); },
+  },
+    el('span', { className: 'dev-vote-arrow', textContent: '▲' }),
+    el('span', { className: 'dev-vote-count', textContent: String(r.voteCount) })
+  );
+
+  const titleWrap = el('div', { className: 'dev-detail-titlewrap' },
+    el('h2', { className: 'dev-detail-title', textContent: r.title }),
+    el('div', { className: 'dev-detail-meta' },
+      devStatusBadge(r.status),
+      el('span', { className: 'dev-card-author', textContent: `by ${r.authorName}` }),
+      el('span', { className: 'dev-card-dot', textContent: '·' }),
+      el('span', { className: 'dev-card-time', textContent: devTimeAgo(r.createdAt) }),
+    ),
+  );
+
+  detail.appendChild(el('div', { className: 'dev-detail-header' }, voteBtn, titleWrap));
+
+  // Body text
+  if (r.body) {
+    detail.appendChild(el('div', { className: 'dev-detail-body' }, devMultiline(r.body)));
+  }
+
+  // Action row: edit (author/SU), status control (SU), delete (SU)
+  const actions = el('div', { className: 'dev-detail-actions' });
+  if (r.canEdit) {
+    actions.appendChild(el('button', { className: 'btn btn-ghost btn-sm', textContent: '✎ Edit',
+      onclick: () => openDevRequestForm(r) }));
+  }
+  if (r.canChangeStatus) {
+    const sel = el('select', { className: 'dev-status-select', 'aria-label': 'Change status',
+      onchange: async () => { await changeDevStatus(r.id, sel.value); } });
+    for (const key of DEV_STATUS_ORDER) {
+      const opt = el('option', { value: key, textContent: DEV_STATUS[key].label });
+      if (key === r.status) opt.selected = true;
+      sel.appendChild(opt);
+    }
+    actions.appendChild(el('span', { className: 'dev-status-control' },
+      el('span', { className: 'dev-status-label', textContent: 'Status:' }), sel));
+  }
+  if (r.canDelete) {
+    actions.appendChild(el('button', { className: 'btn btn-ghost btn-sm dev-danger', textContent: '🗑 Delete',
+      onclick: () => confirmDeleteDevRequest(r.id) }));
+  }
+  if (actions.children.length) detail.appendChild(actions);
+
+  // Comment thread
+  detail.appendChild(el('h3', { className: 'dev-thread-heading', textContent: `Discussion (${r.comments.length})` }));
+  const thread = el('div', { className: 'dev-thread' });
+  if (!r.comments.length) {
+    thread.appendChild(el('div', { className: 'empty-state', textContent: 'No comments yet. Start the conversation.' }));
+  } else {
+    for (const c of r.comments) thread.appendChild(devCommentEl(c));
+  }
+  detail.appendChild(thread);
+
+  // Add-comment box (open in every status)
+  const ta = el('textarea', { className: 'dev-comment-input', rows: '3', placeholder: 'Add a comment…', maxlength: '4000' });
+  const postBtn = el('button', { className: 'btn btn-primary btn-sm', textContent: 'Post comment',
+    onclick: async () => {
+      const body = ta.value.trim();
+      if (!body) return;
+      postBtn.disabled = true;
+      try {
+        await POST(`/dev-requests/${r.id}/comments`, { body });
+        ta.value = '';
+        openDevRequest(r.id); // reload thread
+      } catch (err) { toast(err.message, 'error'); postBtn.disabled = false; }
+    } });
+  detail.appendChild(el('div', { className: 'dev-comment-form' }, ta, el('div', { className: 'dev-comment-form-actions' }, postBtn)));
+}
+
+function devMultiline(text) {
+  // Render text preserving line breaks, safely (textContent per line).
+  const frag = document.createDocumentFragment();
+  String(text).split('\n').forEach((line, i) => {
+    if (i) frag.appendChild(el('br'));
+    frag.appendChild(document.createTextNode(line));
+  });
+  return frag;
+}
+
+function devCommentEl(c) {
+  const wrap = el('div', { className: 'dev-comment' });
+  const head = el('div', { className: 'dev-comment-head' },
+    el('span', { className: 'dev-comment-author', textContent: c.authorName }),
+    el('span', { className: 'dev-card-time', textContent: devTimeAgo(c.createdAt) + (c.edited ? ' · edited' : '') }),
+  );
+  const bodyEl = el('div', { className: 'dev-comment-body' }, devMultiline(c.body));
+  wrap.appendChild(head);
+  wrap.appendChild(bodyEl);
+
+  if (c.canEdit) {
+    const controls = el('div', { className: 'dev-comment-controls' },
+      el('button', { className: 'dev-link', textContent: 'Edit', onclick: () => editDevComment(c, wrap, bodyEl) }),
+      el('button', { className: 'dev-link dev-danger', textContent: 'Delete', onclick: () => deleteDevComment(c) }),
+    );
+    wrap.appendChild(controls);
+  }
+  return wrap;
+}
+
+function editDevComment(c, wrap, bodyEl) {
+  const ta = el('textarea', { className: 'dev-comment-input', rows: '3', maxlength: '4000' });
+  ta.value = c.body;
+  const save = el('button', { className: 'btn btn-primary btn-sm', textContent: 'Save',
+    onclick: async () => {
+      const body = ta.value.trim(); if (!body) return;
+      try { await PATCH(`/dev-requests/${c.requestId}/comments/${c.id}`, { body }); openDevRequest(c.requestId); }
+      catch (err) { toast(err.message, 'error'); }
+    } });
+  const cancel = el('button', { className: 'btn btn-ghost btn-sm', textContent: 'Cancel',
+    onclick: () => openDevRequest(c.requestId) });
+  bodyEl.replaceWith(el('div', {}, ta, el('div', { className: 'dev-comment-form-actions' }, save, cancel)));
+}
+
+async function deleteDevComment(c) {
+  if (!confirm('Delete this comment?')) return;
+  try { await DELETE(`/dev-requests/${c.requestId}/comments/${c.id}`); openDevRequest(c.requestId); }
+  catch (err) { toast(err.message, 'error'); }
+}
+
+async function changeDevStatus(id, status) {
+  try { await PATCH(`/dev-requests/${id}/status`, { status }); toast('Status updated', 'success'); openDevRequest(id); }
+  catch (err) { toast(err.message, 'error'); }
+}
+
+async function confirmDeleteDevRequest(id) {
+  if (!confirm('Delete this request and its entire discussion? This cannot be undone.')) return;
+  try { await DELETE(`/dev-requests/${id}`); toast('Request deleted', 'success'); loadDevRequestsPage(); }
+  catch (err) { toast(err.message, 'error'); }
+}
+
+function openDevRequestForm(existing) {
+  const isEdit = !!existing;
+  const titleInput = el('input', { type: 'text', maxlength: '160', placeholder: 'Short, clear title', value: isEdit ? existing.title : '' });
+  const bodyInput  = el('textarea', { rows: '6', maxlength: '8000', placeholder: 'Describe the improvement you would like, and why it would help.' });
+  if (isEdit) bodyInput.value = existing.body || '';
+  const errBox = el('div', { className: 'error-msg', style: 'margin-top:8px' });
+
+  const save = el('button', { className: 'btn btn-primary', textContent: isEdit ? 'Save changes' : 'Submit request',
+    onclick: async () => {
+      const title = titleInput.value.trim();
+      const body  = bodyInput.value.trim();
+      if (!title) { errBox.textContent = 'A title is required.'; return; }
+      save.disabled = true;
+      try {
+        if (isEdit) { await PATCH(`/dev-requests/${existing.id}`, { title, body }); closeModal(); openDevRequest(existing.id); }
+        else { const created = await POST('/dev-requests', { title, body }); closeModal(); openDevRequest(created.id); }
+      } catch (err) { errBox.textContent = err.message; save.disabled = false; }
+    } });
+  const cancel = el('button', { className: 'btn btn-ghost', textContent: 'Cancel', onclick: () => closeModal() });
+
+  const body = el('div', {},
+    el('label', { className: 'dev-form-label', textContent: 'Title' }), titleInput,
+    el('label', { className: 'dev-form-label', textContent: 'Description' }), bodyInput,
+    errBox,
+  );
+  openModal(isEdit ? 'Edit Request' : 'New Dev Request', body, [cancel, save]);
+}
+
+
 async function loadAdminPage() {
   // Always render the tools panel first — it doesn't depend on the user list
   renderAdminTools();

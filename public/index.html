@@ -730,6 +730,43 @@
     </div>
   </section>
 
+  <!-- ── DEV REQUESTS ─────────────────────────────────────────────────────── -->
+  <section id="pageDevRequests" class="page" aria-label="Dev Requests" hidden>
+    <div class="page-content">
+      <div class="page-heading-row">
+        <h2 class="page-heading">💡 Dev Requests</h2>
+        <button id="btnNewDevRequest" class="btn btn-primary">+ New Request</button>
+      </div>
+      <p class="section-desc" style="margin-bottom:16px;">
+        Request improvements to the system, discuss them with the team, and upvote the ones you want most. Visible to supervisors and above.
+      </p>
+
+      <!-- List view -->
+      <div id="devReqListView">
+        <div class="dev-toolbar">
+          <div class="dev-sort" id="devSortTabs" role="tablist" aria-label="Sort requests">
+            <button class="dev-sort-tab active" data-sort="active" role="tab">Most active</button>
+            <button class="dev-sort-tab" data-sort="top" role="tab">Most voted</button>
+            <button class="dev-sort-tab" data-sort="new" role="tab">Newest</button>
+          </div>
+          <select id="devStatusFilter" class="dev-filter" aria-label="Filter by status">
+            <option value="">All statuses</option>
+            <option value="requested">Requested</option>
+            <option value="under_review">Under Review</option>
+            <option value="planned">Planned</option>
+            <option value="in_progress">In Progress</option>
+            <option value="done">Done</option>
+            <option value="declined">Declined</option>
+          </select>
+        </div>
+        <div id="devReqList" class="dev-req-list"></div>
+      </div>
+
+      <!-- Detail view -->
+      <div id="devReqDetailView" hidden></div>
+    </div>
+  </section>
+
   <section id="pageAdmin" class="page" aria-label="User Management" hidden>
     <div class="page-content">
       <div class="page-heading-row">

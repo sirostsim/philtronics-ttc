@@ -216,7 +216,6 @@ main { padding-top: var(--topbar-h); min-height: 100dvh; }
 input[type="text"],
 input[type="password"],
 input[type="date"],
-input[type="number"],
 textarea {
   background: var(--bg3);
   border: 1px solid var(--border);
@@ -2981,13 +2980,72 @@ button.topbar-brand:focus-visible {
 .wb-tile-adjustable { cursor: pointer; }
 .wb-tile-adjustable:hover { outline: 2px solid var(--blue); outline-offset: -2px; }
 
-/* Quantity (and any number input): keep height consistent and tidy the spinners */
-input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
-input[type="number"]::-webkit-outer-spin-button,
-input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+/* ═══════════════════════════════════════════════════════════════════════════
+   DEV REQUESTS (mini-forum)
+   ═══════════════════════════════════════════════════════════════════════════ */
+.dev-toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
+.dev-sort { display:inline-flex; gap:4px; background:var(--bg2); border:1px solid var(--border); border-radius:6px; padding:3px; }
+.dev-sort-tab { background:none; border:none; border-radius:4px; padding:6px 14px; font-size:13px; font-weight:600; color:var(--text2); cursor:pointer; transition:all .15s; }
+.dev-sort-tab:hover { color:var(--text); }
+.dev-sort-tab.active { background:var(--accent); color:#0f1117; }
+.dev-filter { background:var(--bg3); border:1px solid var(--border); border-radius:6px; color:var(--text); padding:8px 12px; font-size:13px; }
 
-/* Route Card No. + Quantity side-by-side row (Start Job) */
-.rc-qty-row { display: flex; gap: 12px; align-items: flex-end; }
-.rc-qty-card { flex: 1 1 auto; min-width: 0; }
-.rc-qty-qty { flex: 0 0 96px; }
-.rc-qty-row label { display: block; }
+.dev-req-list { display:flex; flex-direction:column; gap:10px; }
+.dev-req-card { display:flex; gap:14px; align-items:stretch; background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:14px 16px; cursor:pointer; transition:border-color .15s, transform .05s; }
+.dev-req-card:hover { border-color:var(--accent); }
+.dev-req-card:active { transform:scale(.998); }
+
+.dev-vote { display:flex; flex-direction:column; align-items:center; justify-content:center; min-width:52px; padding:6px 8px; background:var(--bg3); border:1px solid var(--border); border-radius:8px; color:var(--text2); cursor:pointer; transition:all .15s; }
+.dev-vote:hover { border-color:var(--accent); color:var(--text); }
+.dev-vote.voted { background:rgba(240,180,41,.14); border-color:var(--accent); color:var(--accent); }
+.dev-vote-arrow { font-size:14px; line-height:1; }
+.dev-vote-count { font-size:16px; font-weight:800; line-height:1.2; }
+.dev-vote-lg { min-width:64px; padding:10px; }
+.dev-vote-lg .dev-vote-count { font-size:20px; }
+
+.dev-card-body { flex:1; min-width:0; display:flex; flex-direction:column; justify-content:center; gap:6px; }
+.dev-card-title { font-size:16px; font-weight:700; color:var(--text); margin:0; line-height:1.3; }
+.dev-card-meta { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12px; color:var(--text2); }
+.dev-card-dot { color:var(--text3); }
+.dev-card-comments { margin-left:auto; }
+
+.dev-status-badge { display:inline-block; font-size:11px; font-weight:700; letter-spacing:.03em; padding:3px 9px; border-radius:20px; text-transform:uppercase; }
+.st-requested { background:rgba(154,160,184,.18); color:#c3c9dc; }
+.st-review    { background:rgba(59,130,246,.18);  color:#7eb0ff; }
+.st-planned   { background:rgba(167,139,250,.18); color:#c4b1fb; }
+.st-progress  { background:rgba(240,180,41,.18);  color:#f0b429; }
+.st-done      { background:rgba(34,197,94,.18);   color:#4ade80; }
+.st-declined  { background:rgba(239,68,68,.16);   color:#f87171; }
+
+/* Detail view */
+.dev-back { background:none; border:none; color:var(--text2); font-size:14px; cursor:pointer; padding:4px 0; margin-bottom:16px; }
+.dev-back:hover { color:var(--accent); }
+.dev-detail-header { display:flex; gap:16px; align-items:flex-start; margin-bottom:18px; }
+.dev-detail-titlewrap { flex:1; min-width:0; }
+.dev-detail-title { font-size:24px; font-weight:800; color:var(--text); margin:0 0 8px; line-height:1.2; }
+.dev-detail-meta { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:13px; color:var(--text2); }
+.dev-detail-body { background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:16px 18px; color:var(--text); line-height:1.6; margin-bottom:18px; white-space:normal; }
+.dev-detail-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:24px; padding-bottom:20px; border-bottom:1px solid var(--border); }
+.dev-status-control { display:inline-flex; align-items:center; gap:8px; }
+.dev-status-label { font-size:13px; color:var(--text2); }
+.dev-status-select { background:var(--bg3); border:1px solid var(--border); border-radius:6px; color:var(--text); padding:7px 10px; font-size:13px; }
+.dev-danger { color:var(--red) !important; }
+
+/* Thread */
+.dev-thread-heading { font-size:15px; font-weight:700; color:var(--text); margin:0 0 14px; }
+.dev-thread { display:flex; flex-direction:column; gap:12px; margin-bottom:20px; }
+.dev-comment { background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:12px 14px; }
+.dev-comment-head { display:flex; align-items:center; gap:10px; margin-bottom:6px; }
+.dev-comment-author { font-size:13px; font-weight:700; color:var(--text); }
+.dev-comment-body { font-size:14px; color:var(--text); line-height:1.55; }
+.dev-comment-controls { display:flex; gap:14px; margin-top:8px; }
+.dev-link { background:none; border:none; color:var(--text2); font-size:12px; cursor:pointer; padding:0; }
+.dev-link:hover { color:var(--accent); }
+.dev-link.dev-danger:hover { color:var(--red); }
+
+/* Comment + request forms */
+.dev-comment-form { display:flex; flex-direction:column; gap:8px; }
+.dev-comment-input { width:100%; background:var(--bg3); border:1px solid var(--border); border-radius:8px; color:var(--text); padding:12px 14px; font-size:14px; font-family:inherit; resize:vertical; }
+.dev-comment-form-actions { display:flex; gap:8px; }
+.dev-form-label { display:block; font-size:13px; font-weight:700; color:var(--text2); margin:14px 0 6px; text-transform:uppercase; letter-spacing:.03em; }
+.dev-form-label:first-child { margin-top:0; }
