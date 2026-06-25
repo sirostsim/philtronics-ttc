@@ -56,6 +56,7 @@ const schemas = {
     workstation:     Joi.string().trim().max(100).optional().allow('', null),
     woNumber:        Joi.string().trim().max(100).optional().allow('', null),
     routeCardNumber: Joi.string().trim().max(50).optional().allow('', null),
+    quantity:        Joi.number().integer().min(1).max(999).optional().default(1),
     timerCategory:   Joi.string().valid('work', 'rework').optional().default('work'),
   }),
 

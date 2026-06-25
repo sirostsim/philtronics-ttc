@@ -800,6 +800,7 @@ document.getElementById('btnStart').addEventListener('click', async () => {
   const workstation  = document.getElementById('startWorkstation').value.trim();
   const woNumber     = document.getElementById('startWoNumber').value.trim();
   const routeCard    = document.getElementById('startRouteCard').value.trim();
+  const quantityRaw  = document.getElementById('startQuantity') ? document.getElementById('startQuantity').value.trim() : '1';
   const timeCheck   = document.getElementById('startTimeCheck').checked;
 
   if (!itemNumber) {
@@ -809,6 +810,25 @@ document.getElementById('btnStart').addEventListener('click', async () => {
   }
   if (!/^[A-Za-z0-9\-_]{1,40}$/.test(itemNumber)) {
     setError('startError', 'Item Number may only contain letters, numbers, hyphens and underscores (max 40).');
+    return;
+  }
+
+  // Quantity: positive integer, default 1. Only meaningful with a route card,
+  // since it expands into that many contiguous route cards on completion.
+  const quantity = parseInt(quantityRaw || '1', 10);
+  if (isNaN(quantity) || quantity < 1 || quantity > 999 || String(quantity) !== String(quantityRaw || '1')) {
+    setError('startError', 'Quantity must be a whole number between 1 and 999.');
+    if (document.getElementById('startQuantity')) document.getElementById('startQuantity').focus();
+    return;
+  }
+  if (quantity > 1 && !routeCard) {
+    setError('startError', 'A starting Route Card number is required when Quantity is more than 1.');
+    document.getElementById('startRouteCard').focus();
+    return;
+  }
+  if (quantity > 1 && !/^\d+$/.test(routeCard)) {
+    setError('startError', 'For a multi-quantity run, the Route Card number must be numeric (the run covers contiguous cards from that number).');
+    document.getElementById('startRouteCard').focus();
     return;
   }
 
@@ -873,6 +893,7 @@ document.getElementById('btnStart').addEventListener('click', async () => {
         workstation:     workstation     || undefined,
         woNumber:        woNumber        || undefined,
         routeCardNumber: routeCard       || undefined,
+        quantity:        quantity,
         timerCategory:   window._timerCategory || 'work',
       });
     } catch (startErr) {
@@ -913,6 +934,7 @@ document.getElementById('btnStart').addEventListener('click', async () => {
     document.getElementById('startWorkstation').value = '';
     document.getElementById('startWoNumber').value    = '';
     document.getElementById('startRouteCard').value   = '';
+    if (document.getElementById('startQuantity')) document.getElementById('startQuantity').value = '1';
     document.getElementById('startTimeCheck').checked = false;
     window._timerCategory = 'work';
     hideSuggestions();

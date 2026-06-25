@@ -236,6 +236,17 @@
           </div>
         </div>
 
+        <!-- Quantity (number of contiguous route cards covered by this run) -->
+        <div class="form-group">
+          <label for="startQuantity">Quantity <span class="opt">(route cards in this run)</span></label>
+          <input id="startQuantity" type="number" min="1" max="999" step="1" value="1"
+                 inputmode="numeric"
+                 placeholder="1" />
+          <p class="field-hint" id="quantityHint" style="font-size:12px;color:var(--text2);margin-top:4px;">
+            One run can cover several contiguous route cards. Enter the starting card above and how many cards this run covers here. Each card is traced and timed individually.
+          </p>
+        </div>
+
         <!-- Time Check toggle -->
         <div class="form-group time-check-group">
           <label class="time-check-label" for="startTimeCheck">
