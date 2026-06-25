@@ -2256,19 +2256,14 @@ const scanner = (() => {
     open(document.getElementById('itemNumberInput'), 'item');
   });
 
-  // Secondary-field scan buttons. Each button targets EXACTLY ONE field —
-  // the input it sits beside — so a scan can never land in the wrong field.
-  // bindScan() is null-safe so a missing button id won't throw.
-  function bindScan(buttonId, inputId, mode) {
-    const btn = document.getElementById(buttonId);
-    const input = document.getElementById(inputId);
-    if (!btn || !input) return;
-    btn.addEventListener('click', () => open(input, mode));
-  }
-
-  bindScan('btnScanWorkstation', 'startWorkstation', 'notes');
-  bindScan('btnScanWoNumber',    'startWoNumber',    'notes');
-  bindScan('btnScanRouteCard',   'startRouteCard',   'notes');
+  // Notes scan button
+  document.getElementById('btnScanWorkstation').addEventListener('click', () => {
+    open(document.getElementById('startWorkstation'), 'notes');
+  });
+  document.getElementById('btnScanWoNumber').addEventListener('click', () => {
+    open(document.getElementById('startWoNumber'), 'notes');
+    open(document.getElementById('startRouteCard'), 'notes');
+  });
 
   closeBtn.addEventListener('click', close);
   overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
@@ -3993,63 +3988,91 @@ const C = {
 };
 const CFONT = { family: "'Barlow', sans-serif", size: 12 };
 
-function loadReportsPage() {
+// ── Reports page with sub-tabs ────────────────────────────────────────────────
+// Three independent sub-pages (Operator Productivity, Quality, Build Efficiency),
+// each with its own date range. A tab's data loads the first time it is shown and
+// is remembered for the session, so we never fetch all three at once.
+const _reportTabsLoaded = { productivity: false, quality: false, build: false };
+
+function _defaultReportDates() {
   const today = new Date().toISOString().slice(0, 10);
   const ago30 = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().slice(0, 10);
-  if (!document.getElementById('reportFrom').value) {
-    document.getElementById('reportFrom').value = ago30;
-    document.getElementById('reportTo').value   = today;
-  }
-  // Sync productivity date pickers to match report range
-  const pFrom = document.getElementById('productivityFrom');
-  const pTo   = document.getElementById('productivityTo');
-  if (pFrom && !pFrom.value) { pFrom.value = ago30; }
-  if (pTo   && !pTo.value)   { pTo.value   = today; }
-  runReport();
-  runProductivitySection();
+  return { today, ago30 };
 }
 
-// Use delegation — some buttons are inside hidden sections at load time
+function loadReportsPage() {
+  const { today, ago30 } = _defaultReportDates();
+  [['productivityFrom','productivityTo'], ['qualityFrom','qualityTo'], ['buildFrom','buildTo']]
+    .forEach(([f, t]) => {
+      const ef = document.getElementById(f), et = document.getElementById(t);
+      if (ef && !ef.value) ef.value = ago30;
+      if (et && !et.value) et.value = today;
+    });
+  _reportTabsLoaded.productivity = false;
+  _reportTabsLoaded.quality = false;
+  _reportTabsLoaded.build = false;
+  showReportTab('productivity');
+}
+
+function showReportTab(tab) {
+  document.querySelectorAll('.report-tab').forEach(btn => {
+    const on = btn.getAttribute('data-report-tab') === tab;
+    btn.classList.toggle('is-active', on);
+    btn.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  document.querySelectorAll('.report-panel').forEach(panel => {
+    panel.hidden = panel.getAttribute('data-report-panel') !== tab;
+  });
+  if (!_reportTabsLoaded[tab]) {
+    _reportTabsLoaded[tab] = true;
+    if (tab === 'productivity') runProductivitySection();
+    else if (tab === 'quality') runQualityReport();
+    else if (tab === 'build')   runBuildReport();
+  }
+}
+
+// Use delegation — buttons live inside panels that are hidden at load time.
 document.addEventListener('click', e => {
-  if (e.target.id === 'btnReportSearch')       runReport();
-  if (e.target.id === 'btnChartSearch')        runCharts();
+  const tabBtn = e.target.closest && e.target.closest('.report-tab');
+  if (tabBtn) { showReportTab(tabBtn.getAttribute('data-report-tab')); return; }
+  if (e.target.id === 'btnChartSearch')         runCharts();
   if (e.target.id === 'btnProductivityRefresh') runProductivitySection();
-  if (e.target.id === 'btnProductivityCSV')    exportProductivityCSV();
+  if (e.target.id === 'btnProductivityCSV')     exportProductivityCSV();
+  if (e.target.id === 'btnQualityRefresh')      runQualityReport();
+  if (e.target.id === 'btnBuildSearch')         runBuildReport();
+  if (e.target.id === 'btnBuildExportCSV')      exportBuildCSV();
 });
 
-document.getElementById('btnReportExportCSV').addEventListener('click', () => {
-  const from = document.getElementById('reportFrom').value;
-  const to   = document.getElementById('reportTo').value;
+function _rangeParams(fromId, toId, extra) {
+  const fromEl = document.getElementById(fromId);
+  const toEl   = document.getElementById(toId);
+  const from = fromEl && fromEl.value;
+  const to   = toEl && toEl.value;
   const params = new URLSearchParams();
   if (from) params.set('from', new Date(from).toISOString());
   if (to)   { const d = new Date(to); d.setHours(23,59,59,999); params.set('to', d.toISOString()); }
-  window.location.href = `/api/export/report/csv?${params}`;
-});
+  if (extra) Object.entries(extra).forEach(([k,v]) => params.set(k, v));
+  return params;
+}
 
-async function runReport() {
-  const from = document.getElementById('reportFrom').value;
-  const to   = document.getElementById('reportTo').value;
-  const params = new URLSearchParams();
-  if (from) params.set('from', new Date(from).toISOString());
-  if (to)   { const d = new Date(to); d.setHours(23,59,59,999); params.set('to', d.toISOString()); }
-  const qs = params.toString();
+// ── Build Efficiency tab: assembly times + item/throughput stats + overdue ────
+async function runBuildReport() {
+  const qs = _rangeParams('buildFrom', 'buildTo').toString();
 
-  ['reportStatCards','reportItemTable','reportOperatorTable','reportTrendTable','reportOverdueGrid','reportAssemblyGrid','reportQualityGrid']
+  ['reportStatCards','reportItemTable','reportOperatorTable','reportTrendTable','reportOverdueGrid','reportAssemblyGrid']
     .forEach(id => { const n = document.getElementById(id); if (n) n.innerHTML = '<div class="empty-state">Loading\u2026</div>'; });
 
-  let stats, operators, trends, overdue, productivity, assemblyData, qualityData;
+  let stats, operators, trends, overdue, assemblyData;
   try {
-    [stats, operators, trends, overdue, productivity, assemblyData, qualityData] = await Promise.all([
+    [stats, operators, trends, overdue, assemblyData] = await Promise.all([
       GET(`/export/stats?${qs}`),
       GET(`/export/report/operators?${qs}`),
       GET(`/export/report/trends?${qs}`),
       GET(`/export/report/overdue?${qs}`),
-      GET(`/export/productivity?${qs}&groupByDay=true`),
       GET(`/export/assembly-summary?${qs}`),
-      GET(`/export/quality?${qs}`),
     ]);
   } catch (err) {
-    console.error('Report fetch error:', err);
+    console.error('Build report fetch error:', err);
     const sc = document.getElementById('reportStatCards');
     if (sc) sc.innerHTML = `<div class="error-msg" style="padding:16px">Could not load report data: ${err.message}</div>`;
     return;
@@ -4057,19 +4080,34 @@ async function runReport() {
   trends       = trends       || [];
   operators    = operators    || [];
   overdue      = overdue      || { byItem: [], byOperator: [] };
-  productivity = productivity || [];
   assemblyData = assemblyData || { assemblies: [] };
-  qualityData  = qualityData  || { summary: {}, reworkByItem: [], reworkByOperator: [] };
 
   renderReportStatCards(stats);
+  renderAssemblySummary(assemblyData?.assemblies || []);
   renderReportTrendTable(trends);
   renderReportItemTable(stats?.byItem || []);
   renderReportOperatorTable(operators);
   renderReportOverdue(overdue);
-  renderProductivityTable(productivity?.operators || [], productivity?.targetPct || 80, productivity?.operators?.[0]?.daily?.length > 0);
-  renderAssemblySummary(assemblyData?.assemblies || []);
-  renderQualityReport(qualityData);
 }
+
+// ── Quality tab: Right First Time / rework ────────────────────────────────────
+async function runQualityReport() {
+  const qs = _rangeParams('qualityFrom', 'qualityTo').toString();
+  const container = document.getElementById('reportQualityGrid');
+  if (container) container.innerHTML = '<div class="empty-state">Loading\u2026</div>';
+  try {
+    const qualityData = await GET(`/export/quality?${qs}`);
+    renderQualityReport(qualityData || { summary: {}, reworkByItem: [], reworkByOperator: [] });
+  } catch (err) {
+    if (container) container.innerHTML = `<div class="error-msg" style="padding:16px">Could not load quality data: ${err.message}</div>`;
+  }
+}
+
+function exportBuildCSV() {
+  const qs = _rangeParams('buildFrom', 'buildTo').toString();
+  window.location.href = `/api/export/report/csv?${qs}`;
+}
+
 
 async function runProductivitySection() {
   const from = document.getElementById('productivityFrom')?.value;
@@ -4102,11 +4140,9 @@ function exportProductivityCSV() {
 function loadChartsPage() {
   const today = new Date().toISOString().slice(0, 10);
   const ago30 = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().slice(0, 10);
-  const rFrom = document.getElementById('reportFrom')?.value;
-  const rTo   = document.getElementById('reportTo')?.value;
   if (!document.getElementById('chartFrom').value) {
-    document.getElementById('chartFrom').value = rFrom || ago30;
-    document.getElementById('chartTo').value   = rTo   || today;
+    document.getElementById('chartFrom').value = ago30;
+    document.getElementById('chartTo').value   = today;
   }
   runCharts();
 }
@@ -4551,7 +4587,7 @@ function openEditTargetModal(currentTarget) {
       await api('PUT', '/config/productivity_target_pct', { value: val });
       toast(`Productivity target updated to ${val}%`, 'success');
       closeModal();
-      if (state.currentPage === 'reports') runReport();
+      if (state.currentPage === 'reports') runProductivitySection();
     } catch (err) { errDiv.textContent = err.message; btnSave.disabled = false; }
   });
   openModal('Edit Productivity Target', body, [btnCancel, btnSave]);
@@ -4712,8 +4748,8 @@ function renderAssemblySummary(assemblies) {
   const csvBtn = el('button', { className: 'btn btn-ghost btn-sm', textContent: '\u2193 Export CSV',
     style: 'margin-bottom:12px' });
   csvBtn.addEventListener('click', () => {
-    const from = document.getElementById('reportFrom')?.value;
-    const to   = document.getElementById('reportTo')?.value;
+    const from = document.getElementById('buildFrom')?.value;
+    const to   = document.getElementById('buildTo')?.value;
     const ps   = new URLSearchParams();
     if (from) ps.set('from', new Date(from).toISOString());
     if (to)   { const d = new Date(to); d.setHours(23,59,59,999); ps.set('to', d.toISOString()); }
