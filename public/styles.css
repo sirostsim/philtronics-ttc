@@ -2985,3 +2985,9 @@ button.topbar-brand:focus-visible {
 input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* Route Card No. + Quantity side-by-side row (Start Job) */
+.rc-qty-row { display: flex; gap: 12px; align-items: flex-end; }
+.rc-qty-card { flex: 1 1 auto; min-width: 0; }
+.rc-qty-qty { flex: 0 0 96px; }
+.rc-qty-row label { display: block; }

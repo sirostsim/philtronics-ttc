@@ -211,39 +211,23 @@
           </div>
         </div>
 
-        <!-- Route Card Number -->
+        <!-- Route Card Number + Quantity (side by side) -->
         <div class="form-group">
-          <label for="startRouteCard">Route Card No. <span class="opt">(optional)</span></label>
-          <div class="input-with-action">
-            <input id="startRouteCard" type="text" maxlength="50"
-                   placeholder="e.g. 3 of 10" autocapitalize="characters"
-                   inputmode="numeric" />
-            <button id="btnScanRouteCard" class="btn-scan" type="button"
-                    aria-label="Scan barcode into Route Card number">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M3 7V5a2 2 0 0 1 2-2h2"/>
-                <path d="M17 3h2a2 2 0 0 1 2 2v2"/>
-                <path d="M21 17v2a2 2 0 0 1-2 2h-2"/>
-                <path d="M7 21H5a2 2 0 0 1-2-2v-2"/>
-                <rect x="7" y="7" width="3" height="3"/>
-                <rect x="14" y="7" width="3" height="3"/>
-                <rect x="7" y="14" width="3" height="3"/>
-                <rect x="14" y="14" width="3" height="3"/>
-              </svg>
-              Scan
-            </button>
+          <div class="rc-qty-row">
+            <div class="rc-qty-card">
+              <label for="startRouteCard">Route Card No. <span class="opt">(optional)</span></label>
+              <input id="startRouteCard" type="text" maxlength="50"
+                     placeholder="e.g. 3" autocapitalize="characters"
+                     inputmode="numeric" />
+            </div>
+            <div class="rc-qty-qty">
+              <label for="startQuantity">Quantity</label>
+              <input id="startQuantity" type="number" min="1" max="999" step="1" value="1"
+                     inputmode="numeric" placeholder="1" />
+            </div>
           </div>
-        </div>
-
-        <!-- Quantity (number of contiguous route cards covered by this run) -->
-        <div class="form-group">
-          <label for="startQuantity">Quantity <span class="opt">(route cards in this run)</span></label>
-          <input id="startQuantity" type="number" min="1" max="999" step="1" value="1"
-                 inputmode="numeric"
-                 placeholder="1" />
-          <p class="field-hint" id="quantityHint" style="font-size:12px;color:var(--text2);margin-top:4px;">
-            One run can cover several contiguous route cards. Enter the starting card above and how many cards this run covers here. Each card is traced and timed individually.
+          <p class="field-hint" id="quantityHint" style="font-size:12px;color:var(--text2);margin-top:6px;">
+            A run can cover several contiguous route cards. Enter the starting card and how many cards the run covers. Each card is traced and timed individually.
           </p>
         </div>
 
