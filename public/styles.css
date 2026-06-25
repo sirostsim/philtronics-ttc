@@ -216,6 +216,7 @@ main { padding-top: var(--topbar-h); min-height: 100dvh; }
 input[type="text"],
 input[type="password"],
 input[type="date"],
+input[type="number"],
 textarea {
   background: var(--bg3);
   border: 1px solid var(--border);
@@ -2979,3 +2980,8 @@ button.topbar-brand:focus-visible {
 /* Wallboard tiles are clickable (supervisors+) to adjust a running job's start time */
 .wb-tile-adjustable { cursor: pointer; }
 .wb-tile-adjustable:hover { outline: 2px solid var(--blue); outline-offset: -2px; }
+
+/* Quantity (and any number input): keep height consistent and tidy the spinners */
+input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
