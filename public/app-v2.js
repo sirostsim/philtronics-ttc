@@ -2256,14 +2256,19 @@ const scanner = (() => {
     open(document.getElementById('itemNumberInput'), 'item');
   });
 
-  // Notes scan button
-  document.getElementById('btnScanWorkstation').addEventListener('click', () => {
-    open(document.getElementById('startWorkstation'), 'notes');
-  });
-  document.getElementById('btnScanWoNumber').addEventListener('click', () => {
-    open(document.getElementById('startWoNumber'), 'notes');
-    open(document.getElementById('startRouteCard'), 'notes');
-  });
+  // Secondary-field scan buttons. Each button targets EXACTLY ONE field —
+  // the input it sits beside — so a scan can never land in the wrong field.
+  // bindScan() is null-safe so a missing button id won't throw.
+  function bindScan(buttonId, inputId, mode) {
+    const btn = document.getElementById(buttonId);
+    const input = document.getElementById(inputId);
+    if (!btn || !input) return;
+    btn.addEventListener('click', () => open(input, mode));
+  }
+
+  bindScan('btnScanWorkstation', 'startWorkstation', 'notes');
+  bindScan('btnScanWoNumber',    'startWoNumber',    'notes');
+  bindScan('btnScanRouteCard',   'startRouteCard',   'notes');
 
   closeBtn.addEventListener('click', close);
   overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
