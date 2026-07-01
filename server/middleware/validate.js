@@ -76,7 +76,8 @@ const schemas = {
   }).or('startedAt', 'completedAt'),
 
   createUser: Joi.object({
-    username:  Joi.string().trim().alphanum().min(3).max(32).required(),
+    username:  Joi.string().trim().min(3).max(32).pattern(/^[A-Za-z0-9._-]+$/).required()
+  .messages({ 'string.pattern.base': 'Username may only contain letters, numbers, dots, hyphens and underscores (e.g. firstname.lastname).' }),
     password:  Joi.string().min(8).max(64).required(),
     full_name: Joi.string().trim().min(2).max(100).required(),
     role:      Joi.string().valid('operator','supervisor','manager','administrator').required(),
