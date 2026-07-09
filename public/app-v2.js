@@ -1894,6 +1894,98 @@ function renderBulkPreview(container, results) {
   container.appendChild(wrap);
 }
 
+// ── Profile avatars ───────────────────────────────────────────────────────────
+// Reusable circle: shows the user's photo when set, otherwise their initials.
+// size is the diameter in px (default 40, matching the user list).
+function avatarEl(u, size = 40) {
+  const initials = (u.fullName || u.full_name || '?')
+    .split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
+  const url = u.avatarUrl || u.avatar_url || null;
+  if (url) {
+    const img = el('img', {
+      className: 'user-avatar user-avatar-img',
+      src: url, alt: u.fullName || 'Profile photo',
+      style: `width:${size}px;height:${size}px;`,
+    });
+    // If the image fails to load, fall back to an initials circle in place.
+    img.addEventListener('error', () => {
+      const fallback = el('div', { className: 'user-avatar', textContent: initials,
+        style: `width:${size}px;height:${size}px;` });
+      img.replaceWith(fallback);
+    });
+    return img;
+  }
+  return el('div', { className: 'user-avatar', textContent: initials,
+    style: `width:${size}px;height:${size}px;` });
+}
+
+function openAvatarModal(u) {
+  let selectedDataUrl = null;
+
+  const preview = avatarEl(u, 96);
+  const previewWrap = el('div', { className: 'avatar-preview-wrap' }, preview);
+
+  const fileInput = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp', style: 'display:none' });
+  const errBox = el('div', { className: 'error-msg', style: 'margin-top:10px' });
+
+  const chooseBtn = el('button', { className: 'btn btn-ghost', textContent: 'Choose image…',
+    onclick: () => fileInput.click() });
+
+  fileInput.addEventListener('change', () => {
+    errBox.textContent = '';
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    if (!/^image\/(png|jpe?g|webp)$/.test(file.type)) {
+      errBox.textContent = 'Please choose a PNG, JPEG or WebP image.'; return;
+    }
+    if (file.size > 3 * 1024 * 1024) {
+      errBox.textContent = 'Image is too large. Please use one under 3MB.'; return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      selectedDataUrl = reader.result;
+      // live preview
+      const newPreview = el('img', { className: 'user-avatar user-avatar-img',
+        src: selectedDataUrl, alt: 'Preview', style: 'width:96px;height:96px;' });
+      previewWrap.innerHTML = '';
+      previewWrap.appendChild(newPreview);
+    };
+    reader.onerror = () => { errBox.textContent = 'Could not read that file.'; };
+    reader.readAsDataURL(file);
+  });
+
+  const saveBtn = el('button', { className: 'btn btn-primary', textContent: 'Save photo',
+    onclick: async () => {
+      if (!selectedDataUrl) { errBox.textContent = 'Choose an image first.'; return; }
+      saveBtn.disabled = true;
+      try {
+        const res = await POST(`/avatars/${u.id}`, { image: selectedDataUrl });
+        u.avatarUrl = res.avatarUrl;
+        closeModal();
+        toast('Photo updated', 'success');
+        loadAdminPage();
+      } catch (err) { errBox.textContent = err.message; saveBtn.disabled = false; }
+    } });
+
+  const footer = [el('button', { className: 'btn btn-ghost', textContent: 'Cancel', onclick: () => closeModal() })];
+  if (u.avatarUrl) {
+    footer.push(el('button', { className: 'btn btn-ghost dev-danger', textContent: 'Remove photo',
+      onclick: async () => {
+        if (!confirm('Remove this user\'s photo and revert to initials?')) return;
+        try { await DELETE(`/avatars/${u.id}`); u.avatarUrl = null; closeModal(); toast('Photo removed', 'success'); loadAdminPage(); }
+        catch (err) { errBox.textContent = err.message; }
+      } }));
+  }
+  footer.push(saveBtn);
+
+  const body = el('div', { className: 'avatar-modal' },
+    previewWrap,
+    el('p', { className: 'avatar-hint', textContent: `Profile photo for ${u.fullName}. Images are cropped to a square and resized automatically.` }),
+    chooseBtn, fileInput, errBox,
+  );
+  openModal('Profile Photo', body, footer);
+}
+
 function renderUserList(users) {
   const container = document.getElementById('userList');
   container.innerHTML = '';
@@ -1903,8 +1995,7 @@ function renderUserList(users) {
   }
   users.forEach(u => {
     const card = el('div', { className: `user-card ${u.isActive ? '' : 'disabled'}`, role: 'listitem' });
-    const initials = (u.fullName || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
-    card.appendChild(el('div', { className: 'user-avatar', textContent: initials }));
+    card.appendChild(avatarEl(u, 40));
     const info = el('div', { className: 'user-info' });
     info.appendChild(el('div', { className: 'user-name', textContent: u.fullName }));
     const meta = el('div', { className: 'user-meta' });
@@ -1932,6 +2023,13 @@ function renderUserList(users) {
     if (!canEdit) pwBtn.disabled = true;
     actions.appendChild(editBtn);
     actions.appendChild(pwBtn);
+    // Photo button — manager and above may manage a user's profile image.
+    if (hasRole('manager') && canEdit) {
+      const photoBtn = el('button', { className: 'btn btn-ghost', textContent: u.avatarUrl ? 'Photo ✓' : 'Photo',
+        title: 'Upload or change this user\'s profile photo',
+        onclick: () => openAvatarModal(u) });
+      actions.appendChild(photoBtn);
+    }
     // Show 2FA button for non-operators (2FA is optional)
     if (u.role !== 'operator') {
       const fa2Btn = el('button', {

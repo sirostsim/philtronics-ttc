@@ -2991,3 +2991,10 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
 .rc-qty-card { flex: 1 1 auto; min-width: 0; }
 .rc-qty-qty { flex: 0 0 96px; }
 .rc-qty-row label { display: block; margin-bottom: 8px; }
+
+/* Profile avatar photos */
+.user-avatar-img { object-fit: cover; padding: 0; border: 1px solid var(--border2); }
+.avatar-preview-wrap { display: flex; justify-content: center; margin-bottom: 14px; }
+.avatar-preview-wrap .user-avatar { font-size: 34px; }
+.avatar-modal { text-align: center; }
+.avatar-hint { font-size: 13px; color: var(--text2); margin: 0 0 16px; line-height: 1.5; }
