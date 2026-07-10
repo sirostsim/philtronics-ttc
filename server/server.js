@@ -74,6 +74,7 @@ app.use('/api/availability', require('./routes/availability'));
 app.use('/api/admin/reasons', require('./routes/admin-reasons'));
 app.use('/api/messages', require('./routes/messages'));
 app.use('/api/pause',    require('./routes/pause'));
+app.use('/api/dev-requests', require('./routes/dev-requests'));
 
 // Item-master autocomplete
 app.get('/api/items', requireAuth, async (req, res) => {

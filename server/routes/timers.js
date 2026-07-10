@@ -130,6 +130,11 @@ function formatTimer(t) {
 
     department:         t.department || 'Production',
 
+    // Only present when the row was joined against users (the list query).
+    // Detail/start/stop rows select from timers alone, so this stays null and
+    // the client falls back to initials.
+    avatarUrl:          t.avatar_url || null,
+
   };
 
 }
@@ -816,7 +821,7 @@ router.get('/', async (req, res) => {
 
     const rows = await query(
 
-      `SELECT t.*, u.username,
+      `SELECT t.*, u.username, u.avatar_url,
 
               tt.hours AS target_hours, tt.minutes AS target_minutes
 
