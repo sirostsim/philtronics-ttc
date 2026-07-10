@@ -1969,6 +1969,10 @@ button.topbar-brand:focus-visible {
   gap: 6px;
 }
 
+/* Wallboard avatars are 22-28px; .user-avatar's 16px initials would overflow.
+   avatarEl() sets width/height inline, so only font-size needs overriding. */
+.wb-operator-row .user-avatar { font-size: 11px; }
+
 .presence-dot {
   width: 8px;
   height: 8px;

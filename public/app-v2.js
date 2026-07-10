@@ -3871,6 +3871,7 @@ async function refreshDeptWallboard(dept) {
         className: 'presence-dot ' + (onlineSet.has(t.operatorId) ? 'online' : 'offline'),
         title: onlineSet.has(t.operatorId) ? 'Session active' : 'Not connected',
       }));
+      opRow.appendChild(avatarEl({ fullName: t.operatorName, avatarUrl: t.avatarUrl }, 28));
       opRow.appendChild(el('span', { textContent: t.operatorName }));
       tile.appendChild(opRow);
       tile.appendChild(el('div', {
@@ -4063,6 +4064,7 @@ async function refreshDeptWallboardCompact(dept) {
         className: 'presence-dot ' + (onlineSet.has(t.operatorId) ? 'online' : 'offline'),
         title: onlineSet.has(t.operatorId) ? 'Session active' : 'Not connected',
       }));
+      opRow.appendChild(avatarEl({ fullName: t.operatorName, avatarUrl: t.avatarUrl }, 22));
       opRow.appendChild(el('span', { textContent: t.operatorName }));
       tile.appendChild(opRow);
       tile.appendChild(el('div', { className: 'wbc-item', textContent: t.itemNumber }));
