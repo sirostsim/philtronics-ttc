@@ -82,10 +82,9 @@ router.post('/:userId', async (req, res) => {
     // Cache-busting query param is added to the stored URL so browsers refresh.
     const key = `avatars/${target.id}.jpg`;
     const publicUrl = await r2.putObject(key, out, 'image/jpeg');
-    const bustedUrl = `${publicUrl}?v=${Date.now()}`;
 
-    await query('UPDATE users SET avatar_url = $1, updated_at = NOW() WHERE id = $2', [bustedUrl, target.id]);
-    res.json({ ok: true, avatarUrl: bustedUrl });
+    await query('UPDATE users SET avatar_url = $1, updated_at = NOW() WHERE id = $2', [publicUrl, target.id]);
+    res.json({ ok: true, avatarUrl: publicUrl });
   } catch (err) {
     console.error('Avatar upload error:', err.message);
     res.status(500).json({ error: 'Could not upload image.' });
