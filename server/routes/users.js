@@ -27,6 +27,7 @@ function safeUser(u) {
     role:         u.role,
     isActive:     u.is_active,
     department:   u.department || 'Production',
+    avatarUrl: u.avatar_url || null,
     totpEnabled:  !!u.totp_enabled,
     createdAt:    u.created_at,
     updatedAt:    u.updated_at,
