@@ -16,6 +16,7 @@ const { requireAuth }     = require('./middleware/auth');
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
+app.use('/api/avatars', express.json({ limit: '6mb' }));
 app.use(express.json({ limit: '64kb' }));
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
