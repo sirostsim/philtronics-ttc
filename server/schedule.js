@@ -132,18 +132,19 @@ async function runSchedule() {
       }
 
       // At start of working day, clear overtime_override flags so the schedule
-      // will auto-pause again at end of day if operator forgets to stop
+      // will auto-pause again at end of day if operator forgets to stop.
+      // An override timer is normally running (paused_at NULL), so this must not
+      // filter on paused_at; the COALESCE keeps the arithmetic valid either way.
       if (isStartOfWorkingDay()) {
         await query(
           `UPDATE timers SET
              total_paused_seconds = total_paused_seconds +
-               EXTRACT(EPOCH FROM (NOW() - paused_at))::int,
+               COALESCE(EXTRACT(EPOCH FROM (NOW() - paused_at))::int, 0),
              paused_at    = NULL,
              pause_reason = NULL,
              pause_type   = NULL,
              updated_at   = NOW()
            WHERE status = 'active'
-             AND paused_at IS NOT NULL
              AND pause_type = 'overtime_override'`,
           []
         );
