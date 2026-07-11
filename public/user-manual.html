@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Work Time — User Manual</title>
+<title>Work Time: User Manual</title>
 <style>
 :root {
   --navy: #1f3864; --blue: #2e75b6; --amber: #f0b429;
@@ -103,7 +103,7 @@ tbody tr:nth-child(even) td { background: var(--bg-soft); }
   <div class="badge">User Manual</div>
   <h1>Work Time</h1>
   <p class="sub">Shopfloor Time-Tracking System</p>
-  <p class="meta">Philtronics Ltd &nbsp;&middot;&nbsp; Version 3.0 &nbsp;&middot;&nbsp; 4 June 2026</p>
+  <p class="meta">Philtronics Ltd &nbsp;&middot;&nbsp; Version 3.1 &nbsp;&middot;&nbsp; 11 July 2026</p>
 </div>
 <div class="wrap">
   <nav class="toc">
@@ -166,6 +166,7 @@ can reach it.</p>
 <tr><td>Target Times</td><td>Set and adjust target times per item</td><td>Manager</td></tr>
 <tr><td>Reports</td><td>Productivity, quality and build-time reporting and CSV export</td><td>Manager</td></tr>
 <tr><td>Charts</td><td>Visual trends and breakdowns</td><td>Manager</td></tr>
+<tr><td>Dev Requests</td><td>Suggest, discuss and vote on improvements to the system</td><td>Supervisor</td></tr>
 <tr><td>Admin</td><td>Manage user accounts, items and configuration</td><td>Administrator</td></tr>
 </tbody>
 </table>
@@ -181,7 +182,7 @@ more. Your level is set by an administrator when your account is created.</p>
 <thead><tr><th>Level</th><th>Can do</th></tr></thead>
 <tbody>
 <tr><td><strong>Operator</strong></td><td>Run their own timers (start, pause, stop, raise a hand, cancel within the first minute), and view their own history.</td></tr>
-<tr><td><strong>Supervisor</strong></td><td>Everything an operator can, plus the Home overview and the wall board for their own department, see and respond to raised hands, message operators, and cancel or adjust any timer.</td></tr>
+<tr><td><strong>Supervisor</strong></td><td>Everything an operator can, plus the Home overview and the wall board for their own department, see and respond to raised hands, message operators, cancel or adjust any timer, and post in Dev Requests.</td></tr>
 <tr><td><strong>Manager</strong></td><td>Everything a supervisor can, plus all departments' wall boards, the Dashboard, Target Times, Reports and Charts, and the Time Check review workflow.</td></tr>
 <tr><td><strong>Administrator</strong></td><td>Everything a manager can, plus user management, item management and system configuration.</td></tr>
 <tr><td><strong>Superuser</strong></td><td>Full access, including managing administrator and superuser accounts.</td></tr>
@@ -203,8 +204,14 @@ run one job at a time.</p>
 <li>On the <strong>Timer</strong> page, enter the <strong>Item Number</strong>.
 You can type it or tap the scan button to read a QR code or barcode with the
 device camera.</li>
-<li>Optionally add a <strong>Workstation</strong>, <strong>W/O Number</strong>
-and <strong>Route Card No.</strong> Each can also be scanned.</li>
+<li>Optionally add a <strong>Workstation</strong> and <strong>W/O Number</strong>
+(each can be typed or scanned), and a <strong>Route Card No.</strong>, which is
+typed: route card numbers are handwritten on the paperwork, so there is nothing
+to scan.</li>
+<li>If one run covers several contiguous route cards, set the
+<strong>Quantity</strong> to how many. The starting Route Card No. must be a
+number; when you stop, the run is split into one completed record per card,
+numbered on from your starting card, so every card is traceable on its own.</li>
 <li>Tick <strong>Time Check</strong> only if this run is a measured timing (see
 the note below). Leave it unticked for an ordinary job.</li>
 <li>Select <strong>Start</strong>. The stopwatch begins and, if a target time is
@@ -219,6 +226,19 @@ measured time to set the official target time for that item. Only tick it when
 you have been asked to perform a timed run.
 </div>
 
+<h3>Returning to an assembly</h3>
+<p>If you start a job for an Item Number, W/O Number and Route Card No. that
+already has recorded time in the last week, the system asks why you are coming
+back to it, so the run is recorded correctly:</p>
+<ul>
+<li><strong>Continuing the build</strong>: the assembly is not yet finished and
+you are picking up where it was left.</li>
+<li><strong>Re-Work Request</strong>: the assembly was completed but has been
+returned for correction. Re-work runs show separately (in amber) on the wall
+board and count against the Right First Time quality figures, so it matters that
+you choose the right one.</li>
+</ul>
+
 <h3>While a job is running</h3>
 <ul>
 <li><strong>Stop</strong> finishes the job and records the time.</li>
@@ -232,9 +252,15 @@ minute yourself; after that, a supervisor must do it.</li>
 
 <h3>Working outside normal hours</h3>
 <p>Outside working hours the system automatically pauses active timers. If you are
-genuinely working overtime, select the amber
-<strong>Override — Working Overtime</strong> button that appears, and your timer
-will keep running and will not be auto-paused again that day.</p>
+genuinely working overtime, select the amber <strong>Override</strong> (Working
+Overtime) button that appears, and your timer will keep running and will not be
+auto-paused again that day.</p>
+
+<h3>Raising a hand without a job</h3>
+<p>You can raise a hand even when you are not running a job, using the
+<strong>Raise Hand</strong> bar on the Timer page. A supervisor is alerted just
+as if you had raised it on a job. Lower it yourself once you have been helped, or
+a supervisor can lower it for you.</p>
 
 <h3>Today's jobs and history</h3>
 <p>Completed jobs for the day appear beneath the timer. The
@@ -258,11 +284,11 @@ board, and can respond to operators in real time.</p>
 <p>Home gives a live picture of the floor. The <strong>Today at a Glance</strong>
 card shows active jobs and completed counts, and two attention tiles sit beneath:</p>
 <ul>
-<li><strong>Raised Hands</strong> — how many operators currently need help. Tap the
-tile to see who, message them, or lower a hand once they have been helped. The
-count updates live.</li>
-<li><strong>Time Checks to Review</strong> <span class="role-pill">Manager</span>
-— measured runs waiting to be reviewed (covered in the Manager guide).</li>
+<li><strong>Raised Hands</strong>: how many operators currently need help,
+including any raised without an active job. Tap the tile to see who, message
+them, or lower a hand once they have been helped. The count updates live.</li>
+<li><strong>Time Checks to Review</strong> <span class="role-pill">Manager</span>:
+measured runs waiting to be reviewed (covered in the Manager guide).</li>
 </ul>
 
 <h3>Wall Boards</h3>
@@ -294,6 +320,18 @@ or "Lower All", can also clear it).</li>
 <p>Supervisors and above can cancel any job (not just within the first minute)
 and can adjust a job's start or finish time when a correction is needed. Both
 actions ask for a reason and are recorded.</p>
+
+<h3>Dev Requests</h3>
+<p>Dev Requests is a shared list for suggesting improvements to the system.
+Anyone from Supervisor upwards can raise a request, comment on others, and vote
+on the ones they would like to see. Each request keeps a running discussion and
+a status (for example Requested, Under Review, Planned, In Progress or Done).</p>
+<div class="callout">
+<span class="h">Who changes what</span>
+You can edit your own requests and comments. Setting a request's status and
+removing entries are reserved for the Superuser, so the list stays a reliable
+picture of what is planned. A request stays open for discussion in every status.
+</div>
 </section>
 <section id="manager"><h2><span class="num">7</span>Manager Guide</h2>
 <p class="lead">Managers add full visibility across departments, target-time
@@ -332,13 +370,13 @@ dismissed.
 <p>The Reports page provides management reporting, each available on screen and as
 a CSV download:</p>
 <ul>
-<li><strong>Productivity</strong> — active time against available time per working
+<li><strong>Productivity</strong>: active time against available time per working
 day, compared with the configurable target percentage.</li>
-<li><strong>Quality (Right First Time)</strong> — RFT rate and a breakdown of
+<li><strong>Quality (Right First Time)</strong>: RFT rate and a breakdown of
 rework by item and operator.</li>
-<li><strong>Assembly build times</strong> — combined and elapsed build time per
+<li><strong>Assembly build times</strong>: combined and elapsed build time per
 item, work order and route card, accounting for multiple operators on one build.</li>
-<li><strong>Job timings</strong> — the underlying completed-job data.</li>
+<li><strong>Job timings</strong>: the underlying completed-job data.</li>
 </ul>
 
 <h3>Charts</h3>
@@ -357,6 +395,8 @@ and department.</li>
 <li>Administrators can create accounts up to Manager level; only a Superuser can
 create Administrator or Superuser accounts, and Superuser accounts are visible
 only to other Superusers.</li>
+<li>Set a <strong>profile photo</strong> for a user. Photos appear on the wall
+board cards and user lists; anyone without one shows their initials instead.</li>
 </ul>
 
 <h3>Items and configuration</h3>
@@ -398,7 +438,7 @@ your password.</p>
 </table>
 </section>
   <div class="footer">
-    Work Time User Manual &middot; Version 3.0 &middot; 4 June 2026<br>
+    Work Time User Manual &middot; Version 3.1 &middot; 11 July 2026<br>
     Prepared by SRS Support Limited for Philtronics Ltd
   </div>
 </div>
