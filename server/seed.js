@@ -61,4 +61,13 @@ async function seed() {
 
 seed()
   .then(() => process.exit(0))
-  .catch(err => { console.error('Seed failed:', err.message); process.exit(1); });
+  .catch(err => {
+    // Non-fatal: seeding must never gate server boot. The start command is
+    // `node seed.js && node server.js`, so a non-zero exit here would stop the
+    // server from ever starting (a failed healthcheck and, after the restart
+    // retries, a full outage). Migrations are re-run inside server.js and still
+    // block boot there on a genuine schema failure, so exiting 0 here only lets
+    // a data-seed hiccup (e.g. a default account already renamed) pass through.
+    console.error('Seed failed (continuing to server start anyway):', err.message);
+    process.exit(0);
+  });

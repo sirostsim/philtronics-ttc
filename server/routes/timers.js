@@ -14,7 +14,7 @@ const express  = require('express');
 
 const { v4: uuidv4 } = require('uuid');
 
-const { query, queryOne } = require('../db');
+const { query, queryOne, getClient } = require('../db');
 
 const { requireAuth, hasRole } = require('../middleware/auth');
 
@@ -282,268 +282,143 @@ router.post('/start', validate(schemas.startTimer), async (req, res) => {
 // ─── POST /api/timers/:id/stop ────────────────────────────────────────────────
 
 router.post('/:id/stop', validate(schemas.stopTimer), async (req, res) => {
+  const user = req.user;
+  const { notes } = req.body;
 
+  // Fast pre-checks on the pool before taking a dedicated client. The real
+  // guard against a double-stop is the FOR UPDATE lock + status re-check below;
+  // these just return tidy errors early.
   try {
-
-    const user  = req.user;
-
-    const timer = await queryOne('SELECT * FROM timers WHERE id = $1', [req.params.id]);
-
-
-
-    if (!timer) return res.status(404).json({ error: 'Timer not found.' });
-
-    if (timer.status !== 'active') return res.status(409).json({ error: 'Timer is not active.' });
-
-    if (timer.operator_id !== user.id && !hasRole(user, 'supervisor')) {
-
+    const pre = await queryOne('SELECT operator_id, status FROM timers WHERE id = $1', [req.params.id]);
+    if (!pre) return res.status(404).json({ error: 'Timer not found.' });
+    if (pre.status !== 'active') return res.status(409).json({ error: 'Timer is not active.' });
+    if (pre.operator_id !== user.id && !hasRole(user, 'supervisor')) {
       return res.status(403).json({ error: "You cannot stop another operator's timer." });
-
     }
+  } catch (err) {
+    console.error('Stop timer pre-check error:', err.message);
+    return res.status(500).json({ error: 'Could not stop timer. Please try again.' });
+  }
 
+  // Everything that must reconcile happens in one transaction: lock the row,
+  // re-check it is still active (so two near-simultaneous stops cannot both
+  // proceed), bank any final pause, write the stopped duration, and expand a
+  // multi-card run into one row per card. If the expansion throws part way, the
+  // whole stop rolls back and the run is left intact rather than half-written
+  // with a shrunken time.
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
 
+    const locked = await client.query(
+      "SELECT * FROM timers WHERE id = $1 AND status = 'active' FOR UPDATE",
+      [req.params.id]
+    );
+    if (!locked.rows.length) {
+      // Another stop won the race between the pre-check and the lock.
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Timer is not active.' });
+    }
+    const timer = locked.rows[0];
 
-    const { notes } = req.body;
-
-
-
-    // If paused, accumulate final pause period before stopping
-
+    // If paused, bank the final pause period before stopping. The row is locked,
+    // so the scheduler cannot flip paused_at underneath us here.
+    let totalPaused = timer.total_paused_seconds || 0;
     if (timer.paused_at) {
-
-      await query(
-
-        `UPDATE timers SET
-
-           total_paused_seconds = total_paused_seconds +
-
-             EXTRACT(EPOCH FROM (NOW() - paused_at))::int,
-
-           paused_at = NULL, pause_reason = NULL, pause_type = NULL
-
-         WHERE id = $1`,
-
+      const r = await client.query(
+        "UPDATE timers SET total_paused_seconds = total_paused_seconds + EXTRACT(EPOCH FROM (NOW() - paused_at))::int, paused_at = NULL, pause_reason = NULL, pause_type = NULL WHERE id = $1 RETURNING total_paused_seconds",
         [timer.id]
-
       );
-
-      // Reload to get updated total_paused_seconds
-
-      const refreshed = await queryOne('SELECT * FROM timers WHERE id = $1', [timer.id]);
-
-      Object.assign(timer, refreshed);
-
+      totalPaused = r.rows[0].total_paused_seconds;
     }
 
-
-
-    // Net duration = total elapsed minus all paused time
-
+    // Net duration = total elapsed minus all paused time.
     const completedAt     = new Date().toISOString();
-
     const rawSeconds      = Math.round((Date.now() - new Date(timer.started_at).getTime()) / 1000);
+    const durationSeconds = Math.max(0, rawSeconds - totalPaused);
 
-    const durationSeconds = Math.max(0, rawSeconds - (timer.total_paused_seconds || 0));
-
-
-
-    await query(
-
-      `UPDATE timers
-
-       SET completed_at = $1, duration_seconds = $2, status = 'completed',
-
-           notes = COALESCE($3, notes), updated_at = NOW(), updated_by = $4
-
-       WHERE id = $5`,
-
+    await client.query(
+      "UPDATE timers SET completed_at = $1, duration_seconds = $2, status = 'completed', notes = COALESCE($3, notes), updated_at = NOW(), updated_by = $4 WHERE id = $5",
       [completedAt, durationSeconds, notes || null, user.id, timer.id]
-
     );
 
-
-
-    // ── Multi-card run expansion ──────────────────────────────────────────────
-
-    // If this run covered several contiguous route cards (quantity > 1 with a
-
-    // numeric starting card), expand it into one completed row per card so each
-
-    // card is individually traceable and independently reworkable. The time is
-
-    // divided as evenly as possible; any remainder stays on the first card so the
-
-    // per-card durations sum back to the full run duration exactly (this keeps
-
-    // productivity — which sums duration per operator — correct, while each card
-
-    // carries its own per-item build time).
-
-    const runQty   = timer.quantity || 1;
-
+    // Multi-card run expansion: split into one completed row per card, each
+    // carrying its share (remainder on the first card so the shares sum back to
+    // the full duration exactly).
+    const runQty    = timer.quantity || 1;
     const startCard = /^[0-9]+$/.test(String(timer.route_card_number || '').trim())
-
                       ? parseInt(timer.route_card_number, 10) : NaN;
-
     if (runQty > 1 && !isNaN(startCard)) {
-
-      const base      = Math.floor(durationSeconds / runQty);
-
-      const remainder = durationSeconds - base * runQty;
-
-      const runId     = uuidv4();
-
-      try {
-
-        // First card = the original row: keep it, set its share + run linkage,
-
-        // and mark it as a single card now (quantity 1).
-
-        await query(
-
-          `UPDATE timers
-
-             SET route_card_number = $1, duration_seconds = $2, quantity = 1, run_id = $3,
-
-                 updated_at = NOW()
-
-           WHERE id = $4`,
-
-          [String(startCard), base + remainder, runId, timer.id]
-
+      const shares = splitRunDuration(durationSeconds, runQty);
+      const runId  = uuidv4();
+      // First card = the original row: keep it, set its share + run linkage.
+      await client.query(
+        "UPDATE timers SET route_card_number = $1, duration_seconds = $2, quantity = 1, run_id = $3, updated_at = NOW() WHERE id = $4",
+        [String(startCard), shares[0], runId, timer.id]
+      );
+      // Remaining cards = new completed rows cloned from the original.
+      for (let i = 1; i < runQty; i++) {
+        await client.query(
+          "INSERT INTO timers (id, item_number, operator_id, operator_name, started_at, completed_at, duration_seconds, status, time_check, workstation, wo_number, route_card_number, quantity, run_id, timer_category, department, total_paused_seconds, created_by, updated_by) VALUES ($1,$2,$3,$4,$5,$6,$7,'completed',$8,$9,$10,$11,1,$12,$13,$14,0,$15,$15)",
+          [
+            uuidv4(), timer.item_number, timer.operator_id, timer.operator_name,
+            timer.started_at, completedAt, shares[i], timer.time_check || false,
+            timer.workstation || null, timer.wo_number || null,
+            String(startCard + i), runId, timer.timer_category || 'work',
+            timer.department || 'Production', user.id,
+          ]
         );
-
-        // Remaining cards = new completed rows, cloned from the original.
-
-        for (let i = 1; i < runQty; i++) {
-
-          await query(
-
-            `INSERT INTO timers
-
-               (id, item_number, operator_id, operator_name, started_at, completed_at,
-
-                duration_seconds, status, time_check, workstation, wo_number,
-
-                route_card_number, quantity, run_id, timer_category, department,
-
-                total_paused_seconds, created_by, updated_by)
-
-             VALUES ($1,$2,$3,$4,$5,$6,$7,'completed',$8,$9,$10,$11,1,$12,$13,$14,0,$15,$15)`,
-
-            [
-
-              uuidv4(), timer.item_number, timer.operator_id, timer.operator_name,
-
-              timer.started_at, completedAt, base, timer.time_check || false,
-
-              timer.workstation || null, timer.wo_number || null,
-
-              String(startCard + i), runId, timer.timer_category || 'work',
-
-              timer.department || 'Production', user.id,
-
-            ]
-
-          );
-
-        }
-
-      } catch (expandErr) {
-
-        // If expansion fails, the original single completed row still stands —
-
-        // the run is recorded, just not split. Log for follow-up.
-
-        console.error('Run expansion error (run recorded as single row):', expandErr.message);
-
       }
-
     }
 
+    await client.query('COMMIT');
 
+    // ---- best-effort follow-ups, outside the transaction ----
 
-    // Close any open unavailability period for this timer (e.g. stopped while
-
-    // paused under a non-available reason).
-
+    // Close any open unavailability period for this timer.
     try {
-
       await query(
-
-        `UPDATE unavailability_periods SET ended_at = NOW()
-
-         WHERE timer_id = $1 AND ended_at IS NULL`,
-
+        "UPDATE unavailability_periods SET ended_at = NOW() WHERE timer_id = $1 AND ended_at IS NULL",
         [timer.id]
-
       );
-
-    } catch (e) { /* table may not exist yet — non-fatal */ }
-
-
+    } catch (e) { /* table may not exist yet -- non-fatal */ }
 
     const updated = await queryOne('SELECT * FROM timers WHERE id = $1', [timer.id]);
 
-
-
     // Time Check jobs become a pending target review for managers.
-
     if (updated.time_check) {
-
-      await query(
-
-        `UPDATE timers SET tc_review_status = 'pending' WHERE id = $1`,
-
-        [updated.id]
-
-      );
-
-      const tgt = await queryOne(
-
-        'SELECT hours, minutes FROM target_times WHERE item_number = $1',
-
-        [updated.item_number]
-
-      );
-
-      // Live nudge to any connected managers; the homepage queue is the durable copy.
-
+      await query("UPDATE timers SET tc_review_status = 'pending' WHERE id = $1", [updated.id]);
+      const tgt = await queryOne('SELECT hours, minutes FROM target_times WHERE item_number = $1', [updated.item_number]);
       pushToRole('manager', {
-
         type:                 'time_check_review',
-
         timerId:              updated.id,
-
         itemNumber:           updated.item_number,
-
         operatorName:         updated.operator_name,
-
         measuredSeconds:      updated.duration_seconds,
-
         currentTargetSeconds: tgt ? (tgt.hours * 3600) + (tgt.minutes * 60) : null,
-
         completedAt:          updated.completed_at,
-
       });
-
     }
 
-
-
     res.json(formatTimer(updated));
-
   } catch (err) {
-
+    try { await client.query('ROLLBACK'); } catch (_) { /* already ended */ }
     console.error('Stop timer error:', err.message);
-
     res.status(500).json({ error: 'Could not stop timer. Please try again.' });
-
+  } finally {
+    client.release();
   }
-
 });
 
-
+// Split a run's total duration into per-card shares that sum back to the total
+// exactly: even division, with any remainder placed on the first card.
+function splitRunDuration(durationSeconds, runQty) {
+  const base      = Math.floor(durationSeconds / runQty);
+  const remainder = durationSeconds - base * runQty;
+  const shares    = new Array(runQty).fill(base);
+  shares[0]       = base + remainder;
+  return shares;
+}
 
 // ─── POST /api/timers/:id/cancel ──────────────────────────────────────────────
 
@@ -661,6 +536,16 @@ router.patch('/:id', validate(schemas.adjustTimer), async (req, res) => {
 
     if (!timer) return res.status(404).json({ error: 'Timer not found.' });
 
+    // A card from a multi-card run carries the FULL run window in its
+    // started_at/completed_at but only its own share in duration_seconds.
+    // Recomputing duration from that window would multiply this card's time by
+    // roughly the run quantity and break the run's reconciliation, so refuse.
+    if (timer.run_id) {
+      return res.status(400).json({
+        error: 'This record is one card of a multi-card run and cannot be time-adjusted on its own.',
+      });
+    }
+
 
 
     const { startedAt, completedAt, reason, notes } = req.body;
@@ -675,13 +560,19 @@ router.patch('/:id', validate(schemas.adjustTimer), async (req, res) => {
 
     if (newStart && newEnd) {
 
-      durationSeconds = Math.round((new Date(newEnd) - new Date(newStart)) / 1000);
+      const span = Math.round((new Date(newEnd) - new Date(newStart)) / 1000);
 
-      if (durationSeconds < 0) {
+      if (span < 0) {
 
         return res.status(400).json({ error: 'Adjusted times would produce a negative duration.' });
 
       }
+
+      // Duration excludes paused time, matching how a timer is stopped. Without
+      // this subtraction, adjusting a timer that was ever paused (including any
+      // overnight auto-pause) silently re-inflates its duration by the paused span.
+
+      durationSeconds = Math.max(0, span - (timer.total_paused_seconds || 0));
 
     }
 
@@ -1440,4 +1331,6 @@ router.post('/:id/lower-hand', async (req, res) => {
 
 
 module.exports = router;
+// Exposed for unit testing the run-split maths without a database.
+module.exports.splitRunDuration = splitRunDuration;
 
