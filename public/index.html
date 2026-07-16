@@ -582,15 +582,18 @@
     <div class="page-content">
       <div class="page-heading-row">
         <h2 class="page-heading">Planner</h2>
-        <button id="btnAddPlanned" class="btn btn-primary" hidden>+ Add planned work</button>
+        <button id="btnAddPlanned" class="btn btn-primary" hidden>+ Add Planned Job</button>
       </div>
-      <p class="section-desc">Planned upcoming work shown as a timeline. Duration comes from the item's target time multiplied by quantity, or a manager's estimate when there is no target. Managers add and edit; supervisors and above can view.</p>
-      <div class="planner-toolbar" style="margin:12px 0;display:flex;align-items:center;gap:8px;">
-        <label for="plannerDeptFilter" class="section-desc" style="margin:0;">Department</label>
-        <select id="plannerDeptFilter"></select>
+      <div class="planner-controls">
+        <div class="planner-nav">
+          <button id="planPrev" class="btn btn-ghost btn-sm">‹ Prev</button>
+          <button id="planToday" class="btn btn-ghost btn-sm">Today</button>
+          <button id="planNext" class="btn btn-ghost btn-sm">Next ›</button>
+        </div>
+        <div id="plannerRange" class="planner-range"></div>
+        <select id="plannerDeptFilter" class="planner-dept"></select>
       </div>
-      <div id="plannerGantt" style="margin-top:8px;"></div>
-      <div id="plannerList" style="margin-top:24px;"></div>
+      <div id="plannerBoard" class="planner-board"></div>
     </div>
   </section>
 
