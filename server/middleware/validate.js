@@ -94,6 +94,27 @@ const schemas = {
   resetPassword: Joi.object({
     password: Joi.string().min(8).max(64).required(),
   }),
+
+  plannedWork: Joi.object({
+    itemNumber:       itemNumberSchema,
+    woNumber:         Joi.string().trim().max(100).optional().allow('', null),
+    startDate:        Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).required()
+      .messages({ 'string.pattern.base': 'Start date must be a valid date (YYYY-MM-DD).' }),
+    quantity:         Joi.number().integer().min(1).max(9999).required(),
+    estimatedHours:   Joi.number().integer().min(0).max(999).optional().allow(null),
+    estimatedMinutes: Joi.number().integer().min(0).max(59).optional().allow(null),
+    department:       Joi.string().valid('Production','Stores','Test and Inspection','PCB').optional().allow('', null),
+  }),
+
+  plannedWorkUpdate: Joi.object({
+    itemNumber:       itemNumberSchema.optional(),
+    woNumber:         Joi.string().trim().max(100).optional().allow('', null),
+    startDate:        Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    quantity:         Joi.number().integer().min(1).max(9999).optional(),
+    estimatedHours:   Joi.number().integer().min(0).max(999).optional().allow(null),
+    estimatedMinutes: Joi.number().integer().min(0).max(59).optional().allow(null),
+    department:       Joi.string().valid('Production','Stores','Test and Inspection','PCB').optional().allow('', null),
+  }).min(1),
 };
 
 module.exports = { validate, schemas };

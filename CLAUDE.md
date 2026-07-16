@@ -69,8 +69,9 @@ operator -> supervisor -> manager -> administrator -> superuser
   img-src. NOTE: Chart.js from cdnjs is currently blocked by script-src (charts
   page may not load) — a known outstanding issue; fix is adding
   https://cdnjs.cloudflare.com to script-src.
-- Migrations are additive and run on boot. Latest migration number is 019
-  (016 settings, 017 timer_quantity_runs, 018 dev_requests, 019 user_avatars).
+- Migrations are additive and run on boot. Latest migration number is 020
+  (016 settings, 017 timer_quantity_runs, 018 dev_requests, 019 user_avatars,
+  020 planned_work).
   008_add_pcb_department.sql is a deliberate no-op placeholder (SELECT 1).
 - Frontend uses safe DOM construction via an el(tag, attrs, ...children) helper
   and esc() for escaping; prefer these over innerHTML. Other helpers: api(),
