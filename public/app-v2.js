@@ -193,6 +193,7 @@ const PAGES = {
   'wbc-testinsp':{ id: 'page-testinsp-wbc',   label: '📺 Compact — Test & Insp',      minRole: 'supervisor', dept: 'Test and Inspection' },
   'wb-pcb':      { id: 'page-pcb-wb',          label: '📋 Wall Board — PCB',           minRole: 'supervisor', dept: 'PCB'                },
   'wbc-pcb':     { id: 'page-pcb-wbc',         label: '📺 Compact — PCB',              minRole: 'supervisor', dept: 'PCB'                },
+  planner:        { id: 'pagePlanner',           label: '📅 Planner',                    minRole: 'supervisor'  },
   dashboard:      { id: 'pageDashboard',         label: 'Dashboard',                     minRole: 'manager'     },
   targets:        { id: 'pageTargets',           label: 'Target Times',                  minRole: 'manager'     },
   reports:        { id: 'pageReports',           label: 'Reports',                       minRole: 'manager'     },
@@ -215,7 +216,7 @@ function buildNav() {
   list.innerHTML = '';
 
   // Non-wallboard pages — render as normal nav items
-  const topPages    = ['home','timer','history','dashboard','targets','reports','charts','devrequests','admin'];
+  const topPages    = ['home','timer','history','planner','dashboard','targets','reports','charts','devrequests','admin'];
   const wbPageKeys  = Object.keys(PAGES).filter(k => k.startsWith('wb-') || k.startsWith('wbc-'));
   const visibleWbs  = wbPageKeys.filter(k => canSeePage(PAGES[k]));
 
@@ -307,6 +308,7 @@ function navigateTo(page) {
   else if (page === 'timer')     loadTimerPage();
   else if (page === 'history')   loadHistoryPage();
   else if (page === 'dashboard') loadDashboard();
+  else if (page === 'planner')   loadPlannerPage();
   else if (page === 'targets')   loadTargetsPage();
   else if (page === 'reports')   loadReportsPage();
   else if (page === 'charts')    loadChartsPage();
@@ -4572,6 +4574,195 @@ function exportProductivityCSV() {
   if (from) params.set('from', new Date(from).toISOString());
   if (to)   { const d = new Date(to); d.setHours(23,59,59,999); params.set('to', d.toISOString()); }
   window.location.href = `/api/export/productivity/csv?${params}`;
+}
+
+// ── PLANNER PAGE ───────────────────────────────────────────────────────────────
+// Forward work planning. Supervisors+ view; managers add/edit/delete. Duration
+// comes from the item's target time (x quantity) or a manager estimate; the
+// Gantt bar length is the server-computed span across working days.
+
+const _plannerState = { dept: '' };
+
+function loadPlannerPage() {
+  const filter = document.getElementById('plannerDeptFilter');
+  if (filter && !filter._wired) {
+    filter._wired = true;
+    filter.appendChild(el('option', { value: '', textContent: 'All departments' }));
+    for (const d of DEPARTMENTS) filter.appendChild(el('option', { value: d, textContent: d }));
+    filter.addEventListener('change', () => { _plannerState.dept = filter.value; renderPlanner(); });
+  }
+  const addBtn = document.getElementById('btnAddPlanned');
+  if (addBtn) {
+    addBtn.hidden = !hasRole('manager');
+    if (!addBtn._wired) { addBtn._wired = true; addBtn.addEventListener('click', () => openPlannerForm(null)); }
+  }
+  renderPlanner();
+}
+
+async function renderPlanner() {
+  const gantt = document.getElementById('plannerGantt');
+  const list  = document.getElementById('plannerList');
+  if (gantt) gantt.innerHTML = '<div class="empty-state">Loading…</div>';
+  if (list)  list.innerHTML = '';
+  try {
+    const qs = _plannerState.dept ? `?department=${encodeURIComponent(_plannerState.dept)}` : '';
+    const items = await GET(`/planner${qs}`);
+    if (gantt) gantt.innerHTML = '';
+    if (!items.length) {
+      if (gantt) gantt.appendChild(el('div', { className: 'empty-state', textContent: 'No planned work yet.' }));
+      return;
+    }
+    if (gantt) gantt.appendChild(plannerGantt(items));
+    if (list)  list.appendChild(plannerTable(items));
+  } catch (err) {
+    if (gantt) { gantt.innerHTML = ''; gantt.appendChild(el('div', { className: 'error-msg', textContent: err.message })); }
+  }
+}
+
+function fmtPlanMins(m) {
+  if (m == null) return '—';
+  const h = Math.floor(m / 60), mm = m % 60;
+  return h > 0 ? (mm ? `${h}h ${mm}m` : `${h}h`) : `${mm}m`;
+}
+function planAddDays(iso, n) { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+function planDaysBetween(aISO, bISO) { return Math.round((new Date(bISO + 'T12:00:00Z') - new Date(aISO + 'T12:00:00Z')) / 86400000); }
+
+function plannerGantt(items) {
+  const COL = { target: '#2e75b6', estimate: '#f0b429', grid: 'rgba(255,255,255,0.07)', weekend: 'rgba(255,255,255,0.04)', text: '#9aa0b8', label: '#e6e9f2' };
+  let minStart = items[0].startDate, maxEnd = items[0].endDate;
+  for (const it of items) { if (it.startDate < minStart) minStart = it.startDate; if (it.endDate > maxEnd) maxEnd = it.endDate; }
+  minStart = planAddDays(minStart, -1);
+  maxEnd   = planAddDays(maxEnd, 1);
+  const totalDays = planDaysBetween(minStart, maxEnd) + 1;
+  const dayW = 26, rowH = 30, labelW = 220, headH = 34, padB = 12;
+  const W = labelW + totalDays * dayW;
+  const H = headH + items.length * rowH + padB;
+
+  const wrap = el('div', { style: 'overflow-x:auto' });
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, width: String(W), height: String(H), style: 'display:block;max-width:none' });
+
+  for (let i = 0; i < totalDays; i++) {
+    const iso = planAddDays(minStart, i);
+    const dow = new Date(iso + 'T12:00:00Z').getUTCDay();
+    const x = labelW + i * dayW;
+    if (dow === 0 || dow === 6) {
+      svg.appendChild(svgEl('rect', { x: String(x), y: String(headH), width: String(dayW), height: String(H - headH - padB), fill: COL.weekend }));
+    }
+    svg.appendChild(svgEl('line', { x1: String(x), y1: String(headH), x2: String(x), y2: String(H - padB), stroke: COL.grid, 'stroke-width': '1' }));
+    if (i % 7 === 0) {
+      const t = svgEl('text', { x: String(x + 2), y: '20', fill: COL.text, 'font-size': '11' });
+      t.textContent = iso.slice(5);
+      svg.appendChild(t);
+    }
+  }
+
+  items.forEach((it, r) => {
+    const y = headH + r * rowH;
+    const lbl = svgEl('text', { x: '6', y: String(y + rowH / 2 + 4), fill: COL.label, 'font-size': '12' });
+    lbl.textContent = it.woNumber ? `${it.itemNumber} · ${it.woNumber}` : it.itemNumber;
+    svg.appendChild(lbl);
+
+    const x0 = labelW + planDaysBetween(minStart, it.startDate) * dayW;
+    const span = Math.max(1, planDaysBetween(it.startDate, it.endDate) + 1);
+    const bw = Math.max(6, span * dayW - 4);
+    const bar = svgEl('rect', { x: String(x0 + 2), y: String(y + 5), width: String(bw), height: String(rowH - 12), rx: '4',
+      fill: it.durationSource === 'estimate' ? COL.estimate : COL.target, opacity: '0.9' });
+    const title = svgEl('title', {});
+    title.textContent = `${it.itemNumber}${it.woNumber ? ' / ' + it.woNumber : ''}\nQty ${it.quantity} · ${fmtPlanMins(it.totalMinutes)} (${it.durationSource})\n${it.startDate} to ${it.endDate} (${it.workingDays} working days)`;
+    bar.appendChild(title);
+    svg.appendChild(bar);
+
+    const dt = svgEl('text', { x: String(x0 + 2 + bw + 6), y: String(y + rowH / 2 + 4), fill: COL.text, 'font-size': '11' });
+    dt.textContent = fmtPlanMins(it.totalMinutes);
+    svg.appendChild(dt);
+  });
+
+  wrap.appendChild(svg);
+  return wrap;
+}
+
+function plannerTable(items) {
+  const canEdit = hasRole('manager');
+  const tbl = el('table', { className: 'dash-table' });
+  tbl.appendChild(el('thead', {}, el('tr', {},
+    el('th', { textContent: 'Item' }), el('th', { textContent: 'WO' }), el('th', { textContent: 'Start' }),
+    el('th', { textContent: 'Qty' }), el('th', { textContent: 'Duration' }), el('th', { textContent: 'Source' }),
+    el('th', { textContent: 'Finish' }), el('th', { textContent: '' })
+  )));
+  const tb = el('tbody', {});
+  for (const it of items) {
+    const actions = el('td', {});
+    if (canEdit) {
+      actions.appendChild(el('button', { className: 'btn btn-sm btn-ghost', textContent: 'Edit', onclick: () => openPlannerForm(it) }));
+      actions.appendChild(el('button', { className: 'btn btn-sm btn-ghost dev-danger', textContent: 'Delete', onclick: () => deletePlannerItem(it) }));
+    }
+    tb.appendChild(el('tr', {},
+      el('td', { textContent: it.itemNumber }),
+      el('td', { textContent: it.woNumber || '—' }),
+      el('td', { textContent: it.startDate }),
+      el('td', { textContent: String(it.quantity) }),
+      el('td', { textContent: fmtPlanMins(it.totalMinutes) }),
+      el('td', { textContent: it.durationSource }),
+      el('td', { textContent: it.endDate }),
+      actions,
+    ));
+  }
+  tbl.appendChild(tb);
+  return tbl;
+}
+
+function openPlannerForm(existing) {
+  const isEdit = !!existing;
+  const itemInput = el('input', { type: 'text', value: existing ? existing.itemNumber : '', placeholder: 'e.g. PHL-1001', autocapitalize: 'characters' });
+  const woInput   = el('input', { type: 'text', value: existing && existing.woNumber ? existing.woNumber : '', placeholder: 'Optional' });
+  const dateInput = el('input', { type: 'date', value: existing ? existing.startDate : new Date().toISOString().slice(0, 10) });
+  const qtyInput  = el('input', { type: 'number', min: '1', max: '9999', value: String(existing ? existing.quantity : 1) });
+  const hasEst    = existing && existing.estimatedMinutes != null;
+  const estHInput = el('input', { type: 'number', min: '0', max: '999', value: hasEst ? String(Math.floor(existing.estimatedMinutes / 60)) : '', placeholder: 'h' });
+  const estMInput = el('input', { type: 'number', min: '0', max: '59', value: hasEst ? String(existing.estimatedMinutes % 60) : '', placeholder: 'm' });
+  const deptSel   = el('select', {});
+  deptSel.appendChild(el('option', { value: '', textContent: '(none)' }));
+  for (const d of DEPARTMENTS) deptSel.appendChild(el('option', { value: d, textContent: d }));
+  deptSel.value = existing && existing.department ? existing.department : '';
+
+  const body = el('div', { className: 'planner-form' },
+    el('label', { className: 'dev-form-label', textContent: 'Item Number' }), itemInput,
+    el('label', { className: 'dev-form-label', textContent: 'W/O Number' }), woInput,
+    el('label', { className: 'dev-form-label', textContent: 'Start date' }), dateInput,
+    el('label', { className: 'dev-form-label', textContent: 'Quantity' }), qtyInput,
+    el('label', { className: 'dev-form-label', textContent: 'Estimated time per item (used only if the item has no target time)' }),
+    el('div', { style: 'display:flex;gap:8px' }, estHInput, estMInput),
+    el('label', { className: 'dev-form-label', textContent: 'Department' }), deptSel,
+  );
+  const save = el('button', { className: 'btn btn-primary', textContent: isEdit ? 'Save' : 'Add' });
+  save.addEventListener('click', async () => {
+    const payload = {
+      itemNumber: itemInput.value.trim(),
+      woNumber: woInput.value.trim(),
+      startDate: dateInput.value,
+      quantity: parseInt(qtyInput.value, 10) || 1,
+      estimatedHours: estHInput.value === '' ? null : parseInt(estHInput.value, 10),
+      estimatedMinutes: estMInput.value === '' ? null : parseInt(estMInput.value, 10),
+      department: deptSel.value || null,
+    };
+    try {
+      if (isEdit) await PATCH(`/planner/${existing.id}`, payload);
+      else await POST('/planner', payload);
+      closeModal();
+      toast(isEdit ? 'Planned work updated' : 'Planned work added', 'success');
+      renderPlanner();
+    } catch (err) { toast(err.message, 'error'); }
+  });
+  openModal(isEdit ? 'Edit planned work' : 'Add planned work', body, [
+    el('button', { className: 'btn btn-ghost', textContent: 'Cancel', onclick: () => closeModal() }),
+    save,
+  ]);
+}
+
+async function deletePlannerItem(it) {
+  if (!confirm(`Remove planned work for ${it.itemNumber}?`)) return;
+  try { await DELETE(`/planner/${it.id}`); toast('Removed', 'success'); renderPlanner(); }
+  catch (err) { toast(err.message, 'error'); }
 }
 
 // ── CHARTS PAGE ───────────────────────────────────────────────────────────────

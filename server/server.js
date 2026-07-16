@@ -69,6 +69,7 @@ app.use('/api/export',   require('./routes/export'));
 app.use('/api/users',    require('./routes/users'));
 app.use('/api/avatars',  require('./routes/avatars'));
 app.use('/api/targets',  require('./routes/targets'));
+app.use('/api/planner',  require('./routes/planner'));
 app.use('/api/time-checks', require('./routes/timechecks'));
 app.use('/api/availability', require('./routes/availability'));
 app.use('/api/admin/reasons', require('./routes/admin-reasons'));
