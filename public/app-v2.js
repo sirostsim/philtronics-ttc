@@ -4581,9 +4581,32 @@ function exportProductivityCSV() {
 // comes from the item's target time (x quantity) or a manager estimate; the
 // Gantt bar length is the server-computed span across working days.
 
-const _plannerState = { dept: '' };
+const _plannerState = { dept: '', viewStart: null };
+const _PLAN_WEEKS = 4;
+const _PLAN_DAYW  = 46;
+
+function plannerMonday(iso) {
+  const d = new Date(iso + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); // back to Monday
+  return d.toISOString().slice(0, 10);
+}
+function plannerAddDays(iso, n) { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+function plannerNiceDate(iso) { const d = new Date(iso + 'T12:00:00Z'); return d.getUTCDate() + ' ' + d.toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' }); }
+function fmtPlanMins(m) {
+  if (m == null) return '—';
+  const h = Math.floor(m / 60), mm = m % 60;
+  return h > 0 ? (mm ? h + 'h ' + mm + 'm' : h + 'h') : mm + 'm';
+}
+// Working days (Mon-Fri) across the current window. PT works Mon-Fri by default;
+// bar length uses the server's workingDays count so it stays correct regardless.
+function plannerWindowDays() {
+  const out = [];
+  for (let w = 0; w < _PLAN_WEEKS; w++) for (let i = 0; i < 5; i++) out.push(plannerAddDays(_plannerState.viewStart, w * 7 + i));
+  return out;
+}
 
 function loadPlannerPage() {
+  if (!_plannerState.viewStart) _plannerState.viewStart = plannerMonday(new Date().toISOString().slice(0, 10));
   const filter = document.getElementById('plannerDeptFilter');
   if (filter && !filter._wired) {
     filter._wired = true;
@@ -4591,6 +4614,10 @@ function loadPlannerPage() {
     for (const d of DEPARTMENTS) filter.appendChild(el('option', { value: d, textContent: d }));
     filter.addEventListener('change', () => { _plannerState.dept = filter.value; renderPlanner(); });
   }
+  const wire = (id, fn) => { const b = document.getElementById(id); if (b && !b._wired) { b._wired = true; b.addEventListener('click', fn); } };
+  wire('planPrev',  () => { _plannerState.viewStart = plannerAddDays(_plannerState.viewStart, -7); renderPlanner(); });
+  wire('planNext',  () => { _plannerState.viewStart = plannerAddDays(_plannerState.viewStart, 7);  renderPlanner(); });
+  wire('planToday', () => { _plannerState.viewStart = plannerMonday(new Date().toISOString().slice(0, 10)); renderPlanner(); });
   const addBtn = document.getElementById('btnAddPlanned');
   if (addBtn) {
     addBtn.hidden = !hasRole('manager');
@@ -4600,115 +4627,81 @@ function loadPlannerPage() {
 }
 
 async function renderPlanner() {
-  const gantt = document.getElementById('plannerGantt');
-  const list  = document.getElementById('plannerList');
-  if (gantt) gantt.innerHTML = '<div class="empty-state">Loading…</div>';
-  if (list)  list.innerHTML = '';
+  const board = document.getElementById('plannerBoard');
+  const range = document.getElementById('plannerRange');
+  if (!board) return;
+  board.innerHTML = '<div class="empty-state">Loading…</div>';
+  const days = plannerWindowDays();
+  if (range) range.textContent = plannerNiceDate(days[0]) + ' – ' + plannerNiceDate(days[days.length - 1]) + ' · Mon–Fri';
   try {
-    const qs = _plannerState.dept ? `?department=${encodeURIComponent(_plannerState.dept)}` : '';
-    const items = await GET(`/planner${qs}`);
-    if (gantt) gantt.innerHTML = '';
-    if (!items.length) {
-      if (gantt) gantt.appendChild(el('div', { className: 'empty-state', textContent: 'No planned work yet.' }));
-      return;
-    }
-    if (gantt) gantt.appendChild(plannerGantt(items));
-    if (list)  list.appendChild(plannerTable(items));
+    const qs = _plannerState.dept ? '?department=' + encodeURIComponent(_plannerState.dept) : '';
+    const items = await GET('/planner' + qs);
+    board.innerHTML = '';
+    board.appendChild(plannerBoard(items, days));
   } catch (err) {
-    if (gantt) { gantt.innerHTML = ''; gantt.appendChild(el('div', { className: 'error-msg', textContent: err.message })); }
+    board.innerHTML = '';
+    board.appendChild(el('div', { className: 'error-msg', style: 'padding:16px', textContent: err.message }));
   }
 }
 
-function fmtPlanMins(m) {
-  if (m == null) return '—';
-  const h = Math.floor(m / 60), mm = m % 60;
-  return h > 0 ? (mm ? `${h}h ${mm}m` : `${h}h`) : `${mm}m`;
-}
-function planAddDays(iso, n) { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
-function planDaysBetween(aISO, bISO) { return Math.round((new Date(bISO + 'T12:00:00Z') - new Date(aISO + 'T12:00:00Z')) / 86400000); }
-
-function plannerGantt(items) {
-  const COL = { target: '#2e75b6', estimate: '#f0b429', grid: 'rgba(255,255,255,0.07)', weekend: 'rgba(255,255,255,0.04)', text: '#9aa0b8', label: '#e6e9f2' };
-  let minStart = items[0].startDate, maxEnd = items[0].endDate;
-  for (const it of items) { if (it.startDate < minStart) minStart = it.startDate; if (it.endDate > maxEnd) maxEnd = it.endDate; }
-  minStart = planAddDays(minStart, -1);
-  maxEnd   = planAddDays(maxEnd, 1);
-  const totalDays = planDaysBetween(minStart, maxEnd) + 1;
-  const dayW = 26, rowH = 30, labelW = 220, headH = 34, padB = 12;
-  const W = labelW + totalDays * dayW;
-  const H = headH + items.length * rowH + padB;
-
-  const wrap = el('div', { style: 'overflow-x:auto' });
-  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, width: String(W), height: String(H), style: 'display:block;max-width:none' });
-
-  for (let i = 0; i < totalDays; i++) {
-    const iso = planAddDays(minStart, i);
-    const dow = new Date(iso + 'T12:00:00Z').getUTCDay();
-    const x = labelW + i * dayW;
-    if (dow === 0 || dow === 6) {
-      svg.appendChild(svgEl('rect', { x: String(x), y: String(headH), width: String(dayW), height: String(H - headH - padB), fill: COL.weekend }));
-    }
-    svg.appendChild(svgEl('line', { x1: String(x), y1: String(headH), x2: String(x), y2: String(H - padB), stroke: COL.grid, 'stroke-width': '1' }));
-    if (i % 7 === 0) {
-      const t = svgEl('text', { x: String(x + 2), y: '20', fill: COL.text, 'font-size': '11' });
-      t.textContent = iso.slice(5);
-      svg.appendChild(t);
-    }
-  }
-
-  items.forEach((it, r) => {
-    const y = headH + r * rowH;
-    const lbl = svgEl('text', { x: '6', y: String(y + rowH / 2 + 4), fill: COL.label, 'font-size': '12' });
-    lbl.textContent = it.woNumber ? `${it.itemNumber} · ${it.woNumber}` : it.itemNumber;
-    svg.appendChild(lbl);
-
-    const x0 = labelW + planDaysBetween(minStart, it.startDate) * dayW;
-    const span = Math.max(1, planDaysBetween(it.startDate, it.endDate) + 1);
-    const bw = Math.max(6, span * dayW - 4);
-    const bar = svgEl('rect', { x: String(x0 + 2), y: String(y + 5), width: String(bw), height: String(rowH - 12), rx: '4',
-      fill: it.durationSource === 'estimate' ? COL.estimate : COL.target, opacity: '0.9' });
-    const title = svgEl('title', {});
-    title.textContent = `${it.itemNumber}${it.woNumber ? ' / ' + it.woNumber : ''}\nQty ${it.quantity} · ${fmtPlanMins(it.totalMinutes)} (${it.durationSource})\n${it.startDate} to ${it.endDate} (${it.workingDays} working days)`;
-    bar.appendChild(title);
-    svg.appendChild(bar);
-
-    const dt = svgEl('text', { x: String(x0 + 2 + bw + 6), y: String(y + rowH / 2 + 4), fill: COL.text, 'font-size': '11' });
-    dt.textContent = fmtPlanMins(it.totalMinutes);
-    svg.appendChild(dt);
-  });
-
-  wrap.appendChild(svg);
-  return wrap;
-}
-
-function plannerTable(items) {
+function plannerBoard(items, days) {
+  const today = new Date().toISOString().slice(0, 10);
   const canEdit = hasRole('manager');
-  const tbl = el('table', { className: 'dash-table' });
-  tbl.appendChild(el('thead', {}, el('tr', {},
-    el('th', { textContent: 'Item' }), el('th', { textContent: 'WO' }), el('th', { textContent: 'Start' }),
-    el('th', { textContent: 'Qty' }), el('th', { textContent: 'Duration' }), el('th', { textContent: 'Source' }),
-    el('th', { textContent: 'Finish' }), el('th', { textContent: '' })
-  )));
-  const tb = el('tbody', {});
-  for (const it of items) {
-    const actions = el('td', {});
-    if (canEdit) {
-      actions.appendChild(el('button', { className: 'btn btn-sm btn-ghost', textContent: 'Edit', onclick: () => openPlannerForm(it) }));
-      actions.appendChild(el('button', { className: 'btn btn-sm btn-ghost dev-danger', textContent: 'Delete', onclick: () => deletePlannerItem(it) }));
-    }
-    tb.appendChild(el('tr', {},
-      el('td', { textContent: it.itemNumber }),
-      el('td', { textContent: it.woNumber || '—' }),
-      el('td', { textContent: it.startDate }),
-      el('td', { textContent: String(it.quantity) }),
-      el('td', { textContent: fmtPlanMins(it.totalMinutes) }),
-      el('td', { textContent: it.durationSource }),
-      el('td', { textContent: it.endDate }),
-      actions,
+  const inner = el('div', { className: 'planner-inner' });
+
+  const head = el('div', { className: 'planner-headrow' });
+  head.appendChild(el('div', { className: 'planner-labelhead', textContent: 'Item / WO' }));
+  days.forEach((iso, i) => {
+    const dt = new Date(iso + 'T12:00:00Z');
+    const cls = 'planner-dayhead' + (i % 5 === 0 ? ' wk' : '') + (iso === today ? ' today' : '');
+    head.appendChild(el('div', { className: cls },
+      el('span', { className: 'dow', textContent: dt.toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' }).toUpperCase() }),
+      el('span', { className: 'dnum', textContent: iso.slice(8) }),
     ));
+  });
+  inner.appendChild(head);
+
+  if (!items.length) {
+    inner.appendChild(el('div', { className: 'planner-emptyrow', textContent: 'No planned work yet.' }));
+    return inner;
   }
-  tbl.appendChild(tb);
-  return tbl;
+
+  for (const it of items) {
+    const row = el('div', { className: 'planner-jobrow' });
+    const label = el('div', { className: 'planner-joblabel' },
+      el('div', { className: 'planner-jobtitle', textContent: it.itemNumber }),
+      el('div', { className: 'planner-jobsub', textContent: it.woNumber || '(no WO)' }),
+      el('div', { className: 'planner-jobmeta', textContent: 'Qty ' + it.quantity + ' · ' + fmtPlanMins(it.totalMinutes) + ' · ' + it.durationSource }),
+    );
+    if (canEdit) {
+      label.appendChild(el('div', { className: 'planner-jobactions' },
+        el('button', { className: 'btn btn-sm btn-ghost', textContent: 'Edit', onclick: () => openPlannerForm(it) }),
+        el('button', { className: 'btn btn-sm btn-ghost dev-danger', textContent: 'Delete', onclick: () => deletePlannerItem(it) }),
+      ));
+    }
+    row.appendChild(label);
+
+    const track = el('div', { className: 'planner-track' });
+    days.forEach((iso, i) => {
+      track.appendChild(el('div', { className: 'planner-daycell' + (i % 5 === 0 ? ' wk' : '') + (iso === today ? ' today' : '') }));
+    });
+    let startCol = days.indexOf(it.startDate);
+    if (startCol < 0) { for (let i = 0; i < days.length; i++) { if (days[i] >= it.startDate) { startCol = i; break; } } }
+    if (startCol >= 0 && it.totalMinutes) {
+      const span = Math.max(1, Math.min(it.workingDays || 1, days.length - startCol));
+      const bar = el('div', {
+        className: 'planner-bar ' + (it.durationSource === 'estimate' ? 'estimate' : 'target'),
+        title: it.itemNumber + (it.woNumber ? ' / ' + it.woNumber : '') + ': ' + it.startDate + ' to ' + it.endDate + ' (' + it.workingDays + ' working days)',
+      });
+      bar.style.left  = (startCol * _PLAN_DAYW + 3) + 'px';
+      bar.style.width = (span * _PLAN_DAYW - 6) + 'px';
+      bar.textContent = it.itemNumber + ' · ' + fmtPlanMins(it.totalMinutes);
+      track.appendChild(bar);
+    }
+    row.appendChild(track);
+    inner.appendChild(row);
+  }
+  return inner;
 }
 
 function openPlannerForm(existing) {
