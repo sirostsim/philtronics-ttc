@@ -4696,12 +4696,65 @@ function plannerBoard(items, days) {
       bar.style.left  = (startCol * _PLAN_DAYW + 3) + 'px';
       bar.style.width = (span * _PLAN_DAYW - 6) + 'px';
       bar.textContent = it.itemNumber + ' · ' + fmtPlanMins(it.totalMinutes);
+      if (canEdit) makePlannerBarDraggable(bar, it, startCol, days);
       track.appendChild(bar);
     }
     row.appendChild(track);
     inner.appendChild(row);
   }
   return inner;
+}
+
+// Drag a bar sideways to reschedule a planned job. Managers only (the server
+// enforces it too). Snaps to working-day columns, and only the START date moves:
+// duration is derived from the target time or estimate, so bars are deliberately
+// not resizable. Pointer events (not HTML5 drag-and-drop) so this works with
+// touch on the shopfloor tablets as well as a mouse.
+function makePlannerBarDraggable(bar, item, startCol, days) {
+  bar.classList.add('draggable');
+  const origLabel = bar.textContent;
+  let dragging = false, startX = 0, origLeft = 0, deltaCols = 0;
+
+  bar.addEventListener('pointerdown', (e) => {
+    if (e.button != null && e.button !== 0) return;   // primary button / touch only
+    dragging  = true;
+    deltaCols = 0;
+    startX    = e.clientX;
+    origLeft  = parseFloat(bar.style.left) || 0;
+    try { bar.setPointerCapture(e.pointerId); } catch (_) {}
+    bar.classList.add('dragging');
+    e.preventDefault();
+  });
+
+  bar.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    // Snap to whole day columns, clamped so the bar stays inside the window.
+    let cols = Math.round((e.clientX - startX) / _PLAN_DAYW);
+    cols = Math.max(-startCol, Math.min(days.length - 1 - startCol, cols));
+    deltaCols = cols;
+    bar.style.left  = (origLeft + cols * _PLAN_DAYW) + 'px';
+    bar.textContent = item.itemNumber + ' · ' + plannerNiceDate(days[startCol + cols]);
+  });
+
+  const finishDrag = async (e) => {
+    if (!dragging) return;
+    dragging = false;
+    bar.classList.remove('dragging');
+    try { bar.releasePointerCapture(e.pointerId); } catch (_) {}
+    bar.textContent = origLabel;
+
+    const newDate = days[startCol + deltaCols];
+    if (!deltaCols || !newDate || newDate === item.startDate) { renderPlanner(); return; }
+    try {
+      await PATCH('/planner/' + item.id, { startDate: newDate });
+      toast(item.itemNumber + ' moved to ' + plannerNiceDate(newDate), 'success');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+    renderPlanner();   // redraw from server truth (recomputed finish date)
+  };
+  bar.addEventListener('pointerup', finishDrag);
+  bar.addEventListener('pointercancel', finishDrag);
 }
 
 function openPlannerForm(existing) {
