@@ -4686,17 +4686,24 @@ function plannerBoard(items, days) {
       track.appendChild(el('div', { className: 'planner-daycell' + (i % 5 === 0 ? ' wk' : '') + (iso === today ? ' today' : '') }));
     });
     let startCol = days.indexOf(it.startDate);
+    // A bar may only be dragged when it is drawn ON its real start date. If the
+    // job starts before this window (or on a non-working day) the bar is drawn at
+    // the nearest visible column instead, so dragging it would shift the job by
+    // far more than the small nudge the visual implies. Those bars are shown
+    // dashed and are not draggable; use Edit, or page to the week it starts in.
+    const startsInWindow = startCol >= 0;
     if (startCol < 0) { for (let i = 0; i < days.length; i++) { if (days[i] >= it.startDate) { startCol = i; break; } } }
     if (startCol >= 0 && it.totalMinutes) {
       const span = Math.max(1, Math.min(it.workingDays || 1, days.length - startCol));
       const bar = el('div', {
-        className: 'planner-bar ' + (it.durationSource === 'estimate' ? 'estimate' : 'target'),
-        title: it.itemNumber + (it.woNumber ? ' / ' + it.woNumber : '') + ': ' + it.startDate + ' to ' + it.endDate + ' (' + it.workingDays + ' working days)',
+        className: 'planner-bar ' + (it.durationSource === 'estimate' ? 'estimate' : 'target') + (startsInWindow ? '' : ' offwindow'),
+        title: it.itemNumber + (it.woNumber ? ' / ' + it.woNumber : '') + ': ' + it.startDate + ' to ' + it.endDate + ' (' + it.workingDays + ' working days)'
+             + (startsInWindow ? '' : '. Not draggable here: this bar is not drawn on its real start date. Page to the week it starts in, or use Edit.'),
       });
       bar.style.left  = (startCol * _PLAN_DAYW + 3) + 'px';
       bar.style.width = (span * _PLAN_DAYW - 6) + 'px';
       bar.textContent = it.itemNumber + ' · ' + fmtPlanMins(it.totalMinutes);
-      if (canEdit) makePlannerBarDraggable(bar, it, startCol, days);
+      if (canEdit && startsInWindow) makePlannerBarDraggable(bar, it, startCol, days);
       track.appendChild(bar);
     }
     row.appendChild(track);
