@@ -235,6 +235,21 @@ input:focus, textarea:focus {
 }
 input::placeholder { color: var(--text3); }
 
+/* Selects in modal forms (e.g. the Planner add/edit form) match the inputs. */
+.planner-form select {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 17px;
+  padding: 14px 16px;
+  width: 100%;
+  outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.planner-form select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(240,180,41,.18); }
+.planner-form input, .planner-form select { margin-bottom: 2px; }
+
 /* ─── Buttons ───────────────────────────────────────────────────────────── */
 .btn {
   display: inline-flex;
