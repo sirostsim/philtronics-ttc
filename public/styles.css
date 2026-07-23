@@ -3118,3 +3118,22 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
 .planner-jobmeta { font-size:11px; color:var(--text3); }
 .planner-jobactions { display:flex; gap:6px; margin-top:2px; }
 .planner-emptyrow { padding:26px 16px; color:var(--text2); }
+
+/* Order book: available-to-build offering on the Planner page. */
+.ob-panel { border:1px solid var(--border); border-radius:var(--radius-lg); background:var(--bg2); padding:14px 16px; margin-bottom:16px; }
+.ob-head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.ob-title { margin:0; font-size:15px; font-weight:800; color:var(--text); }
+.ob-sub { font-weight:600; font-size:12px; color:var(--text2); margin-left:6px; }
+.ob-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.ob-summary { margin:10px 0 6px; font-size:13px; color:var(--text2); }
+.ob-list { max-height:340px; overflow:auto; }
+.ob-panel.collapsed .ob-summary, .ob-panel.collapsed .ob-list { display:none; }
+.ob-table { font-size:13px; }
+.ob-table .ob-item { font-weight:700; white-space:nowrap; }
+.ob-table .ob-desc { color:var(--text2); }
+.ob-table .ob-value { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.ob-table .ob-po { color:var(--text3); white-space:nowrap; }
+.ob-table .ob-overdue { color:var(--red); font-weight:700; }
+.ob-notarget { color:var(--accent); font-size:11px; }
+.ob-planned { color:var(--green); font-size:12px; font-weight:700; }
+.ob-row-planned { opacity:.6; }
