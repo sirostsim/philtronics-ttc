@@ -115,6 +115,22 @@ const schemas = {
     estimatedMinutes: Joi.number().integer().min(0).max(59).optional().allow(null),
     department:       Joi.string().valid('Production','Stores','Test and Inspection','PCB').optional().allow('', null),
   }).min(1),
+
+  orderBookUpload: Joi.object({
+    customer: Joi.string().trim().min(1).max(60).required(),
+    rows: Joi.array().max(10000).items(Joi.object({
+      poNumber:    Joi.string().trim().max(40).allow('', null),
+      poLine:      Joi.string().trim().max(20).allow('', null),
+      itemNumber:  Joi.string().trim().max(60).required(),
+      description: Joi.string().trim().max(200).allow('', null),
+      // Dates arrive pre-normalised by the client to ISO, or null (the 9999 sentinel).
+      requiredBy:  Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).allow(null),
+      dueDate:     Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).allow(null),
+      quantity:    Joi.number().integer().min(0).required(),
+      lineValue:   Joi.number().allow(null),
+      rework:      Joi.boolean().default(false),
+    })).required(),
+  }),
 };
 
 module.exports = { validate, schemas };

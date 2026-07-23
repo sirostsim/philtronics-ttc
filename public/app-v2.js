@@ -4623,6 +4623,7 @@ function loadPlannerPage() {
     addBtn.hidden = !hasRole('manager');
     if (!addBtn._wired) { addBtn._wired = true; addBtn.addEventListener('click', () => openPlannerForm(null)); }
   }
+  initOrderBook();
   renderPlanner();
 }
 
@@ -4764,12 +4765,13 @@ function makePlannerBarDraggable(bar, item, startCol, days) {
   bar.addEventListener('pointercancel', finishDrag);
 }
 
-function openPlannerForm(existing) {
+function openPlannerForm(existing, prefill) {
   const isEdit = !!existing;
-  const itemInput = el('input', { type: 'text', value: existing ? existing.itemNumber : '', placeholder: 'e.g. PHL-1001', autocapitalize: 'characters' });
-  const woInput   = el('input', { type: 'text', value: existing && existing.woNumber ? existing.woNumber : '', placeholder: 'Optional' });
+  const pf = prefill || {};
+  const itemInput = el('input', { type: 'text', value: existing ? existing.itemNumber : (pf.itemNumber || ''), placeholder: 'e.g. PHL-1001', autocapitalize: 'characters' });
+  const woInput   = el('input', { type: 'text', value: existing ? (existing.woNumber || '') : (pf.woNumber || ''), placeholder: 'Optional' });
   const dateInput = el('input', { type: 'date', value: existing ? existing.startDate : new Date().toISOString().slice(0, 10) });
-  const qtyInput  = el('input', { type: 'number', min: '1', max: '9999', value: String(existing ? existing.quantity : 1) });
+  const qtyInput  = el('input', { type: 'number', min: '1', max: '9999', value: String(existing ? existing.quantity : (pf.quantity || 1)) });
   const hasEst    = existing && existing.estimatedMinutes != null;
   const estHInput = el('input', { type: 'number', min: '0', max: '999', value: hasEst ? String(Math.floor(existing.estimatedMinutes / 60)) : '', placeholder: 'h' });
   const estMInput = el('input', { type: 'number', min: '0', max: '59', value: hasEst ? String(existing.estimatedMinutes % 60) : '', placeholder: 'm' });
@@ -4804,6 +4806,7 @@ function openPlannerForm(existing) {
       closeModal();
       toast(isEdit ? 'Planned work updated' : 'Planned work added', 'success');
       renderPlanner();
+      if (document.getElementById('obList')) renderOrderBook(); // refresh "planned" flags
     } catch (err) { toast(err.message, 'error'); }
   });
   openModal(isEdit ? 'Edit planned work' : 'Add planned work', body, [
@@ -4816,6 +4819,209 @@ async function deletePlannerItem(it) {
   if (!confirm(`Remove planned work for ${it.itemNumber}?`)) return;
   try { await DELETE(`/planner/${it.id}`); toast('Removed', 'success'); renderPlanner(); }
   catch (err) { toast(err.message, 'error'); }
+}
+
+// ── ORDER BOOK (available to build) ────────────────────────────────────────────
+// A customer's imported order book (e.g. KLA's weekly SAP export) drives an
+// "available to build" offering on the Planner: order lines whose effective date
+// (Required By, else Current Due Date) fall within the 8-week shippable window.
+// Managers upload a CSV/tab export; the browser parses it and posts clean rows,
+// and each line can be added straight onto the planner.
+
+const _obState = { customer: '', collapsed: false, wired: false };
+
+function initOrderBook() {
+  if (_obState.wired) { loadOrderBook(); return; }
+  _obState.wired = true;
+
+  const cust = document.getElementById('obCustomer');
+  if (cust) cust.addEventListener('change', () => { _obState.customer = cust.value; renderOrderBook(); });
+
+  const uploadBtn = document.getElementById('btnUploadOrderBook');
+  const fileInput = document.getElementById('obFileInput');
+  if (uploadBtn) uploadBtn.hidden = !hasRole('manager');
+  if (uploadBtn && fileInput) {
+    uploadBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => {
+      const f = fileInput.files && fileInput.files[0];
+      if (f) handleOrderBookFile(f);
+      fileInput.value = '';
+    });
+  }
+
+  const toggle = document.getElementById('btnToggleOrderBook');
+  const panel  = document.getElementById('orderBookPanel');
+  if (toggle && panel) toggle.addEventListener('click', () => {
+    _obState.collapsed = !_obState.collapsed;
+    panel.classList.toggle('collapsed', _obState.collapsed);
+    toggle.textContent = _obState.collapsed ? 'Show' : 'Hide';
+  });
+
+  loadOrderBook();
+}
+
+async function loadOrderBook() {
+  const cust = document.getElementById('obCustomer');
+  if (cust && !cust._filled) {
+    try {
+      const customers = await GET('/order-book/customers');
+      cust.innerHTML = '';
+      cust.appendChild(el('option', { value: '', textContent: customers.length ? 'All customers' : 'No order book loaded' }));
+      for (const c of customers) cust.appendChild(el('option', { value: c, textContent: c }));
+      cust._filled = true;
+      if (customers.length === 1) { cust.value = customers[0]; _obState.customer = customers[0]; }
+    } catch (_) { /* offering endpoint will show the error */ }
+  }
+  renderOrderBook();
+}
+
+async function renderOrderBook() {
+  const list = document.getElementById('obList');
+  const summary = document.getElementById('obSummary');
+  if (!list) return;
+  list.innerHTML = '<div class="empty-state" style="padding:12px">Loading…</div>';
+  try {
+    const qs = _obState.customer ? `?customer=${encodeURIComponent(_obState.customer)}` : '';
+    const items = await GET(`/order-book/offering${qs}`);
+    if (summary) {
+      const total = items.reduce((s, it) => s + (it.lineValue || 0), 0);
+      summary.textContent = items.length
+        ? `${items.length} line${items.length !== 1 ? 's' : ''} available to build · ${obMoney(total)} total value`
+        : 'Nothing available to build in the next 8 weeks.';
+    }
+    list.innerHTML = '';
+    if (items.length) list.appendChild(orderBookTable(items));
+  } catch (err) {
+    list.innerHTML = '';
+    list.appendChild(el('div', { className: 'error-msg', style: 'padding:12px', textContent: err.message }));
+  }
+}
+
+function obMoney(v) {
+  return '£' + (v || 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function orderBookTable(items) {
+  const canPlan = hasRole('manager');
+  const tbl = el('table', { className: 'dash-table ob-table' });
+  tbl.appendChild(el('thead', {}, el('tr', {},
+    el('th', { textContent: 'Item' }), el('th', { textContent: 'Description' }),
+    el('th', { textContent: 'Required' }), el('th', { textContent: 'Qty' }),
+    el('th', { textContent: 'Value' }), el('th', { textContent: 'PO' }), el('th', { textContent: '' }),
+  )));
+  const tb = el('tbody', {});
+  for (const it of items) {
+    const desc = el('td', { className: 'ob-desc', textContent: it.description || '' });
+    if (!it.hasTarget) desc.appendChild(el('span', { className: 'ob-notarget', title: 'No target time; you will enter an estimate when planning', textContent: ' (no target)' }));
+    const action = el('td', {});
+    if (it.alreadyPlanned) action.appendChild(el('span', { className: 'ob-planned', textContent: '✓ planned' }));
+    else if (canPlan) action.appendChild(el('button', { className: 'btn btn-sm', textContent: 'Add to planner', onclick: () => addOfferingToPlanner(it) }));
+    tb.appendChild(el('tr', { className: it.alreadyPlanned ? 'ob-row-planned' : '' },
+      el('td', { className: 'ob-item', textContent: it.itemNumber }),
+      desc,
+      el('td', { className: it.overdue ? 'ob-overdue' : '', textContent: it.effectiveDate || '—' }),
+      el('td', { textContent: String(it.quantity) }),
+      el('td', { className: 'ob-value', textContent: it.lineValue != null ? obMoney(it.lineValue) : '' }),
+      el('td', { className: 'ob-po', textContent: it.poNumber || '' }),
+      action,
+    ));
+  }
+  tbl.appendChild(tb);
+  return tbl;
+}
+
+function addOfferingToPlanner(it) {
+  openPlannerForm(null, { itemNumber: it.itemNumber, quantity: it.quantity, woNumber: it.poNumber });
+}
+
+async function handleOrderBookFile(file) {
+  const customer = (prompt('Customer name for this order book:', _obState.customer || 'KLA') || '').trim();
+  if (!customer) return;
+  let text;
+  try { text = await file.text(); } catch (_) { toast('Could not read the file.', 'error'); return; }
+  let parsed;
+  try { parsed = parseOrderBookText(text); }
+  catch (err) { toast('Could not parse the file: ' + err.message, 'error'); return; }
+  if (!parsed.rows.length) { toast('No buildable rows found in the file.', 'error'); return; }
+  if (!confirm(`Import ${parsed.rows.length} order lines for ${customer}? This replaces the current ${customer} order book.`)) return;
+  try {
+    const res = await POST('/order-book', { customer, rows: parsed.rows });
+    toast(`Imported ${res.imported} lines for ${customer}.`, 'success');
+    const cust = document.getElementById('obCustomer');
+    if (cust) cust._filled = false;
+    _obState.customer = customer;
+    await loadOrderBook();
+    if (cust) cust.value = customer;
+    renderOrderBook();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+// ── Order-book parsing (pure; unit-tested) ─────────────────────────────────────
+function okbPad2(n) { return String(n).padStart(2, '0'); }
+function okbParseDate(s) {
+  s = (s || '').trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;             // already ISO
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);    // M/D/Y (US export)
+  if (!m) return null;
+  const mm = +m[1], dd = +m[2], yy = +m[3];
+  if (yy === 9999 || mm < 1 || mm > 12 || dd < 1 || dd > 31) return null; // 9999 = SAP "no date"
+  return yy + '-' + okbPad2(mm) + '-' + okbPad2(dd);
+}
+function okbNum(s) {
+  s = (s || '').replace(/[, ]/g, '').trim();
+  if (!s) return null;
+  const n = parseFloat(s);
+  return isNaN(n) ? null : n;
+}
+function okbSplitLine(line, delim) {
+  if (delim === '\t') return line.split('\t');
+  const out = []; let cur = '', q = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (q) {
+      if (c === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+      else if (c === '"') q = false;
+      else cur += c;
+    } else if (c === '"') q = true;
+    else if (c === ',') { out.push(cur); cur = ''; }
+    else cur += c;
+  }
+  out.push(cur);
+  return out;
+}
+function parseOrderBookText(text) {
+  const lines = String(text).split(/\r\n|\n|\r/).filter(l => l.trim().length);
+  if (!lines.length) return { rows: [], skippedBlank: 0 };
+  const delim = lines[0].includes('\t') ? '\t' : ',';
+  const header = okbSplitLine(lines[0], delim).map(h => h.trim().toLowerCase());
+  const col = name => header.indexOf(name);
+  const idx = {
+    part:   col('part number'),   desc: col('material description'),
+    req:    col('required by'),    due:  col('current due date'),
+    qty:    col('bal due qty'),    value: col('line value'),
+    po:     col('purchasing document'), line: col('item'), rework: col('rework'),
+  };
+  if (idx.part < 0) throw new Error('no "Part Number" column found in the header');
+  const rows = []; let skippedBlank = 0;
+  for (let i = 1; i < lines.length; i++) {
+    const f = okbSplitLine(lines[i], delim);
+    const get = j => (j >= 0 && j < f.length ? f[j] : '');
+    const itemNumber = get(idx.part).trim();
+    if (!itemNumber) { skippedBlank++; continue; }   // service/repair lines carry no part number
+    rows.push({
+      poNumber:    get(idx.po).trim(),
+      poLine:      get(idx.line).trim(),
+      itemNumber,
+      description: get(idx.desc).trim(),
+      requiredBy:  okbParseDate(get(idx.req)),
+      dueDate:     okbParseDate(get(idx.due)),
+      quantity:    parseInt(get(idx.qty), 10) || 0,
+      lineValue:   okbNum(get(idx.value)),
+      rework:      get(idx.rework).trim() !== '',
+    });
+  }
+  return { rows, skippedBlank };
 }
 
 // ── CHARTS PAGE ───────────────────────────────────────────────────────────────

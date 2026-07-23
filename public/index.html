@@ -584,6 +584,19 @@
         <h2 class="page-heading">Planner</h2>
         <button id="btnAddPlanned" class="btn btn-primary" hidden>+ Add Planned Job</button>
       </div>
+      <div id="orderBookPanel" class="ob-panel">
+        <div class="ob-head">
+          <h3 class="ob-title">Available to Build <span class="ob-sub">order book &middot; next 8 weeks</span></h3>
+          <div class="ob-actions">
+            <select id="obCustomer" class="planner-dept"></select>
+            <button id="btnUploadOrderBook" class="btn btn-sm" hidden>Upload order book</button>
+            <input id="obFileInput" type="file" accept=".csv,.tsv,.txt" hidden />
+            <button id="btnToggleOrderBook" class="btn btn-sm btn-ghost">Hide</button>
+          </div>
+        </div>
+        <div id="obSummary" class="ob-summary"></div>
+        <div id="obList" class="ob-list"></div>
+      </div>
       <div class="planner-controls">
         <div class="planner-nav">
           <button id="planPrev" class="btn btn-ghost btn-sm">‹ Prev</button>
