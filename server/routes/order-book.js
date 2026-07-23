@@ -42,7 +42,7 @@ router.get('/customers', async (req, res) => {
 router.get('/offering', async (req, res) => {
   try {
     const customer = req.query.customer;
-    const params = [WINDOW_DAYS];
+    const params = [];
     let customerClause = '';
     if (customer) { params.push(customer); customerClause = `AND co.customer = $${params.length}`; }
 
@@ -61,7 +61,7 @@ router.get('/offering', async (req, res) => {
        WHERE co.rework = FALSE
          AND co.quantity > 0
          AND COALESCE(co.required_by, co.due_date) IS NOT NULL
-         AND COALESCE(co.required_by, co.due_date) <= (CURRENT_DATE + ($1 || ' days')::interval)
+         AND COALESCE(co.required_by, co.due_date) <= (CURRENT_DATE + INTERVAL '${WINDOW_DAYS} days')
          ${customerClause}
        ORDER BY COALESCE(co.required_by, co.due_date) ASC, co.line_value DESC NULLS LAST`,
       params
