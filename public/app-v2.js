@@ -4778,7 +4778,7 @@ function openPlannerForm(existing, prefill) {
   const deptSel   = el('select', {});
   deptSel.appendChild(el('option', { value: '', textContent: '(none)' }));
   for (const d of DEPARTMENTS) deptSel.appendChild(el('option', { value: d, textContent: d }));
-  deptSel.value = existing && existing.department ? existing.department : '';
+  deptSel.value = existing && existing.department ? existing.department : 'Production';
 
   const body = el('div', { className: 'planner-form' },
     el('label', { className: 'dev-form-label', textContent: 'Item Number' }), itemInput,
