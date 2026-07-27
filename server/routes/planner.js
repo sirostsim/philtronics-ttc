@@ -16,7 +16,7 @@ const { query, queryOne } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { validate, schemas } = require('../middleware/validate');
 const settings = require('../settings');
-const { plannedEndDate } = require('../lib/planner-schedule');
+const { plannedEndDate, plannedStartDate } = require('../lib/planner-schedule');
 
 const router = express.Router();
 
@@ -78,6 +78,26 @@ function estimateFromBody(b) {
   return mins > 0 ? mins : null;
 }
 
+// ── GET /api/planner/suggest-start ────────────────────────────────────────────
+// MRP-style backward schedule: given a required (finish) date and the total
+// required minutes, return the latest start date that still finishes on time.
+// Used by the add form to default a start when planning an order-book item.
+router.get('/suggest-start', async (req, res) => {
+  try {
+    const required = String(req.query.required || '');
+    const minutes  = parseInt(req.query.minutes, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(required) || !(minutes > 0)) {
+      return res.status(400).json({ error: 'A required date (YYYY-MM-DD) and positive minutes are needed.' });
+    }
+    const s = await settings.get();
+    const span = plannedStartDate(required, minutes, d => settings.productivityBaselineMinutes(s, d));
+    res.json({ startDate: span.startDate, workingDays: span.workingDays });
+  } catch (err) {
+    console.error('GET /planner/suggest-start error:', err.message);
+    res.status(500).json({ error: 'Could not compute a suggested start.' });
+  }
+});
+
 // ── GET /api/planner ─────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
   try {
@@ -109,9 +129,11 @@ router.post('/', requireRole('manager'), validate(schemas.plannedWork), async (r
     const id = uuidv4();
     await query(
       `INSERT INTO planned_work
-         (id, item_number, wo_number, start_date, quantity, estimated_minutes, department, created_by, updated_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8)`,
-      [id, item, b.woNumber || null, b.startDate, b.quantity, estimate, b.department || null, req.user.id]
+         (id, item_number, wo_number, start_date, quantity, estimated_minutes, department,
+          source_required_by, created_by, updated_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)`,
+      [id, item, b.woNumber || null, b.startDate, b.quantity, estimate, b.department || null,
+       b.sourceRequiredBy || null, req.user.id]
     );
     const s = await settings.get();
     const joined = await queryOne(`${JOIN_SQL} WHERE p.id = $1`, [id]);

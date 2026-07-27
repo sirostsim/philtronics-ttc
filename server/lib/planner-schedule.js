@@ -38,4 +38,35 @@ function plannedEndDate(startDateISO, totalMinutes, availableMinutesForDate, max
   return { endDate: d.toISOString().slice(0, 10), workingDays, truncated: true };
 }
 
-module.exports = { plannedEndDate };
+/**
+ * plannedStartDate -- the inverse of plannedEndDate. Given a required (finish)
+ * date and the total required minutes, walk BACKWARD over working days consuming
+ * each day's available minutes, and return the latest start date that still
+ * finishes by the required date (MRP-style just-in-time backward scheduling).
+ *
+ * By construction it is the inverse: plannedEndDate(plannedStartDate(R, m), m)
+ * returns R for any R and m > 0.
+ */
+function plannedStartDate(requiredDateISO, totalMinutes, availableMinutesForDate, maxDays = 730) {
+  const required = String(requiredDateISO).slice(0, 10);
+  if (!(totalMinutes > 0)) return { startDate: required, workingDays: 0, truncated: false };
+
+  let remaining   = totalMinutes;
+  let workingDays = 0;
+  const d = new Date(required + 'T12:00:00Z');
+
+  for (let i = 0; i < maxDays; i++) {
+    const avail = availableMinutesForDate(d) || 0;
+    if (avail > 0) {
+      workingDays++;
+      remaining -= avail;
+      if (remaining <= 0) {
+        return { startDate: d.toISOString().slice(0, 10), workingDays, truncated: false };
+      }
+    }
+    d.setUTCDate(d.getUTCDate() - 1);
+  }
+  return { startDate: d.toISOString().slice(0, 10), workingDays, truncated: true };
+}
+
+module.exports = { plannedEndDate, plannedStartDate };

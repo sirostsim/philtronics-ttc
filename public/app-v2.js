@@ -4780,15 +4780,51 @@ function openPlannerForm(existing, prefill) {
   for (const d of DEPARTMENTS) deptSel.appendChild(el('option', { value: d, textContent: d }));
   deptSel.value = existing && existing.department ? existing.department : 'Production';
 
+  // Backward scheduling: when planning an order-book item (prefill carries the
+  // customer required date), default the start to Required date minus the job's
+  // duration, MRP-style. The planner adjusts from there.
+  const scheduleNote = el('div', { className: 'planner-schednote' });
+  const currentDuration = () => {
+    const qty = parseInt(qtyInput.value, 10) || 1;
+    if (pf.perItemMinutes) return pf.perItemMinutes * qty;                 // target-time item
+    const em = (parseInt(estHInput.value, 10) || 0) * 60 + (parseInt(estMInput.value, 10) || 0);
+    return em > 0 ? em * qty : 0;                                          // estimate item
+  };
+  async function recomputeStart() {
+    if (!pf.requiredDate) return;
+    const mins = currentDuration();
+    if (!(mins > 0)) { scheduleNote.textContent = 'Required by ' + pf.requiredDate + '. Enter an estimate to suggest a start.'; return; }
+    try {
+      const r = await GET('/planner/suggest-start?required=' + pf.requiredDate + '&minutes=' + Math.round(mins));
+      const today = new Date().toISOString().slice(0, 10);
+      if (r.startDate < today) {
+        dateInput.value = today;
+        scheduleNote.textContent = 'Required by ' + pf.requiredDate + '. Backward schedule is already in the past, so starting today (tight).';
+      } else {
+        dateInput.value = r.startDate;
+        scheduleNote.textContent = 'Required by ' + pf.requiredDate + '. Start works back from the required date; adjust if you want buffer.';
+      }
+    } catch (_) { /* keep the default start */ }
+  }
+
   const body = el('div', { className: 'planner-form' },
     el('label', { className: 'dev-form-label', textContent: 'Item Number' }), itemInput,
     el('label', { className: 'dev-form-label', textContent: 'W/O Number' }), woInput,
     el('label', { className: 'dev-form-label', textContent: 'Start date' }), dateInput,
+    scheduleNote,
     el('label', { className: 'dev-form-label', textContent: 'Quantity' }), qtyInput,
     el('label', { className: 'dev-form-label', textContent: 'Estimated time per item (used only if the item has no target time)' }),
     el('div', { style: 'display:flex;gap:8px' }, estHInput, estMInput),
     el('label', { className: 'dev-form-label', textContent: 'Department' }), deptSel,
   );
+
+  if (pf.requiredDate) {
+    qtyInput.addEventListener('input', recomputeStart);
+    estHInput.addEventListener('input', recomputeStart);
+    estMInput.addEventListener('input', recomputeStart);
+    recomputeStart(); // initial backward-scheduled suggestion
+  }
+
   const save = el('button', { className: 'btn btn-primary', textContent: isEdit ? 'Save' : 'Add' });
   save.addEventListener('click', async () => {
     const payload = {
@@ -4799,6 +4835,7 @@ function openPlannerForm(existing, prefill) {
       estimatedHours: estHInput.value === '' ? null : parseInt(estHInput.value, 10),
       estimatedMinutes: estMInput.value === '' ? null : parseInt(estMInput.value, 10),
       department: deptSel.value || null,
+      sourceRequiredBy: pf.requiredDate || null,
     };
     try {
       if (isEdit) await PATCH(`/planner/${existing.id}`, payload);
@@ -4931,7 +4968,8 @@ function orderBookTable(items) {
 }
 
 function addOfferingToPlanner(it) {
-  openPlannerForm(null, { itemNumber: it.itemNumber, quantity: it.quantity, woNumber: it.poNumber });
+  openPlannerForm(null, { itemNumber: it.itemNumber, quantity: it.quantity, woNumber: it.poNumber,
+    requiredDate: it.effectiveDate, perItemMinutes: it.perItemMinutes });
 }
 
 async function handleOrderBookFile(file) {

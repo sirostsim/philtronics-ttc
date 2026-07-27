@@ -104,6 +104,7 @@ const schemas = {
     estimatedHours:   Joi.number().integer().min(0).max(999).optional().allow(null),
     estimatedMinutes: Joi.number().integer().min(0).max(59).optional().allow(null),
     department:       Joi.string().valid('Production','Stores','Test and Inspection','PCB').optional().allow('', null),
+    sourceRequiredBy: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).optional().allow(null),
   }),
 
   plannedWorkUpdate: Joi.object({

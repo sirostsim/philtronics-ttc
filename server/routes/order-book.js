@@ -51,6 +51,7 @@ router.get('/offering', async (req, res) => {
               co.required_by, co.due_date, co.quantity, co.line_value, co.rework,
               COALESCE(co.required_by, co.due_date) AS effective_date,
               (tt.item_number IS NOT NULL)          AS has_target,
+              tt.hours AS t_hours, tt.minutes AS t_minutes,
               EXISTS (
                 SELECT 1 FROM planned_work pw
                 WHERE pw.item_number = co.item_number
@@ -84,6 +85,8 @@ router.get('/offering', async (req, res) => {
         quantity:       r.quantity,
         lineValue:      r.line_value != null ? Number(r.line_value) : null,
         hasTarget:      r.has_target,
+        // Per-item target minutes (for backward scheduling on the planner); null when no target.
+        perItemMinutes: r.has_target ? (r.t_hours * 60 + r.t_minutes) : null,
         alreadyPlanned: r.already_planned,
         overdue:        eff != null && eff < today,
       };
