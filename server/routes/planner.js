@@ -49,8 +49,15 @@ function computeDrift(row, ordersByKey) {
   if (!lines.length) return { drift: { type: 'removed', wasRequired: src }, currentRequiredBy: null };
   const exact = lines.find(l => l.eff === src);
   if (exact) {
-    if (exact.qty !== row.quantity) {
-      return { drift: { type: 'qty_changed', fromQty: row.quantity, toQty: exact.qty }, currentRequiredBy: src };
+    // Quantity drift compares the CURRENT ordered qty against the ordered qty
+    // snapshotted when the job was planned (source_ordered_qty) — NOT against the
+    // planned qty. A plan that is simply smaller than the order (an intentional
+    // partial allocation, or larger for an MOQ over-build) is not drift; only a
+    // real change in the order line's quantity since planning is. snapOrdered is
+    // null for manually-added jobs and pre-024 rows, so those raise no qty drift.
+    const snapOrdered = row.source_ordered_qty;
+    if (snapOrdered != null && exact.qty !== snapOrdered) {
+      return { drift: { type: 'qty_changed', fromQty: snapOrdered, toQty: exact.qty }, currentRequiredBy: src };
     }
     return { drift: null, currentRequiredBy: src };
   }
@@ -180,10 +187,11 @@ router.post('/', requireRole('manager'), validate(schemas.plannedWork), async (r
     await query(
       `INSERT INTO planned_work
          (id, item_number, wo_number, start_date, quantity, estimated_minutes, department,
-          source_required_by, source_po_line, created_by, updated_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10)`,
+          source_required_by, source_po_line, source_ordered_qty, created_by, updated_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11)`,
       [id, item, b.woNumber || null, b.startDate, b.quantity, estimate, b.department || null,
-       b.sourceRequiredBy || null, b.sourcePoLine || null, req.user.id]
+       b.sourceRequiredBy || null, b.sourcePoLine || null,
+       b.sourceOrderedQty != null ? b.sourceOrderedQty : null, req.user.id]
     );
     const s = await settings.get();
     const joined = await queryOne(`${JOIN_SQL} WHERE p.id = $1`, [id]);
