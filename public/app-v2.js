@@ -4639,8 +4639,10 @@ function openClearModal() {
   const customer = _obState.customer || '';
 
   function clearSection(opts) {
-    const input = el('input', { type: 'text', placeholder: 'Type CLEAR to confirm', autocapitalize: 'characters', disabled: opts.disabled });
-    const btn = el('button', { className: 'btn btn-sm dev-danger', textContent: opts.label, disabled: true });
+    const input = el('input', { type: 'text', placeholder: 'Type CLEAR to confirm', autocapitalize: 'characters' });
+    input.disabled = !!opts.disabled;   // set via property: el() would apply a boolean attr even for false
+    const btn = el('button', { className: 'btn btn-sm dev-danger', textContent: opts.label });
+    btn.disabled = true;
     if (!opts.disabled) {
       input.addEventListener('input', () => { btn.disabled = input.value.trim().toUpperCase() !== 'CLEAR'; });
       btn.addEventListener('click', async () => {
