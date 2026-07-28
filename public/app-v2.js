@@ -5014,7 +5014,16 @@ async function handleOrderBookFile(file) {
   try { parsed = parseOrderBookText(text); }
   catch (err) { toast('Could not parse the file: ' + err.message, 'error'); return; }
   if (!parsed.rows.length) { toast('No buildable rows found in the file.', 'error'); return; }
-  if (!confirm(`Import ${parsed.rows.length} order lines for ${customer}? This replaces the current ${customer} order book.`)) return;
+  // Preview so a mis-read (wrong date format, missing values) is caught before it
+  // replaces the live order book.
+  const sampleDate = (parsed.rows.find(r => r.requiredBy) || {}).requiredBy
+                  || (parsed.rows.find(r => r.dueDate) || {}).dueDate || 'none found';
+  const totalValue = parsed.rows.reduce((s, r) => s + (r.lineValue || 0), 0);
+  const preview = 'Import ' + parsed.rows.length + ' order lines for ' + customer + '?\n\n'
+    + 'Dates read as ' + parsed.dateFormat + ' (first date: ' + sampleDate + ').\n'
+    + 'Total value: £' + totalValue.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '\n\n'
+    + 'Check the date and total look right. This replaces the current ' + customer + ' order book.';
+  if (!confirm(preview)) return;
   try {
     const res = await POST('/order-book', { customer, rows: parsed.rows });
     toast(`Imported ${res.imported} lines for ${customer}.`, 'success');
@@ -5029,18 +5038,34 @@ async function handleOrderBookFile(file) {
 
 // ── Order-book parsing (pure; unit-tested) ─────────────────────────────────────
 function okbPad2(n) { return String(n).padStart(2, '0'); }
-function okbParseDate(s) {
+function okbParseDate(s, dayFirst) {
   s = (s || '').trim();
   if (!s) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;             // already ISO
-  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);    // M/D/Y (US export)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;                       // already ISO
+  const m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
   if (!m) return null;
-  const mm = +m[1], dd = +m[2], yy = +m[3];
+  const a = +m[1], b = +m[2], yy = +m[3];
+  const mm = dayFirst ? b : a;                                        // format detected per-file
+  const dd = dayFirst ? a : b;
   if (yy === 9999 || mm < 1 || mm > 12 || dd < 1 || dd > 31) return null; // 9999 = SAP "no date"
   return yy + '-' + okbPad2(mm) + '-' + okbPad2(dd);
 }
+// Decide whether the file's dates are day-first (UK) or month-first (US) from the
+// data itself: a value > 12 in the first position can only be a day (UK); > 12 in
+// the second can only be a day (US). Majority wins; ambiguous defaults to US.
+function okbDetectDayFirst(dateStrings) {
+  let dayFirst = 0, monthFirst = 0;
+  for (const s of dateStrings) {
+    const m = (s || '').trim().match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.]\d{4}$/);
+    if (!m) continue;
+    const a = +m[1], b = +m[2];
+    if (a > 12 && b <= 12) dayFirst++;
+    else if (b > 12 && a <= 12) monthFirst++;
+  }
+  return dayFirst > monthFirst;
+}
 function okbNum(s) {
-  s = (s || '').replace(/[, ]/g, '').trim();
+  s = (s || '').replace(/[£$€,\s]/g, '').trim();                      // strip currency + thousands separators
   if (!s) return null;
   const n = parseFloat(s);
   return isNaN(n) ? null : n;
@@ -5062,37 +5087,48 @@ function okbSplitLine(line, delim) {
   return out;
 }
 function parseOrderBookText(text) {
-  const lines = String(text).split(/\r\n|\n|\r/).filter(l => l.trim().length);
-  if (!lines.length) return { rows: [], skippedBlank: 0 };
+  text = String(text).replace(/^﻿/, '');                        // strip Excel UTF-8 BOM
+  const lines = text.split(/\r\n|\n|\r/).filter(l => l.trim().length);
+  if (!lines.length) return { rows: [], skippedBlank: 0, dateFormat: null };
   const delim = lines[0].includes('\t') ? '\t' : ',';
   const header = okbSplitLine(lines[0], delim).map(h => h.trim().toLowerCase());
-  const col = name => header.indexOf(name);
+  const findCol = (...names) => { for (const n of names) { const i = header.indexOf(n); if (i >= 0) return i; } return -1; };
   const idx = {
-    part:   col('part number'),   desc: col('material description'),
-    req:    col('required by'),    due:  col('current due date'),
-    qty:    col('bal due qty'),    value: col('line value'),
-    po:     col('purchasing document'), line: col('item'), rework: col('rework'),
+    part:    findCol('part number'),          desc:  findCol('material description'),
+    req:     findCol('required by'),          due:   findCol('current due date'),
+    created: findCol('po creation date'),
+    qty:     findCol('bal due qty'),          value: findCol('line value', 'value'),
+    po:      findCol('purchasing document'),  line:  findCol('item'),  rework: findCol('rework'),
   };
   if (idx.part < 0) throw new Error('no "Part Number" column found in the header');
+
+  const fields = lines.slice(1).map(l => okbSplitLine(l, delim));
+
+  // Detect the date format (UK day-first vs US month-first) from all date cells.
+  const dateCells = [];
+  for (const f of fields) for (const j of [idx.req, idx.due, idx.created]) {
+    if (j >= 0 && j < f.length) dateCells.push(f[j]);
+  }
+  const dayFirst = okbDetectDayFirst(dateCells);
+
   const rows = []; let skippedBlank = 0;
-  for (let i = 1; i < lines.length; i++) {
-    const f = okbSplitLine(lines[i], delim);
+  for (const f of fields) {
     const get = j => (j >= 0 && j < f.length ? f[j] : '');
     const itemNumber = get(idx.part).trim();
-    if (!itemNumber) { skippedBlank++; continue; }   // service/repair lines carry no part number
+    if (!itemNumber) { skippedBlank++; continue; }                   // service/repair lines carry no part number
     rows.push({
       poNumber:    get(idx.po).trim(),
       poLine:      get(idx.line).trim(),
       itemNumber,
       description: get(idx.desc).trim(),
-      requiredBy:  okbParseDate(get(idx.req)),
-      dueDate:     okbParseDate(get(idx.due)),
+      requiredBy:  okbParseDate(get(idx.req), dayFirst),
+      dueDate:     okbParseDate(get(idx.due), dayFirst),
       quantity:    parseInt(get(idx.qty), 10) || 0,
       lineValue:   okbNum(get(idx.value)),
       rework:      get(idx.rework).trim() !== '',
     });
   }
-  return { rows, skippedBlank };
+  return { rows, skippedBlank, dateFormat: dayFirst ? 'DD/MM/YYYY' : 'MM/DD/YYYY' };
 }
 
 // ── CHARTS PAGE ───────────────────────────────────────────────────────────────
