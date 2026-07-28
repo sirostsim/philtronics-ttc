@@ -52,11 +52,12 @@ router.get('/offering', async (req, res) => {
               COALESCE(co.required_by, co.due_date) AS effective_date,
               (tt.item_number IS NOT NULL)          AS has_target,
               tt.hours AS t_hours, tt.minutes AS t_minutes,
-              EXISTS (
-                SELECT 1 FROM planned_work pw
+              COALESCE((
+                SELECT SUM(pw.quantity) FROM planned_work pw
                 WHERE pw.item_number = co.item_number
                   AND pw.wo_number IS NOT DISTINCT FROM co.po_number
-              )                                     AS already_planned
+                  AND pw.source_po_line IS NOT DISTINCT FROM co.po_line
+              ), 0)                                 AS planned_qty
        FROM customer_orders co
        LEFT JOIN target_times tt ON tt.item_number = co.item_number
        WHERE co.rework = FALSE
@@ -72,6 +73,9 @@ router.get('/offering', async (req, res) => {
     const today = new Date().toISOString().slice(0, 10);
     res.json(rows.map(r => {
       const eff = iso(r.effective_date);
+      const ordered   = r.quantity;
+      const planned   = Number(r.planned_qty) || 0;
+      const remaining = ordered - planned;
       return {
         id:             r.id,
         customer:       r.customer,
@@ -82,12 +86,15 @@ router.get('/offering', async (req, res) => {
         requiredBy:     iso(r.required_by),
         dueDate:        iso(r.due_date),
         effectiveDate:  eff,
-        quantity:       r.quantity,
+        quantity:       ordered,            // ordered (Bal Due) quantity
+        plannedQty:     planned,            // total already allocated to the planner
+        remainingQty:   remaining,          // ordered - planned (negative = over-planned)
+        fullyPlanned:   remaining <= 0,
+        overPlanned:    planned > ordered,
         lineValue:      r.line_value != null ? Number(r.line_value) : null,
         hasTarget:      r.has_target,
         // Per-item target minutes (for backward scheduling on the planner); null when no target.
         perItemMinutes: r.has_target ? (r.t_hours * 60 + r.t_minutes) : null,
-        alreadyPlanned: r.already_planned,
         overdue:        eff != null && eff < today,
       };
     }));

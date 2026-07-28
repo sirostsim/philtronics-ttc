@@ -3162,4 +3162,7 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
 .ob-table .ob-overdue { color:var(--red); font-weight:700; }
 .ob-notarget { color:var(--accent); font-size:11px; }
 .ob-planned { color:var(--green); font-size:12px; font-weight:700; }
-.ob-row-planned { opacity:.6; }
+.ob-row-planned { opacity:.55; }
+.ob-qty { white-space:nowrap; font-variant-numeric:tabular-nums; }
+.ob-over { color:var(--accent); font-size:12px; font-weight:700; }
+.planner-schednote.planner-warn { color:var(--accent); font-weight:600; }

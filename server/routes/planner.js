@@ -180,10 +180,10 @@ router.post('/', requireRole('manager'), validate(schemas.plannedWork), async (r
     await query(
       `INSERT INTO planned_work
          (id, item_number, wo_number, start_date, quantity, estimated_minutes, department,
-          source_required_by, created_by, updated_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)`,
+          source_required_by, source_po_line, created_by, updated_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10)`,
       [id, item, b.woNumber || null, b.startDate, b.quantity, estimate, b.department || null,
-       b.sourceRequiredBy || null, req.user.id]
+       b.sourceRequiredBy || null, b.sourcePoLine || null, req.user.id]
     );
     const s = await settings.get();
     const joined = await queryOne(`${JOIN_SQL} WHERE p.id = $1`, [id]);
