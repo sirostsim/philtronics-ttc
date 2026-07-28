@@ -4840,12 +4840,30 @@ function openPlannerForm(existing, prefill) {
     } catch (_) { /* keep the default start */ }
   }
 
+  // Quantity allocation note: how much of the order line is left, and a warning
+  // (not a block) when the entered quantity over-plans it (e.g. MOQ over-builds).
+  const allocNote = el('div', { className: 'planner-schednote' });
+  function updateAllocNote() {
+    if (pf.remainingQty == null) return;
+    const qty = parseInt(qtyInput.value, 10) || 0;
+    if (qty > pf.remainingQty) {
+      allocNote.textContent = '⚠ Over-plans this order by ' + (qty - pf.remainingQty) + ' (' + Math.max(0, pf.remainingQty) + ' remaining on the line).';
+      allocNote.classList.add('planner-warn');
+    } else {
+      allocNote.textContent = pf.remainingQty > 0
+        ? pf.remainingQty + ' remaining on this order line.'
+        : 'This line is already fully planned; adding more will over-build.';
+      allocNote.classList.remove('planner-warn');
+    }
+  }
+
   const body = el('div', { className: 'planner-form' },
     el('label', { className: 'dev-form-label', textContent: 'Item Number' }), itemInput,
     el('label', { className: 'dev-form-label', textContent: 'W/O Number' }), woInput,
     el('label', { className: 'dev-form-label', textContent: 'Start date' }), dateInput,
     scheduleNote,
     el('label', { className: 'dev-form-label', textContent: 'Quantity' }), qtyInput,
+    allocNote,
     el('label', { className: 'dev-form-label', textContent: 'Estimated time per item (used only if the item has no target time)' }),
     el('div', { style: 'display:flex;gap:8px' }, estHInput, estMInput),
     el('label', { className: 'dev-form-label', textContent: 'Department' }), deptSel,
@@ -4856,6 +4874,10 @@ function openPlannerForm(existing, prefill) {
     estHInput.addEventListener('input', recomputeStart);
     estMInput.addEventListener('input', recomputeStart);
     recomputeStart(); // initial backward-scheduled suggestion
+  }
+  if (pf.remainingQty != null) {
+    qtyInput.addEventListener('input', updateAllocNote);
+    updateAllocNote();
   }
 
   const save = el('button', { className: 'btn btn-primary', textContent: isEdit ? 'Save' : 'Add' });
@@ -4869,6 +4891,7 @@ function openPlannerForm(existing, prefill) {
       estimatedMinutes: estMInput.value === '' ? null : parseInt(estMInput.value, 10),
       department: deptSel.value || null,
       sourceRequiredBy: pf.requiredDate || null,
+      sourcePoLine: pf.sourcePoLine || null,
     };
     try {
       if (isEdit) await PATCH(`/planner/${existing.id}`, payload);
@@ -4976,21 +4999,29 @@ function orderBookTable(items) {
   const tbl = el('table', { className: 'dash-table ob-table' });
   tbl.appendChild(el('thead', {}, el('tr', {},
     el('th', { textContent: 'Item' }), el('th', { textContent: 'Description' }),
-    el('th', { textContent: 'Required' }), el('th', { textContent: 'Qty' }),
+    el('th', { textContent: 'Required' }), el('th', { textContent: 'To build' }),
     el('th', { textContent: 'Value' }), el('th', { textContent: 'PO' }), el('th', { textContent: '' }),
   )));
   const tb = el('tbody', {});
   for (const it of items) {
     const desc = el('td', { className: 'ob-desc', textContent: it.description || '' });
     if (!it.hasTarget) desc.appendChild(el('span', { className: 'ob-notarget', title: 'No target time; you will enter an estimate when planning', textContent: ' (no target)' }));
+
+    // Quantity cell: remaining of ordered, e.g. "4 of 7" (or "fully planned" / "over-planned by N").
+    const qtyCell = el('td', { className: 'ob-qty' });
+    if (it.overPlanned) qtyCell.appendChild(el('span', { className: 'ob-over', textContent: 'over-planned by ' + (it.plannedQty - it.quantity) }));
+    else if (it.fullyPlanned) qtyCell.appendChild(el('span', { className: 'ob-planned', textContent: '✓ ' + it.quantity + ' planned' }));
+    else qtyCell.appendChild(el('span', {}, String(it.remainingQty) + ' of ' + it.quantity));
+
+    // Managers can always add (to over-build for MOQ); the row greys when nothing remains.
     const action = el('td', {});
-    if (it.alreadyPlanned) action.appendChild(el('span', { className: 'ob-planned', textContent: '✓ planned' }));
-    else if (canPlan) action.appendChild(el('button', { className: 'btn btn-sm', textContent: 'Add to planner', onclick: () => addOfferingToPlanner(it) }));
-    tb.appendChild(el('tr', { className: it.alreadyPlanned ? 'ob-row-planned' : '' },
+    if (canPlan) action.appendChild(el('button', { className: 'btn btn-sm', textContent: it.remainingQty > 0 ? 'Add to planner' : 'Add more', onclick: () => addOfferingToPlanner(it) }));
+
+    tb.appendChild(el('tr', { className: it.fullyPlanned ? 'ob-row-planned' : '' },
       el('td', { className: 'ob-item', textContent: it.itemNumber }),
       desc,
       el('td', { className: it.overdue ? 'ob-overdue' : '', textContent: it.effectiveDate || '—' }),
-      el('td', { textContent: String(it.quantity) }),
+      qtyCell,
       el('td', { className: 'ob-value', textContent: it.lineValue != null ? obMoney(it.lineValue) : '' }),
       el('td', { className: 'ob-po', textContent: it.poNumber || '' }),
       action,
@@ -5001,8 +5032,11 @@ function orderBookTable(items) {
 }
 
 function addOfferingToPlanner(it) {
-  openPlannerForm(null, { itemNumber: it.itemNumber, quantity: it.quantity, woNumber: it.poNumber,
-    requiredDate: it.effectiveDate, perItemMinutes: it.perItemMinutes });
+  // Default the quantity to what's still remaining on the line (min 1 so an
+  // over-build for MOQ can still be planned when the line is already met).
+  openPlannerForm(null, { itemNumber: it.itemNumber, quantity: Math.max(1, it.remainingQty), woNumber: it.poNumber,
+    requiredDate: it.effectiveDate, perItemMinutes: it.perItemMinutes,
+    sourcePoLine: it.poLine, remainingQty: it.remainingQty });
 }
 
 async function handleOrderBookFile(file) {
