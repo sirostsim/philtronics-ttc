@@ -136,4 +136,26 @@ router.post('/', requireRole('manager'), validate(schemas.orderBookUpload), asyn
   }
 });
 
+// ── POST /api/order-book/clear ── manager+ ── wipe one customer's order book
+router.post('/clear', requireRole('manager'), async (req, res) => {
+  try {
+    const customer = ((req.body && req.body.customer) || '').trim();
+    if (!customer) return res.status(400).json({ error: 'A customer is required.' });
+    const deleted = await query('DELETE FROM customer_orders WHERE customer = $1 RETURNING id', [customer]);
+    const n = deleted.length;
+    try {
+      await query(
+        `INSERT INTO audit_log (id, timer_id, action, performed_by, details)
+         VALUES ($1, NULL, 'order_book_cleared', $2, $3)`,
+        [uuidv4(), req.user.id, JSON.stringify({ customer, cleared: n })]
+      );
+    } catch (_) {}
+    console.log(`[order-book] ${req.user.username || req.user.id} cleared ${customer} order book (${n} lines)`);
+    res.json({ cleared: n, customer });
+  } catch (err) {
+    console.error('POST /order-book/clear error:', err.message);
+    res.status(500).json({ error: 'Could not clear the order book.' });
+  }
+});
+
 module.exports = router;

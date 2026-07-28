@@ -243,4 +243,18 @@ router.delete('/:id', requireRole('manager'), async (req, res) => {
   }
 });
 
+// ── POST /api/planner/clear ── manager+ ── wipe the ENTIRE planner (destructive)
+router.post('/clear', requireRole('manager'), async (req, res) => {
+  try {
+    const deleted = await query('DELETE FROM planned_work RETURNING id');
+    const n = deleted.length;
+    try { await writeAudit(null, 'planner_cleared', req.user.id, 'clear all', { cleared: n }); } catch (_) {}
+    console.log(`[planner] ${req.user.username || req.user.id} cleared the planner (${n} jobs)`);
+    res.json({ cleared: n });
+  } catch (err) {
+    console.error('POST /planner/clear error:', err.message);
+    res.status(500).json({ error: 'Could not clear the planner.' });
+  }
+});
+
 module.exports = router;
