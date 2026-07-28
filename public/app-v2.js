@@ -4638,11 +4638,28 @@ async function renderPlanner() {
     const qs = _plannerState.dept ? '?department=' + encodeURIComponent(_plannerState.dept) : '';
     const items = await GET('/planner' + qs);
     board.innerHTML = '';
+    const driftCount = items.filter(it => it.drift).length;
+    if (driftCount) {
+      board.appendChild(el('div', { className: 'planner-review',
+        textContent: '⚠ ' + driftCount + ' planned job' + (driftCount !== 1 ? 's' : '') + ' need review: the order book changed under them (moved, removed, or quantity changed).' }));
+    }
     board.appendChild(plannerBoard(items, days));
   } catch (err) {
     board.innerHTML = '';
     board.appendChild(el('div', { className: 'error-msg', style: 'padding:16px', textContent: err.message }));
   }
+}
+
+// A small chip describing how the order book has drifted under a planned job.
+function plannerDriftBadge(drift) {
+  if (!drift) return null;
+  if (drift.type === 'removed')
+    return el('span', { className: 'plan-drift plan-drift-removed', textContent: 'not in current order book' });
+  if (drift.type === 'date_moved')
+    return el('span', { className: 'plan-drift plan-drift-moved', textContent: 'requirement moved: ' + (drift.wasRequired || '?') + ' → ' + (drift.nowRequired || '?') });
+  if (drift.type === 'qty_changed')
+    return el('span', { className: 'plan-drift plan-drift-qty', textContent: 'order qty changed: ' + drift.fromQty + ' → ' + drift.toQty });
+  return null;
 }
 
 function plannerBoard(items, days) {
@@ -4668,12 +4685,14 @@ function plannerBoard(items, days) {
   }
 
   for (const it of items) {
-    const row = el('div', { className: 'planner-jobrow' });
+    const row = el('div', { className: 'planner-jobrow' + (it.drift ? ' planner-jobrow-drift' : '') });
     const label = el('div', { className: 'planner-joblabel' },
       el('div', { className: 'planner-jobtitle', textContent: it.itemNumber }),
       el('div', { className: 'planner-jobsub', textContent: it.woNumber || '(no WO)' }),
       el('div', { className: 'planner-jobmeta', textContent: 'Qty ' + it.quantity + ' · ' + fmtPlanMins(it.totalMinutes) + ' · ' + it.durationSource }),
     );
+    const driftBadge = plannerDriftBadge(it.drift);
+    if (driftBadge) label.appendChild(driftBadge);
     if (canEdit) {
       label.appendChild(el('div', { className: 'planner-jobactions' },
         el('button', { className: 'btn btn-sm btn-ghost', textContent: 'Edit', onclick: () => openPlannerForm(it) }),
@@ -4706,6 +4725,20 @@ function plannerBoard(items, days) {
       bar.textContent = it.itemNumber + ' · ' + fmtPlanMins(it.totalMinutes);
       if (canEdit && startsInWindow) makePlannerBarDraggable(bar, it, startCol, days);
       track.appendChild(bar);
+    }
+    // Deadline marker: the current customer required date, drawn on the row. If
+    // the planned finish is past it, the marker turns red (job is late).
+    if (it.currentRequiredBy) {
+      const mCol = days.indexOf(it.currentRequiredBy);
+      if (mCol >= 0) {
+        const late = it.endDate && it.endDate > it.currentRequiredBy;
+        const marker = el('div', {
+          className: 'planner-deadline' + (late ? ' late' : ''),
+          title: 'Required by ' + it.currentRequiredBy + (late ? ' — planned finish (' + it.endDate + ') is after this' : ''),
+        });
+        marker.style.left = (mCol * _PLAN_DAYW + _PLAN_DAYW - 2) + 'px';
+        track.appendChild(marker);
+      }
     }
     row.appendChild(track);
     inner.appendChild(row);

@@ -29,9 +29,38 @@ function startISOof(row) {
     : String(row.start_date).slice(0, 10);
 }
 
+function isoDate(d) {
+  if (d == null) return null;
+  return d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10);
+}
+
+// Compare an order-linked planned job to the CURRENT order book (lines keyed by
+// "item||PO") and report drift. Matching key is item + PO + the required-date
+// snapshot taken when the job was planned.
+//   same date still present  -> unchanged (but check quantity)
+//   date gone, item+PO still ordered -> requirement moved
+//   no lines for item+PO at all      -> removed from the current order book
+// ordersByKey undefined => skip drift entirely (e.g. the POST/PATCH response).
+function computeDrift(row, ordersByKey) {
+  const src = isoDate(row.source_required_by);
+  if (!ordersByKey) return { drift: null, currentRequiredBy: src };
+  if (!src || !row.wo_number) return { drift: null, currentRequiredBy: null };
+  const lines = ordersByKey[row.item_number + '||' + row.wo_number] || [];
+  if (!lines.length) return { drift: { type: 'removed', wasRequired: src }, currentRequiredBy: null };
+  const exact = lines.find(l => l.eff === src);
+  if (exact) {
+    if (exact.qty !== row.quantity) {
+      return { drift: { type: 'qty_changed', fromQty: row.quantity, toQty: exact.qty }, currentRequiredBy: src };
+    }
+    return { drift: null, currentRequiredBy: src };
+  }
+  const earliest = lines.map(l => l.eff).filter(Boolean).sort()[0] || null;
+  return { drift: { type: 'date_moved', wasRequired: src, nowRequired: earliest }, currentRequiredBy: earliest };
+}
+
 // Shape a joined planned_work + target_times row for the client, deriving the
-// required duration and the working-hours-aware end date.
-function formatRow(row, s) {
+// required duration, the working-hours-aware end date, and any order-book drift.
+function formatRow(row, s, ordersByKey) {
   const hasTarget = row.t_hours != null;
   const perItem   = hasTarget
     ? (row.t_hours * 60 + row.t_minutes)
@@ -47,6 +76,8 @@ function formatRow(row, s) {
     workingDays = span.workingDays;
   }
 
+  const { drift, currentRequiredBy } = computeDrift(row, ordersByKey);
+
   return {
     id:               row.id,
     itemNumber:       row.item_number,
@@ -61,6 +92,9 @@ function formatRow(row, s) {
     estimatedMinutes: row.estimated_minutes,
     endDate,
     workingDays,
+    sourceRequiredBy: isoDate(row.source_required_by),
+    currentRequiredBy,
+    drift,
     updatedAt:        row.updated_at,
   };
 }
@@ -109,7 +143,23 @@ router.get('/', async (req, res) => {
       `${JOIN_SQL} ${where} ORDER BY p.start_date ASC, p.created_at ASC`,
       params
     );
-    res.json(rows.map(r => formatRow(r, s)));
+
+    // Drift: for the items on the board, fetch the CURRENT order lines and key
+    // them by item||PO so each planned job can be compared to live demand.
+    const items = [...new Set(rows.map(r => r.item_number))];
+    const ordersByKey = {};
+    if (items.length) {
+      const orders = await query(
+        `SELECT item_number, po_number, COALESCE(required_by, due_date) AS eff, quantity
+         FROM customer_orders WHERE item_number = ANY($1) AND rework = FALSE`,
+        [items]
+      );
+      for (const o of orders) {
+        const key = o.item_number + '||' + (o.po_number || '');
+        (ordersByKey[key] = ordersByKey[key] || []).push({ eff: isoDate(o.eff), qty: o.quantity });
+      }
+    }
+    res.json(rows.map(r => formatRow(r, s, ordersByKey)));
   } catch (err) {
     console.error('GET /planner error:', err.message);
     res.status(500).json({ error: 'Could not load the planner.' });
