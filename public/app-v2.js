@@ -4623,8 +4623,65 @@ function loadPlannerPage() {
     addBtn.hidden = !hasRole('manager');
     if (!addBtn._wired) { addBtn._wired = true; addBtn.addEventListener('click', () => openPlannerForm(null)); }
   }
+  const resetBtn = document.getElementById('btnPlannerReset');
+  if (resetBtn) {
+    resetBtn.hidden = !hasRole('manager');
+    if (!resetBtn._wired) { resetBtn._wired = true; resetBtn.addEventListener('click', openClearModal); }
+  }
   initOrderBook();
   renderPlanner();
+}
+
+// Manager-only destructive reset: clear the whole planner and/or the selected
+// customer's order book. Each needs typing CLEAR to confirm; the server enforces
+// the manager gate and logs it to the audit trail.
+function openClearModal() {
+  const customer = _obState.customer || '';
+
+  function clearSection(opts) {
+    const input = el('input', { type: 'text', placeholder: 'Type CLEAR to confirm', autocapitalize: 'characters', disabled: opts.disabled });
+    const btn = el('button', { className: 'btn btn-sm dev-danger', textContent: opts.label, disabled: true });
+    if (!opts.disabled) {
+      input.addEventListener('input', () => { btn.disabled = input.value.trim().toUpperCase() !== 'CLEAR'; });
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        try {
+          const res = await opts.action();
+          toast(opts.done(res), 'success');
+          input.value = '';
+          renderPlanner();
+          if (document.getElementById('obList')) { const c = document.getElementById('obCustomer'); if (c) c._filled = false; loadOrderBook(); }
+        } catch (err) { toast(err.message, 'error'); btn.disabled = false; }
+      });
+    }
+    return el('div', { className: 'clear-section' },
+      el('div', { className: 'clear-title', textContent: opts.title }),
+      el('div', { className: 'clear-desc', textContent: opts.desc }),
+      el('div', { style: 'display:flex;gap:8px;margin-top:8px;' }, input, btn),
+    );
+  }
+
+  const body = el('div', {},
+    el('div', { className: 'clear-warn', textContent: '⚠ These actions are permanent and cannot be undone.' }),
+    clearSection({
+      title: 'Clear the planner',
+      desc: 'Removes every planned job from the Gantt. Uploaded order books are untouched.',
+      label: 'Clear planner',
+      action: () => POST('/planner/clear', {}),
+      done: r => 'Cleared ' + r.cleared + ' planned job' + (r.cleared !== 1 ? 's' : '') + '.',
+    }),
+    clearSection({
+      title: 'Clear the order book' + (customer ? ' (' + customer + ')' : ''),
+      desc: customer
+        ? 'Removes the entire ' + customer + ' order book. Planned jobs are untouched.'
+        : 'Pick a specific customer in the order-book panel first, then reopen this.',
+      label: 'Clear order book',
+      disabled: !customer,
+      action: () => POST('/order-book/clear', { customer }),
+      done: r => 'Cleared ' + r.cleared + ' line' + (r.cleared !== 1 ? 's' : '') + ' from the ' + r.customer + ' order book.',
+    }),
+  );
+  openModal('Clear plan / order book', body, [ el('button', { className: 'btn btn-ghost', textContent: 'Close', onclick: () => closeModal() }) ]);
 }
 
 async function renderPlanner() {

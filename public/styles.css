@@ -3166,3 +3166,10 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
 .ob-qty { white-space:nowrap; font-variant-numeric:tabular-nums; }
 .ob-over { color:var(--accent); font-size:12px; font-weight:700; }
 .planner-schednote.planner-warn { color:var(--accent); font-weight:600; }
+
+/* Clear plan / order book (destructive, manager-only) */
+.clear-warn { background:rgba(239,68,68,.12); color:#f8b4b4; border:1px solid var(--red-dim); border-radius:8px; padding:10px 12px; font-size:13px; font-weight:600; margin-bottom:16px; }
+.clear-section { border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin-bottom:12px; }
+.clear-title { font-size:14px; font-weight:700; color:var(--text); }
+.clear-desc { font-size:12px; color:var(--text2); margin-top:2px; }
+.dev-danger:disabled { opacity:.4; }
