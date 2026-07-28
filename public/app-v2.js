@@ -4957,6 +4957,7 @@ function openPlannerForm(existing, prefill) {
       department: deptSel.value || null,
       sourceRequiredBy: pf.requiredDate || null,
       sourcePoLine: pf.sourcePoLine || null,
+      sourceOrderedQty: pf.sourceOrderedQty != null ? pf.sourceOrderedQty : null,
     };
     try {
       if (isEdit) await PATCH(`/planner/${existing.id}`, payload);
@@ -5101,7 +5102,7 @@ function addOfferingToPlanner(it) {
   // over-build for MOQ can still be planned when the line is already met).
   openPlannerForm(null, { itemNumber: it.itemNumber, quantity: Math.max(1, it.remainingQty), woNumber: it.poNumber,
     requiredDate: it.effectiveDate, perItemMinutes: it.perItemMinutes,
-    sourcePoLine: it.poLine, remainingQty: it.remainingQty });
+    sourcePoLine: it.poLine, sourceOrderedQty: it.quantity, remainingQty: it.remainingQty });
 }
 
 async function handleOrderBookFile(file) {
