@@ -4745,13 +4745,19 @@ function plannerBoard(items, days) {
 
   for (const it of items) {
     const row = el('div', { className: 'planner-jobrow' + (it.drift ? ' planner-jobrow-drift' : '') });
-    const label = el('div', { className: 'planner-joblabel' },
-      el('div', { className: 'planner-jobtitle', textContent: it.itemNumber }),
-      el('div', { className: 'planner-jobsub', textContent: it.woNumber || '(no WO)' }),
+    // Label content is laid out horizontally (wide column, shallow rows) so more
+    // jobs fit on one PC screen: item + WO on one line, meta on the next, actions
+    // to the right. See .planner-joblabel in styles.css.
+    const info = el('div', { className: 'planner-jobinfo' },
+      el('div', { className: 'planner-jobtitle' },
+        el('span', { className: 'planner-jobitem', textContent: it.itemNumber, title: it.itemNumber }),
+        el('span', { className: 'planner-jobwo', textContent: it.woNumber || '(no WO)', title: it.woNumber || '(no WO)' }),
+      ),
       el('div', { className: 'planner-jobmeta', textContent: 'Qty ' + it.quantity + ' · ' + fmtPlanMins(it.totalMinutes) + ' · ' + it.durationSource }),
     );
     const driftBadge = plannerDriftBadge(it.drift);
-    if (driftBadge) label.appendChild(driftBadge);
+    if (driftBadge) info.appendChild(driftBadge);
+    const label = el('div', { className: 'planner-joblabel' }, info);
     if (canEdit) {
       label.appendChild(el('div', { className: 'planner-jobactions' },
         el('button', { className: 'btn btn-sm btn-ghost', textContent: 'Edit', onclick: () => openPlannerForm(it) }),
