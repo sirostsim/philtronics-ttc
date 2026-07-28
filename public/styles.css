@@ -3135,6 +3135,16 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
 .planner-jobactions { display:flex; gap:6px; margin-top:2px; }
 .planner-emptyrow { padding:26px 16px; color:var(--text2); }
 
+/* Order-book drift: highlight planned jobs whose demand changed under them. */
+.planner-review { padding:8px 12px; background:rgba(239,68,68,.12); color:#f8b4b4; font-size:13px; font-weight:600; border-bottom:1px solid var(--border); position:sticky; left:0; }
+.planner-jobrow-drift .planner-joblabel { box-shadow: inset 3px 0 0 var(--red); }
+.plan-drift { display:inline-block; width:fit-content; font-size:10px; font-weight:700; padding:1px 7px; border-radius:10px; margin-top:3px; }
+.plan-drift-removed { background:rgba(239,68,68,.18); color:#f87171; }
+.plan-drift-moved   { background:rgba(240,180,41,.18); color:var(--accent); }
+.plan-drift-qty     { background:rgba(59,130,246,.18); color:#7eb0ff; }
+.planner-deadline { position:absolute; top:3px; bottom:3px; width:2px; background:var(--text3); opacity:.6; z-index:2; }
+.planner-deadline.late { background:var(--red); opacity:1; width:3px; }
+
 /* Order book: available-to-build offering on the Planner page. */
 .ob-panel { border:1px solid var(--border); border-radius:var(--radius-lg); background:var(--bg2); padding:14px 16px; margin-bottom:16px; }
 .ob-head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
