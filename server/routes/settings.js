@@ -55,6 +55,8 @@ const VALIDATORS = {
   warning_threshold_pct:     v => Number.isInteger(+v) && +v >= 1 && +v <= 100,
   overdue_threshold_pct:     v => Number.isInteger(+v) && +v >= 1 && +v <= 200,
   no_target_warning_minutes: v => Number.isInteger(+v) && +v >= 1 && +v <= 1440,
+  output_target_daily:       v => Number.isInteger(+v) && +v >= 0 && +v <= 100000000,
+  output_target_weekly:      v => Number.isInteger(+v) && +v >= 0 && +v <= 100000000,
   feature_time_check:   v => typeof v === 'boolean' || v === 'on' || v === 'off',
   feature_raised_hands: v => typeof v === 'boolean' || v === 'on' || v === 'off',
   feature_messaging:    v => typeof v === 'boolean' || v === 'on' || v === 'off',

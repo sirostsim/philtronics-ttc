@@ -2792,6 +2792,13 @@ async function loadSystemSettings() {
   const noTgtInput = el('input', { type: 'number', min: '1', max: '1440', className: 'setting-input', value: s.no_target_warning_minutes });
   panel.appendChild(mk('No-target warning after (minutes)', noTgtInput));
 
+  panel.appendChild(el('h3', { className: 'settings-group-title', textContent: 'Planner output targets' }));
+  panel.appendChild(el('p', { className: 'settings-note', textContent: 'Planned £ output the Planner checks each day and week against. Set 0 to show the totals without flagging under-target.' }));
+  const outDailyInput = el('input', { type: 'number', min: '0', max: '100000000', step: '100', className: 'setting-input', value: s.output_target_daily });
+  panel.appendChild(mk('Daily output target (£)', outDailyInput));
+  const outWeeklyInput = el('input', { type: 'number', min: '0', max: '100000000', step: '100', className: 'setting-input', value: s.output_target_weekly });
+  panel.appendChild(mk('Weekly output target (£)', outWeeklyInput));
+
   // Feature toggles — superuser only (commercial / security levers).
   const isSuperuser = hasRole('superuser');
   const featureDefs = [
@@ -2829,6 +2836,8 @@ async function loadSystemSettings() {
       warning_threshold_pct: parseInt(warnInput.value, 10),
       overdue_threshold_pct: parseInt(overdueInput.value, 10),
       no_target_warning_minutes: parseInt(noTgtInput.value, 10),
+      output_target_daily: parseInt(outDailyInput.value, 10) || 0,
+      output_target_weekly: parseInt(outWeeklyInput.value, 10) || 0,
     };
     // Feature/security keys only included when a superuser is editing them.
     if (isSuperuser) {
@@ -4581,7 +4590,7 @@ function exportProductivityCSV() {
 // comes from the item's target time (x quantity) or a manager estimate; the
 // Gantt bar length is the server-computed span across working days.
 
-const _plannerState = { dept: '', viewStart: null, fullscreen: false, items: null };
+const _plannerState = { dept: '', viewStart: null, fullscreen: false, items: null, targets: { daily: 0, weekly: 0 } };
 const _PLAN_WEEKS  = 4;    // weeks shown in the normal (in-page) board
 const _PLAN_DAYW   = 46;   // px per day column
 const _PLAN_LABELW = 320;  // px of the sticky Item/WO label column (matches CSS)
@@ -4608,6 +4617,30 @@ function fmtPlanMins(m) {
   if (m == null) return '—';
   const h = Math.floor(m / 60), mm = m % 60;
   return h > 0 ? (mm ? h + 'h ' + mm + 'm' : h + 'h') : mm + 'm';
+}
+// Full money (week cells, tooltips) and compact money (narrow day cells).
+function plannerFmtMoney(n)  { return '£' + Math.round(n).toLocaleString('en-GB'); }
+function plannerFmtMoneyK(n) {
+  if (n >= 1000) return '£' + (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k';
+  return '£' + Math.round(n);
+}
+// Spread each order-linked job's £ value evenly across its working days (Mon-Fri),
+// returning a map of ISO date -> total planned value on that day across all jobs.
+// Jobs with no value (manual / unlinked) contribute nothing. Days outside the
+// visible window are still counted so week totals only include their visible part.
+function plannerValueByDate(items) {
+  const map = {};
+  for (const it of items) {
+    if (it.value == null || !(it.workingDays > 0)) continue;
+    const per = it.value / it.workingDays;
+    let placed = 0;
+    for (let i = 0; placed < it.workingDays && i < 500; i++) {
+      const cur = plannerAddDays(it.startDate, i);
+      const dow = new Date(cur + 'T12:00:00Z').getUTCDay(); // 0 Sun .. 6 Sat
+      if (dow >= 1 && dow <= 5) { map[cur] = (map[cur] || 0) + per; placed++; }
+    }
+  }
+  return map;
 }
 // Working days (Mon-Fri) across the current window. PT works Mon-Fri by default;
 // bar length uses the server's workingDays count so it stays correct regardless.
@@ -4721,7 +4754,9 @@ async function renderPlanner() {
   if (range) range.textContent = plannerNiceDate(days[0]) + ' – ' + plannerNiceDate(days[days.length - 1]) + ' · Mon–Fri';
   try {
     const qs = _plannerState.dept ? '?department=' + encodeURIComponent(_plannerState.dept) : '';
-    _plannerState.items = await GET('/planner' + qs);
+    const resp = await GET('/planner' + qs);
+    _plannerState.items = resp.items || [];
+    _plannerState.targets = resp.targets || { daily: 0, weekly: 0 };
     _plannerPaint();
   } catch (err) {
     _plannerState.items = null;
@@ -4919,6 +4954,47 @@ function plannerBoard(items, days) {
     row.appendChild(track);
     inner.appendChild(row);
   }
+
+  // ── Output totals: planned £ value per day and per week, vs the targets. Each
+  // job's value is spread evenly over its working days; days/weeks that fall short
+  // of the configured target are highlighted (under-planned output).
+  const valByDate = plannerValueByDate(items);
+  const targets = _plannerState.targets || { daily: 0, weekly: 0 };
+
+  const dayRow = el('div', { className: 'planner-totrow' });
+  dayRow.appendChild(el('div', { className: 'planner-totlabel' },
+    el('div', { className: 'planner-tottitle', textContent: 'Planned £ / day' }),
+    el('div', { className: 'planner-totsub', textContent: targets.daily ? 'target ' + plannerFmtMoney(targets.daily) : 'no target set' }),
+  ));
+  days.forEach((iso, i) => {
+    const v = valByDate[iso] || 0;
+    const under = targets.daily > 0 && v < targets.daily;
+    dayRow.appendChild(el('div', {
+      className: 'planner-totcell' + (i % 5 === 0 ? ' wk' : '') + (under ? ' under' : (v > 0 ? ' ok' : '')),
+      title: iso + ': ' + plannerFmtMoney(v) + (targets.daily ? ' of ' + plannerFmtMoney(targets.daily) + ' target' : ''),
+      textContent: v > 0 ? plannerFmtMoneyK(v) : '–',
+    }));
+  });
+  inner.appendChild(dayRow);
+
+  const weekRow = el('div', { className: 'planner-totrow planner-totrow-week' });
+  weekRow.appendChild(el('div', { className: 'planner-totlabel' },
+    el('div', { className: 'planner-tottitle', textContent: 'Planned £ / week' }),
+    el('div', { className: 'planner-totsub', textContent: targets.weekly ? 'target ' + plannerFmtMoney(targets.weekly) : 'no target set' }),
+  ));
+  const weeks = Math.round(days.length / 5);
+  for (let w = 0; w < weeks; w++) {
+    let sum = 0;
+    for (let i = 0; i < 5; i++) sum += valByDate[days[w * 5 + i]] || 0;
+    const under = targets.weekly > 0 && sum < targets.weekly;
+    weekRow.appendChild(el('div', {
+      className: 'planner-totweek' + (under ? ' under' : (sum > 0 ? ' ok' : '')),
+      title: 'Week of ' + days[w * 5] + ': ' + plannerFmtMoney(sum) + (targets.weekly ? ' of ' + plannerFmtMoney(targets.weekly) + ' target' : ''),
+      textContent: sum > 0 ? plannerFmtMoney(sum) : '–',
+    }));
+  }
+  inner.appendChild(weekRow);
+
   return inner;
 }
 

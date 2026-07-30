@@ -34,6 +34,11 @@ const DEFAULTS = {
   overdue_threshold_pct: 100,
   no_target_warning_minutes: 120,
 
+  // Planner output targets (£ of planned line value). 0 = not set: the planner
+  // still shows the day/week value totals but does not flag under-target.
+  output_target_daily: 0,
+  output_target_weekly: 0,
+
   feature_time_check: true,
   feature_raised_hands: true,
   feature_messaging: true,
@@ -47,7 +52,7 @@ const DEFAULTS = {
 // Keys whose stored string value is JSON.
 const JSON_KEYS = new Set(['hours_end_by_day', 'hours_break_minutes', 'terminology']);
 // Keys whose stored string value is an integer.
-const INT_KEYS = new Set(['productivity_target_pct', 'warning_threshold_pct', 'overdue_threshold_pct', 'no_target_warning_minutes']);
+const INT_KEYS = new Set(['productivity_target_pct', 'warning_threshold_pct', 'overdue_threshold_pct', 'no_target_warning_minutes', 'output_target_daily', 'output_target_weekly']);
 // Keys whose stored string value is an on/off boolean.
 const BOOL_KEYS = new Set(['feature_time_check', 'feature_raised_hands', 'feature_messaging', 'feature_availability', 'feature_quality_rft', 'feature_two_factor']);
 

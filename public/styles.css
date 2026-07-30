@@ -3162,6 +3162,19 @@ body.planner-fs-open { overflow:hidden; }
    Overrides the boxed look of the in-page .planner-board. */
 .planner-fs-board { flex:1 1 auto; min-height:0; overflow:auto; border:0; border-radius:0; }
 
+/* Output totals footer: planned £ value per day and per week vs targets. Cells
+   align to the same 46px day pitch as the Gantt; weekly cells span 5 days. */
+.planner-totrow { display:flex; align-items:stretch; border-top:1px solid var(--border); background:var(--bg3); }
+.planner-totrow-week { border-top:1px solid var(--border2); }
+.planner-totlabel { flex:0 0 320px; width:320px; border-right:1px solid var(--border); position:sticky; left:0; z-index:1; background:var(--bg3); padding:6px 12px; display:flex; flex-direction:column; justify-content:center; }
+.planner-tottitle { font-size:12px; font-weight:800; color:var(--text2); text-transform:uppercase; letter-spacing:.05em; }
+.planner-totsub { font-size:11px; color:var(--text3); }
+.planner-totcell { flex:0 0 46px; width:46px; border-right:1px solid rgba(255,255,255,.05); text-align:center; padding:6px 2px; font-size:10px; font-weight:700; color:var(--text2); display:flex; align-items:center; justify-content:center; }
+.planner-totcell.wk { border-left:2px solid var(--border2); }
+.planner-totweek { flex:0 0 230px; width:230px; border-left:2px solid var(--border2); text-align:center; padding:6px 2px; font-size:13px; font-weight:800; color:var(--text); display:flex; align-items:center; justify-content:center; }
+.planner-totcell.ok, .planner-totweek.ok { color:var(--green); }
+.planner-totcell.under, .planner-totweek.under { color:#f8b4b4; background:rgba(239,68,68,.12); }
+
 /* Order book: available-to-build offering on the Planner page. */
 .ob-panel { border:1px solid var(--border); border-radius:var(--radius-lg); background:var(--bg2); padding:14px 16px; margin-bottom:16px; }
 .ob-head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }

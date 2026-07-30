@@ -65,9 +65,24 @@ function computeDrift(row, ordersByKey) {
   return { drift: { type: 'date_moved', wasRequired: src, nowRequired: earliest }, currentRequiredBy: earliest };
 }
 
+// Commercial value of a planned job, derived from the order book. The unit price
+// is the matched order line's value / its ordered quantity; the job value is that
+// unit price x the planned quantity (so a partial allocation or an MOQ over-build
+// scales correctly). Matching is exact on item + PO + PO-line. Jobs with no order
+// link (manually added, no PO-line, or removed from the current order book) return
+// null and contribute nothing to the planner's value totals.
+function computeValue(row, valueByLineKey) {
+  if (!valueByLineKey) return null;
+  if (!row.wo_number || row.source_po_line == null) return null;
+  const line = valueByLineKey[row.item_number + '||' + row.wo_number + '||' + row.source_po_line];
+  if (!line || line.value == null || !(line.qty > 0)) return null;
+  const unit = line.value / line.qty;
+  return Math.round(unit * row.quantity * 100) / 100;
+}
+
 // Shape a joined planned_work + target_times row for the client, deriving the
 // required duration, the working-hours-aware end date, and any order-book drift.
-function formatRow(row, s, ordersByKey) {
+function formatRow(row, s, ordersByKey, valueByLineKey) {
   const hasTarget = row.t_hours != null;
   const perItem   = hasTarget
     ? (row.t_hours * 60 + row.t_minutes)
@@ -102,6 +117,7 @@ function formatRow(row, s, ordersByKey) {
     sourceRequiredBy: isoDate(row.source_required_by),
     currentRequiredBy,
     drift,
+    value:            computeValue(row, valueByLineKey),
     updatedAt:        row.updated_at,
   };
 }
@@ -151,22 +167,32 @@ router.get('/', async (req, res) => {
       params
     );
 
-    // Drift: for the items on the board, fetch the CURRENT order lines and key
-    // them by item||PO so each planned job can be compared to live demand.
+    // Drift + value: for the items on the board, fetch the CURRENT order lines.
+    // Keyed by item||PO for drift (a list per key), and by item||PO||PO-line for
+    // value (the exact line, giving its ordered qty and £ value).
     const items = [...new Set(rows.map(r => r.item_number))];
     const ordersByKey = {};
+    const valueByLineKey = {};
     if (items.length) {
       const orders = await query(
-        `SELECT item_number, po_number, COALESCE(required_by, due_date) AS eff, quantity
+        `SELECT item_number, po_number, po_line, COALESCE(required_by, due_date) AS eff, quantity, line_value
          FROM customer_orders WHERE item_number = ANY($1) AND rework = FALSE`,
         [items]
       );
       for (const o of orders) {
         const key = o.item_number + '||' + (o.po_number || '');
         (ordersByKey[key] = ordersByKey[key] || []).push({ eff: isoDate(o.eff), qty: o.quantity });
+        valueByLineKey[o.item_number + '||' + (o.po_number || '') + '||' + (o.po_line || '')] =
+          { qty: o.quantity, value: o.line_value != null ? Number(o.line_value) : null };
       }
     }
-    res.json(rows.map(r => formatRow(r, s, ordersByKey)));
+    res.json({
+      items: rows.map(r => formatRow(r, s, ordersByKey, valueByLineKey)),
+      targets: {
+        daily:  s.output_target_daily  || 0,
+        weekly: s.output_target_weekly || 0,
+      },
+    });
   } catch (err) {
     console.error('GET /planner error:', err.message);
     res.status(500).json({ error: 'Could not load the planner.' });
