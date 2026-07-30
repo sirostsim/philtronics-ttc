@@ -3149,6 +3149,19 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
 .planner-deadline { position:absolute; top:3px; bottom:3px; width:2px; background:var(--text3); opacity:.6; z-index:2; }
 .planner-deadline.late { background:var(--red); opacity:1; width:3px; }
 
+/* Full-screen Gantt overlay. Fills the browser window and sits above app chrome
+   (topbar z=100, side panel z=200) but below modals (z=300) and toasts (z=400),
+   so Add/Edit forms and toasts still appear on top while planning full screen. */
+.planner-fs-overlay { position:fixed; inset:0; z-index:250; background:var(--bg); display:flex; flex-direction:column; }
+.planner-fs-overlay[hidden] { display:none; }
+body.planner-fs-open { overflow:hidden; }
+.planner-fs-bar { flex:0 0 auto; display:flex; align-items:center; gap:14px; padding:10px 16px; background:var(--bg3); border-bottom:1px solid var(--border); }
+.planner-fs-title { font-size:15px; font-weight:800; color:var(--text); }
+.planner-fs-bar .planner-range { color:var(--text2); font-size:13px; }
+/* Board fills the remaining height; scrolls in both directions if it overflows.
+   Overrides the boxed look of the in-page .planner-board. */
+.planner-fs-board { flex:1 1 auto; min-height:0; overflow:auto; border:0; border-radius:0; }
+
 /* Order book: available-to-build offering on the Planner page. */
 .ob-panel { border:1px solid var(--border); border-radius:var(--radius-lg); background:var(--bg2); padding:14px 16px; margin-bottom:16px; }
 .ob-head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }

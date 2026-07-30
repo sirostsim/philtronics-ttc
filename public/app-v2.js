@@ -4581,9 +4581,21 @@ function exportProductivityCSV() {
 // comes from the item's target time (x quantity) or a manager estimate; the
 // Gantt bar length is the server-computed span across working days.
 
-const _plannerState = { dept: '', viewStart: null };
-const _PLAN_WEEKS = 4;
-const _PLAN_DAYW  = 46;
+const _plannerState = { dept: '', viewStart: null, fullscreen: false, items: null };
+const _PLAN_WEEKS  = 4;    // weeks shown in the normal (in-page) board
+const _PLAN_DAYW   = 46;   // px per day column
+const _PLAN_LABELW = 320;  // px of the sticky Item/WO label column (matches CSS)
+
+// How many week-columns to render. The normal board is a fixed 4 weeks; the
+// full-screen board auto-fits as many whole weeks as the viewport width allows
+// (never fewer than the normal view), so a big planning monitor is filled edge
+// to edge instead of wasting space.
+function plannerWeeks() {
+  if (!_plannerState.fullscreen) return _PLAN_WEEKS;
+  const avail = window.innerWidth - _PLAN_LABELW - 4; // 4px slack for the last border
+  const fit = Math.floor(avail / (5 * _PLAN_DAYW));
+  return Math.max(_PLAN_WEEKS, fit || _PLAN_WEEKS);
+}
 
 function plannerMonday(iso) {
   const d = new Date(iso + 'T12:00:00Z');
@@ -4601,7 +4613,8 @@ function fmtPlanMins(m) {
 // bar length uses the server's workingDays count so it stays correct regardless.
 function plannerWindowDays() {
   const out = [];
-  for (let w = 0; w < _PLAN_WEEKS; w++) for (let i = 0; i < 5; i++) out.push(plannerAddDays(_plannerState.viewStart, w * 7 + i));
+  const weeks = plannerWeeks();
+  for (let w = 0; w < weeks; w++) for (let i = 0; i < 5; i++) out.push(plannerAddDays(_plannerState.viewStart, w * 7 + i));
   return out;
 }
 
@@ -4628,6 +4641,7 @@ function loadPlannerPage() {
     resetBtn.hidden = !hasRole('manager');
     if (!resetBtn._wired) { resetBtn._wired = true; resetBtn.addEventListener('click', openClearModal); }
   }
+  wire('planFullscreen', () => plannerToggleFullscreen(true));
   initOrderBook();
   renderPlanner();
 }
@@ -4686,26 +4700,123 @@ function openClearModal() {
   openModal('Clear plan / order book', body, [ el('button', { className: 'btn btn-ghost', textContent: 'Close', onclick: () => closeModal() }) ]);
 }
 
+// The active board + range elements: the full-screen overlay when it is open,
+// otherwise the in-page planner. Both are painted by the same code below.
+function _plannerTargets() {
+  const fs = _plannerState.fullscreen;
+  return {
+    board: document.getElementById(fs ? 'plannerFsBoard' : 'plannerBoard'),
+    range: document.getElementById(fs ? 'plannerFsRange' : 'plannerRange'),
+  };
+}
+
+// Fetch the planner from the server, cache it, then paint. renderPlanner is used
+// on load and after any mutation; resizing/toggling full screen re-paints from
+// the cache via _plannerPaint (no extra request).
 async function renderPlanner() {
-  const board = document.getElementById('plannerBoard');
-  const range = document.getElementById('plannerRange');
+  const { board, range } = _plannerTargets();
   if (!board) return;
   board.innerHTML = '<div class="empty-state">Loading…</div>';
   const days = plannerWindowDays();
   if (range) range.textContent = plannerNiceDate(days[0]) + ' – ' + plannerNiceDate(days[days.length - 1]) + ' · Mon–Fri';
   try {
     const qs = _plannerState.dept ? '?department=' + encodeURIComponent(_plannerState.dept) : '';
-    const items = await GET('/planner' + qs);
-    board.innerHTML = '';
-    const driftCount = items.filter(it => it.drift).length;
-    if (driftCount) {
-      board.appendChild(el('div', { className: 'planner-review',
-        textContent: '⚠ ' + driftCount + ' planned job' + (driftCount !== 1 ? 's' : '') + ' need review: the order book changed under them (moved, removed, or quantity changed).' }));
-    }
-    board.appendChild(plannerBoard(items, days));
+    _plannerState.items = await GET('/planner' + qs);
+    _plannerPaint();
   } catch (err) {
+    _plannerState.items = null;
     board.innerHTML = '';
     board.appendChild(el('div', { className: 'error-msg', style: 'padding:16px', textContent: err.message }));
+  }
+}
+
+// Paint the cached planner into the active board. Recomputes the day window each
+// time so a full-screen resize (which changes how many weeks fit) reflows without
+// re-fetching.
+function _plannerPaint() {
+  const { board, range } = _plannerTargets();
+  if (!board) return;
+  const items = _plannerState.items;
+  if (!items) return;
+  const days = plannerWindowDays();
+  if (range) range.textContent = plannerNiceDate(days[0]) + ' – ' + plannerNiceDate(days[days.length - 1]) + ' · Mon–Fri';
+  board.innerHTML = '';
+  const driftCount = items.filter(it => it.drift).length;
+  if (driftCount) {
+    board.appendChild(el('div', { className: 'planner-review',
+      textContent: '⚠ ' + driftCount + ' planned job' + (driftCount !== 1 ? 's' : '') + ' need review: the order book changed under them (moved, removed, or quantity changed).' }));
+  }
+  board.appendChild(plannerBoard(items, days));
+}
+
+// ── Full-screen Gantt ─────────────────────────────────────────────────────────
+// A fixed overlay (z-index below modals/toasts, so Edit/Add and toasts still work
+// on top) that fills the browser window. It reuses the same board renderer, so
+// drag-to-reschedule, drift badges and deadline markers all behave identically;
+// it just fits more weeks across and more rows down. Esc or the Exit button
+// closes it. Reflows on resize to keep the week count matched to the width.
+let _plannerFsResizeTimer = null;
+function _plannerFsResize() {
+  clearTimeout(_plannerFsResizeTimer);
+  _plannerFsResizeTimer = setTimeout(() => { if (_plannerState.fullscreen) _plannerPaint(); }, 150);
+}
+function _plannerFsKey(e) {
+  if (e.key === 'Escape' && _plannerState.fullscreen) plannerToggleFullscreen(false);
+}
+
+function plannerToggleFullscreen(on) {
+  _plannerState.fullscreen = on;
+  let overlay = document.getElementById('plannerFsOverlay');
+
+  if (on) {
+    if (!overlay) {
+      const rangeEl = el('div', { id: 'plannerFsRange', className: 'planner-range' });
+      const deptSel = el('select', { id: 'plannerFsDept', className: 'planner-dept' });
+      deptSel.appendChild(el('option', { value: '', textContent: 'All departments' }));
+      for (const d of DEPARTMENTS) deptSel.appendChild(el('option', { value: d, textContent: d }));
+      deptSel.value = _plannerState.dept;
+      deptSel.addEventListener('change', () => {
+        _plannerState.dept = deptSel.value;
+        const inPage = document.getElementById('plannerDeptFilter');
+        if (inPage) inPage.value = deptSel.value;  // keep the in-page filter in sync
+        renderPlanner();
+      });
+
+      const bar = el('div', { className: 'planner-fs-bar' },
+        el('div', { className: 'planner-fs-title', textContent: '📅 Planner' }),
+        el('div', { className: 'planner-nav' },
+          el('button', { className: 'btn btn-ghost btn-sm', textContent: '‹ Prev',
+            onclick: () => { _plannerState.viewStart = plannerAddDays(_plannerState.viewStart, -7); renderPlanner(); } }),
+          el('button', { className: 'btn btn-ghost btn-sm', textContent: 'Today',
+            onclick: () => { _plannerState.viewStart = plannerMonday(new Date().toISOString().slice(0, 10)); renderPlanner(); } }),
+          el('button', { className: 'btn btn-ghost btn-sm', textContent: 'Next ›',
+            onclick: () => { _plannerState.viewStart = plannerAddDays(_plannerState.viewStart, 7); renderPlanner(); } }),
+        ),
+        rangeEl,
+        deptSel,
+        el('button', { className: 'btn btn-sm', textContent: '✕ Exit full screen',
+          onclick: () => plannerToggleFullscreen(false) }),
+      );
+      const board = el('div', { id: 'plannerFsBoard', className: 'planner-board planner-fs-board' });
+      overlay = el('div', { id: 'plannerFsOverlay', className: 'planner-fs-overlay' }, bar, board);
+      document.body.appendChild(overlay);
+    } else {
+      overlay.hidden = false;
+      const deptSel = document.getElementById('plannerFsDept');
+      if (deptSel) deptSel.value = _plannerState.dept;
+    }
+    document.body.classList.add('planner-fs-open');
+    window.addEventListener('resize', _plannerFsResize);
+    document.addEventListener('keydown', _plannerFsKey);
+    // Repaint from cache if we have it; otherwise fetch. Either way the overlay is
+    // now the active target.
+    if (_plannerState.items) _plannerPaint(); else renderPlanner();
+  } else {
+    if (overlay) overlay.hidden = true;
+    document.body.classList.remove('planner-fs-open');
+    window.removeEventListener('resize', _plannerFsResize);
+    document.removeEventListener('keydown', _plannerFsKey);
+    _plannerPaint();  // repaint the in-page board (week count reverts to normal)
   }
 }
 
