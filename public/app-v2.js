@@ -4956,8 +4956,10 @@ function plannerBoard(items, days) {
   }
 
   // ── Output totals: planned £ value per day and per week, vs the targets. Each
-  // job's value is spread evenly over its working days; days/weeks that fall short
-  // of the configured target are highlighted (under-planned output).
+  // job's value is spread evenly over its working days; days/weeks that carry some
+  // planned work but fall short of the target are highlighted (under-planned).
+  // Empty days/weeks (nothing planned yet) are left neutral, not flagged, so the
+  // far end of the horizon isn't a wall of red before it has been filled in.
   const valByDate = plannerValueByDate(items);
   const targets = _plannerState.targets || { daily: 0, weekly: 0 };
 
@@ -4968,7 +4970,7 @@ function plannerBoard(items, days) {
   ));
   days.forEach((iso, i) => {
     const v = valByDate[iso] || 0;
-    const under = targets.daily > 0 && v < targets.daily;
+    const under = targets.daily > 0 && v > 0 && v < targets.daily;
     dayRow.appendChild(el('div', {
       className: 'planner-totcell' + (i % 5 === 0 ? ' wk' : '') + (under ? ' under' : (v > 0 ? ' ok' : '')),
       title: iso + ': ' + plannerFmtMoney(v) + (targets.daily ? ' of ' + plannerFmtMoney(targets.daily) + ' target' : ''),
@@ -4986,7 +4988,7 @@ function plannerBoard(items, days) {
   for (let w = 0; w < weeks; w++) {
     let sum = 0;
     for (let i = 0; i < 5; i++) sum += valByDate[days[w * 5 + i]] || 0;
-    const under = targets.weekly > 0 && sum < targets.weekly;
+    const under = targets.weekly > 0 && sum > 0 && sum < targets.weekly;
     weekRow.appendChild(el('div', {
       className: 'planner-totweek' + (under ? ' under' : (sum > 0 ? ' ok' : '')),
       title: 'Week of ' + days[w * 5] + ': ' + plannerFmtMoney(sum) + (targets.weekly ? ' of ' + plannerFmtMoney(targets.weekly) + ' target' : ''),
