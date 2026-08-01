@@ -66,7 +66,7 @@ router.post('/login', loginLimiter, validate(schemas.login), async (req, res) =>
     );
 
     // Check if TOTP is required for this user's role
-    const ROLES_REQUIRING_TOTP = ['manager', 'administrator'];
+    const ROLES_REQUIRING_TOTP = ['manager', 'planner', 'administrator'];
     if (ROLES_REQUIRING_TOTP.includes(user.role) && user.totp_enabled) {
       // Issue a short-lived challenge token instead of a full session
       // The frontend must complete TOTP verification to get a full JWT

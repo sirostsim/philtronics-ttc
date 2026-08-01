@@ -1294,7 +1294,7 @@ router.post('/:id/lower-hand', async (req, res) => {
 
 
 
-    const isSupervisorPlus = ['supervisor', 'manager', 'administrator'].includes(req.user.role);
+    const isSupervisorPlus = hasRole(req.user, 'supervisor');
 
     if (timer.operator_id !== req.user.id && !isSupervisorPlus) {
 

@@ -41,7 +41,7 @@ function push(userId, payload) {
 // Push a payload to all connected users who have a given role or above.
 // Used by other routes (e.g. raise-hand notification).
 function pushToRole(minRole, payload) {
-  const ROLE_LEVEL = { operator: 1, supervisor: 2, manager: 3, administrator: 4 };
+  const ROLE_LEVEL = { operator: 1, supervisor: 2, manager: 3, planner: 3, administrator: 4 };
   const minLevel = ROLE_LEVEL[minRole] || 99;
   let count = 0;
   for (const [userId, conn] of connections.entries()) {

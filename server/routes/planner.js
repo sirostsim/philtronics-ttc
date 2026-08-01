@@ -13,7 +13,7 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { query, queryOne } = require('../db');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole, requirePlannerWrite } = require('../middleware/auth');
 const { validate, schemas } = require('../middleware/validate');
 const settings = require('../settings');
 const { plannedEndDate, plannedStartDate } = require('../lib/planner-schedule');
@@ -199,8 +199,8 @@ router.get('/', async (req, res) => {
   }
 });
 
-// ── POST /api/planner ── manager+ ─────────────────────────────────────────────
-router.post('/', requireRole('manager'), validate(schemas.plannedWork), async (req, res) => {
+// ── POST /api/planner ── planner/superuser ────────────────────────────────────
+router.post('/', requirePlannerWrite, validate(schemas.plannedWork), async (req, res) => {
   try {
     const b = req.body;
     const item = String(b.itemNumber).trim().toUpperCase();
@@ -228,8 +228,8 @@ router.post('/', requireRole('manager'), validate(schemas.plannedWork), async (r
   }
 });
 
-// ── PATCH /api/planner/:id ── manager+ ────────────────────────────────────────
-router.patch('/:id', requireRole('manager'), validate(schemas.plannedWorkUpdate), async (req, res) => {
+// ── PATCH /api/planner/:id ── planner/superuser ───────────────────────────────
+router.patch('/:id', requirePlannerWrite, validate(schemas.plannedWorkUpdate), async (req, res) => {
   try {
     const existing = await queryOne('SELECT * FROM planned_work WHERE id = $1', [req.params.id]);
     if (!existing) return res.status(404).json({ error: 'Planned item not found.' });
@@ -266,8 +266,8 @@ router.patch('/:id', requireRole('manager'), validate(schemas.plannedWorkUpdate)
   }
 });
 
-// ── DELETE /api/planner/:id ── manager+ ───────────────────────────────────────
-router.delete('/:id', requireRole('manager'), async (req, res) => {
+// ── DELETE /api/planner/:id ── planner/superuser ──────────────────────────────
+router.delete('/:id', requirePlannerWrite, async (req, res) => {
   try {
     await query('DELETE FROM planned_work WHERE id = $1', [req.params.id]);
     res.json({ ok: true });
@@ -277,8 +277,8 @@ router.delete('/:id', requireRole('manager'), async (req, res) => {
   }
 });
 
-// ── POST /api/planner/clear ── manager+ ── wipe the ENTIRE planner (destructive)
-router.post('/clear', requireRole('manager'), async (req, res) => {
+// ── POST /api/planner/clear ── planner/superuser ── wipe the ENTIRE planner
+router.post('/clear', requirePlannerWrite, async (req, res) => {
   try {
     const deleted = await query('DELETE FROM planned_work RETURNING id');
     const n = deleted.length;

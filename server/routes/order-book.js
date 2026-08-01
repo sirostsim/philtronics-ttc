@@ -2,7 +2,7 @@
  * routes/order-book.js -- imported customer order books.
  *
  * Upload (POST) replaces a customer's whole order book with the parsed rows
- * (manager+). The offering (GET) returns the items available to build: those
+ * (planner role or superuser). The offering (GET) returns the items available to build: those
  * whose effective date -- Required By, falling back to Current Due Date -- is
  * within the shippable window, excluding rework lines and zero-balance rows.
  * The client does the messy SAP-export parsing; the server receives clean rows
@@ -14,7 +14,7 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { query, queryOne, getClient } = require('../db');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole, requirePlannerWrite } = require('../middleware/auth');
 const { validate, schemas } = require('../middleware/validate');
 
 const router = express.Router();
@@ -22,7 +22,7 @@ const router = express.Router();
 // Shippable window: items requested (or due) within this many days may be built.
 const WINDOW_DAYS = 56; // 8 weeks
 
-// View is supervisor and above; upload is manager and above.
+// View is supervisor and above; upload/clear is the planner role or superuser.
 router.use(requireAuth, requireRole('supervisor'));
 
 // ── GET /api/order-book/customers ─────────────────────────────────────────────
@@ -104,9 +104,9 @@ router.get('/offering', async (req, res) => {
   }
 });
 
-// ── POST /api/order-book ── manager+ ──────────────────────────────────────────
+// ── POST /api/order-book ── planner/superuser ─────────────────────────────────
 // Replace a customer's order book with the uploaded rows (one transaction).
-router.post('/', requireRole('manager'), validate(schemas.orderBookUpload), async (req, res) => {
+router.post('/', requirePlannerWrite, validate(schemas.orderBookUpload), async (req, res) => {
   const { customer, rows } = req.body;
   const client = await getClient();
   try {
@@ -136,8 +136,8 @@ router.post('/', requireRole('manager'), validate(schemas.orderBookUpload), asyn
   }
 });
 
-// ── POST /api/order-book/clear ── manager+ ── wipe one customer's order book
-router.post('/clear', requireRole('manager'), async (req, res) => {
+// ── POST /api/order-book/clear ── planner/superuser ── wipe one customer's order book
+router.post('/clear', requirePlannerWrite, async (req, res) => {
   try {
     const customer = ((req.body && req.body.customer) || '').trim();
     if (!customer) return res.status(400).json({ error: 'A customer is required.' });

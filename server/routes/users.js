@@ -190,7 +190,7 @@ router.post('/admin/cancel-stuck-timers', async (req, res) => {
 
 // POST /api/users/bulk-upload
 // Accepts JSON array of user rows, validates all, then creates them
-// Admin can create operator/supervisor/manager only
+// Admin can create operator/supervisor/manager/planner only
 // Superuser can also create administrator
 router.post('/bulk-upload', async (req, res) => {
   try {

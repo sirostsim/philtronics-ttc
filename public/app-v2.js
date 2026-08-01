@@ -71,9 +71,18 @@ const chatHeaderSub  = document.getElementById('chatHeaderSub');
 const itemInput = document.getElementById('itemNumberInput');
 const sugList   = document.getElementById('itemSuggestions');
 
-const ROLE_LEVEL = { operator: 1, supervisor: 2, manager: 3, administrator: 4, superuser: 5 };
+// 'planner' shares manager's level (3): same general access as a manager. The
+// planner's EXTRA power (writing the planner / order book) is a capability, not a
+// level, so it is checked with canPlanWrite() -- never hasRole('planner'), which
+// a manager would also pass.
+const ROLE_LEVEL = { operator: 1, supervisor: 2, manager: 3, planner: 3, administrator: 4, superuser: 5 };
 function hasRole(min) {
   return state.user && (ROLE_LEVEL[state.user.role] || 0) >= (ROLE_LEVEL[min] || 99);
+}
+// Mirror of the server's canPlanWrite: only the planner role and the superuser may
+// modify the plan / order book. Everyone else (supervisor..administrator) is read-only.
+function canPlanWrite() {
+  return !!state.user && (state.user.role === 'planner' || state.user.role === 'superuser');
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1724,7 +1733,7 @@ function openBulkUploadModal() {
     <strong style="color:var(--text);display:block;margin-bottom:6px">CSV Format</strong>
     Upload a CSV file with the following columns (header row required):<br>
     <code style="color:var(--accent);font-size:12px">username, full_name, role, department, password</code><br><br>
-    <strong style="color:var(--text)">Valid roles:</strong> operator, supervisor, manager${state.user.role === 'superuser' ? ', administrator' : ''}<br>
+    <strong style="color:var(--text)">Valid roles:</strong> operator, supervisor, manager, planner${state.user.role === 'superuser' ? ', administrator' : ''}<br>
     <strong style="color:var(--text)">Valid departments:</strong> Production, Stores, Test and Inspection, PCB<br>
     <strong style="color:var(--text)">Max rows:</strong> 200 per upload
   `;
@@ -2085,8 +2094,8 @@ function openUserModal(user) {
   // Role select — options depend on the current user's own role
   const roleSelect = el('select', { id: 'mRole', style: 'background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:16px;padding:12px 14px;width:100%;' });
   const assignableRoles = state.user.role === 'superuser'
-    ? ['operator','supervisor','manager','administrator','superuser']
-    : ['operator','supervisor','manager'];
+    ? ['operator','supervisor','manager','planner','administrator','superuser']
+    : ['operator','supervisor','manager','planner'];
   assignableRoles.forEach(r => {
     const o = el('option', { value: r, textContent: r.charAt(0).toUpperCase() + r.slice(1) });
     if (user?.role === r) o.selected = true;
@@ -2990,7 +2999,7 @@ function confirmDeleteTarget(t, containerId = 'targetTimesList') {
 /* ═══════════════════════════════════════════════════════════════════════════
    TOTP SETUP
    ═══════════════════════════════════════════════════════════════════════════ */
-const ROLES_REQUIRING_TOTP = ['manager', 'administrator', 'superuser'];
+const ROLES_REQUIRING_TOTP = ['manager', 'planner', 'administrator', 'superuser'];
 function checkTotpSetupRequired() {
   // 2FA is optional — never force the setup prompt on login
 }
@@ -4666,12 +4675,12 @@ function loadPlannerPage() {
   wire('planToday', () => { _plannerState.viewStart = plannerMonday(new Date().toISOString().slice(0, 10)); renderPlanner(); });
   const addBtn = document.getElementById('btnAddPlanned');
   if (addBtn) {
-    addBtn.hidden = !hasRole('manager');
+    addBtn.hidden = !canPlanWrite();
     if (!addBtn._wired) { addBtn._wired = true; addBtn.addEventListener('click', () => openPlannerForm(null)); }
   }
   const resetBtn = document.getElementById('btnPlannerReset');
   if (resetBtn) {
-    resetBtn.hidden = !hasRole('manager');
+    resetBtn.hidden = !canPlanWrite();
     if (!resetBtn._wired) { resetBtn._wired = true; resetBtn.addEventListener('click', openClearModal); }
   }
   wire('planFullscreen', () => plannerToggleFullscreen(true));
@@ -4869,7 +4878,7 @@ function plannerDriftBadge(drift) {
 
 function plannerBoard(items, days) {
   const today = new Date().toISOString().slice(0, 10);
-  const canEdit = hasRole('manager');
+  const canEdit = canPlanWrite();
   const inner = el('div', { className: 'planner-inner' });
 
   const head = el('div', { className: 'planner-headrow' });
@@ -5187,7 +5196,7 @@ function initOrderBook() {
 
   const uploadBtn = document.getElementById('btnUploadOrderBook');
   const fileInput = document.getElementById('obFileInput');
-  if (uploadBtn) uploadBtn.hidden = !hasRole('manager');
+  if (uploadBtn) uploadBtn.hidden = !canPlanWrite();
   if (uploadBtn && fileInput) {
     uploadBtn.addEventListener('click', () => fileInput.click());
     fileInput.addEventListener('change', () => {
@@ -5250,7 +5259,7 @@ function obMoney(v) {
 }
 
 function orderBookTable(items) {
-  const canPlan = hasRole('manager');
+  const canPlan = canPlanWrite();
   const tbl = el('table', { className: 'dash-table ob-table' });
   tbl.appendChild(el('thead', {}, el('tr', {},
     el('th', { textContent: 'Item' }), el('th', { textContent: 'Description' }),

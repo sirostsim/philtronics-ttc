@@ -51,6 +51,24 @@ operator -> supervisor -> manager -> administrator -> superuser
 - Frontend hasRole('X') checks the logged-in user against that minimum.
 - superuser is seeded from env vars, not created through the UI.
 
+### planner role (the one non-linear permission)
+
+- `planner` shares MANAGER's level (3 in ROLE_HIERARCHY) — same general access as
+  a manager, so hasRole/requireRole treat them identically for everything else.
+- Its EXTRA power is a CAPABILITY, not a hierarchy rung: only `planner` and
+  `superuser` may WRITE the planner and order book. Managers and administrators
+  are read-only there. This cannot be a requireRole threshold (managers/admins sit
+  at/above the level yet must be excluded), so it is checked with
+  `canPlanWrite(user)` / `requirePlannerWrite` (server) and `canPlanWrite()`
+  (frontend). NEVER gate planner-write with hasRole('planner') — a manager passes.
+- The role level lives in FOUR maps that must stay in sync: middleware/auth.js
+  (ROLE_HIERARCHY), routes/pause.js and routes/messages.js (local ROLE_LEVEL), and
+  public/app-v2.js (ROLE_LEVEL). Add any new role to all four.
+- Assignable by administrator + superuser (CREATABLE_ROLES); requires 2FA like
+  manager+ (ROLES_REQUIRING_TOTP in routes/auth.js and app-v2.js); allowed in the
+  validate.js createUser/updateUser role enums and the users.role CHECK
+  constraint (migration 025).
+
 ## Critical conventions (do not violate)
 
 - UK English throughout (code comments, docs, UI copy, marketing).
@@ -87,10 +105,11 @@ operator -> supervisor -> manager -> administrator -> superuser
   img-src. NOTE: Chart.js from cdnjs is currently blocked by script-src (charts
   page may not load) — a known outstanding issue; fix is adding
   https://cdnjs.cloudflare.com to script-src.
-- Migrations are additive and run on boot. Latest migration number is 023
+- Migrations are additive and run on boot. Latest migration number is 025
   (016 settings, 017 timer_quantity_runs, 018 dev_requests, 019 user_avatars,
   020 planned_work, 021 customer_orders, 022 planned_work source_required_by,
-  023 planned_work source_po_line).
+  023 planned_work source_po_line, 024 planned_work ordered_qty,
+  025 planner_role — adds 'planner' to the users.role CHECK constraint).
   008_add_pcb_department.sql is a deliberate no-op placeholder (SELECT 1).
 - Frontend uses safe DOM construction via an el(tag, attrs, ...children) helper
   and esc() for escaping; prefer these over innerHTML. Other helpers: api(),
