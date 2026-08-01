@@ -5350,7 +5350,11 @@ function okbParseDate(s, dayFirst) {
 }
 // Decide whether the file's dates are day-first (UK) or month-first (US) from the
 // data itself: a value > 12 in the first position can only be a day (UK); > 12 in
-// the second can only be a day (US). Majority wins; ambiguous defaults to US.
+// the second can only be a day (US). Majority wins; ambiguous defaults to UK
+// (day-first) -- this is a UK deployment and the SAP export is DD/MM/YYYY. A tie
+// (including the all-low-days case where nothing disambiguates) must NOT fall back
+// to US, or every date gets its day and month swapped. Genuine US files still win
+// only when they show strictly more month-first evidence.
 function okbDetectDayFirst(dateStrings) {
   let dayFirst = 0, monthFirst = 0;
   for (const s of dateStrings) {
@@ -5360,7 +5364,7 @@ function okbDetectDayFirst(dateStrings) {
     if (a > 12 && b <= 12) dayFirst++;
     else if (b > 12 && a <= 12) monthFirst++;
   }
-  return dayFirst > monthFirst;
+  return dayFirst >= monthFirst;
 }
 function okbNum(s) {
   s = (s || '').replace(/[£$€,\s]/g, '').trim();                      // strip currency + thousands separators
