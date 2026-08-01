@@ -119,7 +119,13 @@ router.post('/', requirePlannerWrite, validate(schemas.orderBookUpload), async (
             required_by, due_date, quantity, line_value, rework, uploaded_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
         [
-          uuidv4(), customer, r.poNumber || null, r.poLine || null, r.itemNumber,
+          // Uppercase the item number to match target_times and planned_work
+          // (both store it uppercased). Without this, the offering's target-time
+          // join, planned-qty, drift and £ value matching silently miss whenever
+          // the SAP export's case differs -- which makes target items look like
+          // no-target items and defeats backward scheduling.
+          uuidv4(), customer, r.poNumber || null, r.poLine || null,
+          String(r.itemNumber).trim().toUpperCase(),
           r.description || null, r.requiredBy || null, r.dueDate || null,
           r.quantity, r.lineValue != null ? r.lineValue : null, !!r.rework, req.user.id,
         ]
