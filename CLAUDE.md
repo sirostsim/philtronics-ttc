@@ -18,18 +18,10 @@ Repo: sirostsim/philtronics-ttc
 A second client, King Site Services (KSS), runs a HARD FORK of this codebase at
 sirostsim/kss-worktime (private), forked from main at fdf13af in July 2026. It is
 a separate repo, database, and deployment, and it diverges (different field model
-of Client + Job code, different departments, branding, and some reporting). Do NOT
-do KSS work in this repo; it has its own Claude Code project rooted in its own
-folder.
+of Client + Job code, different departments, branding, and some reporting).
 
-Consequences to keep in mind:
-- While the two codebases are still close, a shared-core bug fix made here may
-  need porting to KSS by cherry-pick (KSS keeps this repo as a `philtronics-upstream`
-  remote). That window closes as KSS diverges.
-- Future clients with the same feature set are intended to take a shared-codebase /
-  separate-database route, NOT another fork. KSS is the one deliberate fork.
-- The full fork procedure and the inventory of Philtronics-specific code is in
-  docs/kss-split-runbook.md.
+KSS is now a fully independent project. Do NOT do KSS work in this repo, and do
+NOT treat changes here as needing porting to KSS; it is managed on its own.
 
 ## Stack and hosting
 
