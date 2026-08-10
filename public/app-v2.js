@@ -5448,7 +5448,7 @@ function orderBookTable(items) {
     tb.appendChild(el('tr', { className: it.fullyPlanned ? 'ob-row-planned' : '' },
       el('td', { className: 'ob-item', textContent: it.itemNumber }),
       desc,
-      el('td', { className: it.overdue ? 'ob-overdue' : '', textContent: it.effectiveDate || '—' }),
+      el('td', { className: 'ob-date' + (it.overdue ? ' ob-overdue' : ''), textContent: it.effectiveDate || '—' }),
       qtyCell,
       el('td', { className: 'ob-value', textContent: it.lineValue != null ? obMoney(it.lineValue) : '' }),
       el('td', { className: 'ob-po', textContent: it.poNumber || '' }),
