@@ -1166,6 +1166,18 @@ main { padding-bottom: 28px; }
 .lc-op { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; color: var(--text2); margin-top: 4px; padding-left: 8px; }
 .lc-op-time { color: var(--text); font-weight: 600; }
 
+/* Inline free-text box revealed under the "Other" pause reason. */
+.pause-other-editor { display: flex; gap: 8px; align-items: center; margin: -2px 0 8px; padding: 0 2px; }
+.pause-other-editor[hidden] { display: none; }
+.pause-other-input { flex: 1 1 auto; }
+
+/* Recent "Other" pause notes review list (Target Times page). */
+.pause-notes-list { display: flex; flex-direction: column; gap: 8px; }
+.pause-note-row { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.pause-note-top { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--text2); margin-bottom: 4px; }
+.pause-note-op { font-weight: 600; }
+.pause-note-text { font-size: 14px; color: var(--text); }
+
 /* ─── User Manual nav link ───────────────────────────────────────────────── */
 .nav-manual-btn {
   display: block;

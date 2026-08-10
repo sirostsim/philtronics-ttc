@@ -2847,7 +2847,32 @@ function renderTargetList(targets, containerId = 'targetTimesList') {
     row.appendChild(info); row.appendChild(actions); container.appendChild(row);
   });
 }
-function loadTargetsPage() { loadTargetTimes('targetTimesPageList'); loadReasonsAdmin(); loadSystemSettings(); }
+function loadTargetsPage() { loadTargetTimes('targetTimesPageList'); loadReasonsAdmin(); loadPauseNotesReview(); loadSystemSettings(); }
+
+/* ─── Recent "Other" pause notes (manager+ review) ─────────────────────────── */
+async function loadPauseNotesReview() {
+  const list = document.getElementById('pauseNotesList');
+  if (!list) return;
+  list.innerHTML = '<div class="empty-state">Loading...</div>';
+  let events = [];
+  try { events = await GET('/pause/events?limit=100'); }
+  catch (err) { list.innerHTML = '<div class="empty-state">Could not load pause notes.</div>'; return; }
+  list.innerHTML = '';
+  if (!events.length) {
+    list.appendChild(el('div', { className: 'empty-state', textContent: 'No pause notes recorded yet.' }));
+    return;
+  }
+  events.forEach(e => {
+    const row = el('div', { className: 'pause-note-row' });
+    const top = el('div', { className: 'pause-note-top' },
+      el('span', { className: 'pause-note-when', textContent: formatLocalTime(e.pausedAt) }),
+      el('span', { className: 'pause-note-op', textContent: e.operatorName + (e.department ? ' · ' + e.department : '') }),
+    );
+    row.appendChild(top);
+    row.appendChild(el('div', { className: 'pause-note-text', textContent: e.note || '' }));
+    list.appendChild(row);
+  });
+}
 
 /* ─── System settings (administrator+) ─────────────────────────────────────── */
 async function loadSystemSettings() {
@@ -3218,20 +3243,47 @@ async function openPauseReasonPicker() {
   const reasons = await loadPauseReasons();
   const wrap = el('div', { className: 'pause-reason-list' });
   wrap.appendChild(el('p', { className: 'pause-reason-intro', textContent: 'Why are you pausing? This keeps productivity figures fair.' }));
+
+  async function submitPause(r, note) {
+    closeModal();
+    const btn = document.getElementById('btnPauseTimer'); btn.disabled = true;
+    try {
+      const body = { reason: r.label, reasonId: r.id };
+      if (note) body.note = note;
+      const t = await POST('/pause/' + state.activeTimerId + '/pause', body);
+      state.activeIsPaused = true; state.activePausedAt = t.pausedAt;
+      updatePauseUI(); toast('Timer paused: ' + r.label, '');
+    } catch (err) { toast(err.message, 'error'); } finally { btn.disabled = false; }
+  }
+
   reasons.forEach(r => {
+    // "Other" needs a short free-text detail before pausing, so it opens an inline
+    // note box instead of pausing on the first tap. Every other reason is one tap.
+    const isOther = r.id === 'avr_other' || (r.label || '').trim().toLowerCase() === 'other';
     const row = el('button', { className: 'pause-reason-btn' + (r.isAvailable ? '' : ' pause-reason-na') });
     row.appendChild(el('span', { className: 'pause-reason-label', textContent: r.label }));
     if (!r.isAvailable) row.appendChild(el('span', { className: 'pause-reason-tag', textContent: 'excluded from productivity' }));
-    row.addEventListener('click', async () => {
-      closeModal();
-      const btn = document.getElementById('btnPauseTimer'); btn.disabled = true;
-      try {
-        const t = await POST('/pause/' + state.activeTimerId + '/pause', { reason: r.label, reasonId: r.id });
-        state.activeIsPaused = true; state.activePausedAt = t.pausedAt;
-        updatePauseUI(); toast('Timer paused: ' + r.label, '');
-      } catch (err) { toast(err.message, 'error'); } finally { btn.disabled = false; }
-    });
-    wrap.appendChild(row);
+
+    if (isOther) {
+      const editor = el('div', { className: 'pause-other-editor', hidden: true });
+      const input  = el('input', { type: 'text', maxlength: '200', className: 'pause-other-input', placeholder: 'Briefly, what is the reason?' });
+      const go     = el('button', { className: 'btn btn-primary btn-sm', textContent: 'Pause' });
+      go.disabled = true;
+      input.addEventListener('input', () => { go.disabled = input.value.trim().length === 0; });
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && input.value.trim()) { e.preventDefault(); go.click(); } });
+      go.addEventListener('click', () => submitPause(r, input.value.trim()));
+      editor.appendChild(input); editor.appendChild(go);
+      row.addEventListener('click', () => {
+        const opening = editor.hidden;
+        editor.hidden = !opening;
+        if (opening) setTimeout(() => input.focus(), 0);
+      });
+      wrap.appendChild(row);
+      wrap.appendChild(editor);
+    } else {
+      row.addEventListener('click', () => submitPause(r, null));
+      wrap.appendChild(row);
+    }
   });
   openModal('Pause Job', wrap, []);
 }

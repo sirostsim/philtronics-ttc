@@ -43,6 +43,52 @@ router.get('/reasons', async (req, res) => {
   }
 });
 
+// ── GET /api/pause/events ── manager+ ─────────────────────────────────────────
+// Recent pause notes (free-text detail captured with a reason, e.g. 'Other').
+// Manager and above; supervisors are scoped to their own department.
+router.get('/events', async (req, res) => {
+  try {
+    if (roleLevel(req.user.role) < roleLevel('supervisor')) {
+      return res.status(403).json({ error: 'Insufficient permissions.' });
+    }
+    const conditions = [];
+    const params = [];
+    let p = 1;
+    // Supervisors see only their own department; manager+ see all (or filter).
+    if (roleLevel(req.user.role) < roleLevel('manager')) {
+      conditions.push(`department = $${p++}`);
+      params.push(req.user.department || 'Production');
+    } else if (req.query.department) {
+      conditions.push(`department = $${p++}`);
+      params.push(req.query.department);
+    }
+    if (req.query.from) { conditions.push(`paused_at >= $${p++}`); params.push(req.query.from); }
+    if (req.query.to)   { conditions.push(`paused_at <= $${p++}`); params.push(req.query.to); }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
+    const rows = await query(
+      `SELECT id, operator_name, reason_label, note, department, paused_at
+         FROM pause_events ${where}
+        ORDER BY paused_at DESC
+        LIMIT ${limit}`,
+      params
+    );
+    res.json(rows.map(r => ({
+      id:           r.id,
+      operatorName: r.operator_name,
+      reasonLabel:  r.reason_label,
+      note:         r.note,
+      department:   r.department,
+      pausedAt:     r.paused_at,
+    })));
+  } catch (err) {
+    // Table may not exist yet on first deploy — return empty rather than 500.
+    if (/relation .*pause_events.* does not exist/i.test(err.message)) return res.json([]);
+    console.error('GET /pause/events error:', err.message);
+    res.status(500).json({ error: 'Could not load pause notes.' });
+  }
+});
+
 // ── POST /api/pause/:timerId/pause ────────────────────────────────────────────
 router.post('/:timerId/pause', async (req, res) => {
   try {
@@ -62,9 +108,13 @@ router.post('/:timerId/pause', async (req, res) => {
       return res.status(409).json({ error: 'Timer is already paused.' });
     }
 
-    const reason    = req.body.reason || 'Manual pause';
-    const pauseType = req.body.pauseType || 'manual';
-    const reasonId  = req.body.reasonId || null;
+    const baseReason = req.body.reason || 'Manual pause';
+    const pauseType  = req.body.pauseType || 'manual';
+    const reasonId   = req.body.reasonId || null;
+    // Free-text detail (e.g. for 'Other'). Trimmed and length-capped.
+    const note       = (req.body.note || '').toString().trim().slice(0, 300) || null;
+    // Show the note alongside the reason on the live (transient) pause_reason.
+    const reason     = note ? `${baseReason}: ${note}` : baseReason;
 
     await query(
       `UPDATE timers SET paused_at = NOW(), pause_reason = $1, pause_type = $2,
@@ -72,27 +122,44 @@ router.post('/:timerId/pause', async (req, res) => {
       [reason, pauseType, req.user.id, timer.id]
     );
 
+    // Look up the chosen reason once (for its availability flag and clean label).
+    let ar = null;
+    if (reasonId) {
+      try { ar = await queryOne(`SELECT id, label, is_available FROM availability_reasons WHERE id = $1`, [reasonId]); }
+      catch (_) { /* table may be absent on first deploy */ }
+    }
+
     // If this pause reason is flagged non-available (training, meeting, absence,
     // etc.), open an unavailability period so the time is excluded from the
     // operator's available-time denominator in productivity. Available-but-idle
     // reasons (break, waiting for materials) record nothing — they still count.
-    if (reasonId) {
+    if (ar && ar.is_available === false) {
       try {
-        const ar = await queryOne(
-          `SELECT id, label, is_available FROM availability_reasons WHERE id = $1`,
-          [reasonId]
+        await query(
+          `INSERT INTO unavailability_periods
+             (id, operator_id, reason_id, reason_label, started_at, source, timer_id, created_by)
+           VALUES ($1, $2, $3, $4, NOW(), 'pause', $5, $6)`,
+          [uuidv4(), timer.operator_id, ar.id, ar.label, timer.id, req.user.id]
         );
-        if (ar && ar.is_available === false) {
-          await query(
-            `INSERT INTO unavailability_periods
-               (id, operator_id, reason_id, reason_label, started_at, source, timer_id, created_by)
-             VALUES ($1, $2, $3, $4, NOW(), 'pause', $5, $6)`,
-            [uuidv4(), timer.operator_id, ar.id, ar.label, timer.id, req.user.id]
-          );
-        }
       } catch (e) {
-        // availability_reasons table may not exist yet on first deploy — non-fatal
         console.error('Unavailability record (pause) skipped:', e.message);
+      }
+    }
+
+    // Persist the free-text detail (e.g. an 'Other' reason) to the append-only
+    // pause log so it survives resume and can be reviewed later. Record-only:
+    // this does NOT feed the productivity/availability calculations.
+    if (note) {
+      try {
+        await query(
+          `INSERT INTO pause_events
+             (id, timer_id, operator_id, operator_name, reason_id, reason_label, note, department, paused_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+          [uuidv4(), timer.id, timer.operator_id, timer.operator_name, reasonId, (ar && ar.label) || baseReason, note, timer.department || null]
+        );
+      } catch (e) {
+        // pause_events table may not exist yet on first deploy — non-fatal
+        console.error('Pause event record skipped:', e.message);
       }
     }
 
