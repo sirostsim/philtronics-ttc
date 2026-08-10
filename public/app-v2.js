@@ -2850,16 +2850,33 @@ function renderTargetList(targets, containerId = 'targetTimesList') {
 function loadTargetsPage() { loadTargetTimes('targetTimesPageList'); loadReasonsAdmin(); loadPauseNotesReview(); loadSystemSettings(); }
 
 /* ─── Recent "Other" pause notes (manager+ review) ─────────────────────────── */
-async function loadPauseNotesReview() {
+function loadPauseNotesReview() {
+  const from = document.getElementById('pnFrom');
+  const to   = document.getElementById('pnTo');
+  // Default to the last 30 days on first open; keep any range the user has set.
+  if (from && !from.value) from.value = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+  if (to && !to.value)     to.value   = new Date().toISOString().slice(0, 10);
+  const btn = document.getElementById('btnPauseNotesSearch');
+  if (btn && !btn._wired) { btn._wired = true; btn.addEventListener('click', searchPauseNotes); }
+  searchPauseNotes();
+}
+
+async function searchPauseNotes() {
   const list = document.getElementById('pauseNotesList');
   if (!list) return;
   list.innerHTML = '<div class="empty-state">Loading...</div>';
+  const params = new URLSearchParams();
+  const from = document.getElementById('pnFrom')?.value;
+  const to   = document.getElementById('pnTo')?.value;
+  if (from) params.set('from', new Date(from).toISOString());
+  if (to)   { const d = new Date(to); d.setHours(23, 59, 59, 999); params.set('to', d.toISOString()); }
+  params.set('limit', '200');
   let events = [];
-  try { events = await GET('/pause/events?limit=100'); }
+  try { events = await GET('/pause/events?' + params.toString()); }
   catch (err) { list.innerHTML = '<div class="empty-state">Could not load pause notes.</div>'; return; }
   list.innerHTML = '';
   if (!events.length) {
-    list.appendChild(el('div', { className: 'empty-state', textContent: 'No pause notes recorded yet.' }));
+    list.appendChild(el('div', { className: 'empty-state', textContent: 'No pause notes in this range.' }));
     return;
   }
   events.forEach(e => {

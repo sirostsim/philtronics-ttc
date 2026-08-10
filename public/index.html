@@ -574,6 +574,19 @@
         <h2 class="page-heading">Recent Other Pause Notes</h2>
       </div>
       <p class="section-desc">Free-text detail operators typed when they paused with the "Other" reason. Most recent first.</p>
+      <div class="filter-bar" role="search">
+        <div class="filter-row">
+          <div class="form-group filter-group">
+            <label for="pnFrom">From</label>
+            <input id="pnFrom" type="date" />
+          </div>
+          <div class="form-group filter-group">
+            <label for="pnTo">To</label>
+            <input id="pnTo" type="date" />
+          </div>
+        </div>
+        <button id="btnPauseNotesSearch" class="btn btn-primary">Search</button>
+      </div>
       <div id="pauseNotesList" class="pause-notes-list" style="margin-top:16px;"></div>
 
       <div class="page-heading-row" style="margin-top:40px;" data-admin-only hidden>
