@@ -5426,8 +5426,14 @@ function orderBookTable(items) {
   )));
   const tb = el('tbody', {});
   for (const it of items) {
-    const desc = el('td', { className: 'ob-desc', textContent: it.description || '' });
-    if (!it.hasTarget) desc.appendChild(el('span', { className: 'ob-notarget', title: 'No target time; you will enter an estimate when planning', textContent: ' (no target)' }));
+    // Description is the only wide column; constrain it with an ellipsis (full
+    // text on hover via title) so the table fits without a horizontal scrollbar.
+    // The "no target" flag sits after the text and stays visible.
+    const desc = el('td', { className: 'ob-desc', title: it.description || '' });
+    const descInner = el('div', { className: 'ob-desc-inner' },
+      el('span', { className: 'ob-desc-text', textContent: it.description || '' }));
+    if (!it.hasTarget) descInner.appendChild(el('span', { className: 'ob-notarget', title: 'No target time; you will enter an estimate when planning', textContent: 'no target' }));
+    desc.appendChild(descInner);
 
     // Quantity cell: remaining of ordered, e.g. "4 of 7" (or "fully planned" / "over-planned by N").
     const qtyCell = el('td', { className: 'ob-qty' });
@@ -5437,7 +5443,7 @@ function orderBookTable(items) {
 
     // Managers can always add (to over-build for MOQ); the row greys when nothing remains.
     const action = el('td', {});
-    if (canPlan) action.appendChild(el('button', { className: 'btn btn-sm', textContent: it.remainingQty > 0 ? 'Add to planner' : 'Add more', onclick: () => addOfferingToPlanner(it) }));
+    if (canPlan) action.appendChild(el('button', { className: 'btn btn-sm', textContent: it.remainingQty > 0 ? 'Add' : 'Add more', title: it.remainingQty > 0 ? 'Add to planner' : 'Add more (over-build)', onclick: () => addOfferingToPlanner(it) }));
 
     tb.appendChild(el('tr', { className: it.fullyPlanned ? 'ob-row-planned' : '' },
       el('td', { className: 'ob-item', textContent: it.itemNumber }),

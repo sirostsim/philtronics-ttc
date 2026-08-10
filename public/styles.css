@@ -3220,12 +3220,16 @@ body.planner-fs-open { overflow:hidden; }
 .ob-list { max-height:340px; overflow:auto; }
 .ob-panel.collapsed .ob-summary, .ob-panel.collapsed .ob-list { display:none; }
 .ob-table { font-size:13px; }
+/* Tighter cells so all seven columns fit the panel without horizontal scroll. */
+.ob-table th, .ob-table td { padding:8px 10px; }
 .ob-table .ob-item { font-weight:700; white-space:nowrap; }
-.ob-table .ob-desc { color:var(--text2); }
+.ob-table .ob-desc { color:var(--text2); max-width:240px; }
+.ob-desc-inner { display:flex; align-items:center; gap:6px; min-width:0; }
+.ob-desc-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
 .ob-table .ob-value { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
 .ob-table .ob-po { color:var(--text3); white-space:nowrap; }
 .ob-table .ob-overdue { color:var(--red); font-weight:700; }
-.ob-notarget { color:var(--accent); font-size:11px; }
+.ob-notarget { color:var(--accent); font-size:11px; flex:0 0 auto; white-space:nowrap; }
 .ob-planned { color:var(--green); font-size:12px; font-weight:700; }
 .ob-row-planned { opacity:.55; }
 .ob-qty { white-space:nowrap; font-variant-numeric:tabular-nums; }
