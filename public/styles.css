@@ -3219,26 +3219,17 @@ body.planner-fs-open { overflow:hidden; }
 .ob-summary { margin:10px 0 6px; font-size:13px; color:var(--text2); }
 .ob-list { max-height:340px; overflow:auto; }
 .ob-panel.collapsed .ob-summary, .ob-panel.collapsed .ob-list { display:none; }
-/* Fixed layout so the table always fits its panel: the six data columns have set
-   widths and Description takes whatever is left, clipping with an ellipsis. A
-   long description can never widen the table or trigger a horizontal scrollbar. */
-.ob-table { font-size:13px; table-layout:fixed; width:100%; }
-.ob-table th, .ob-table td { padding:8px 10px; overflow:hidden; }
-.ob-table th:nth-child(1), .ob-table td:nth-child(1) { width:150px; } /* Item */
-.ob-table th:nth-child(3), .ob-table td:nth-child(3) { width:112px; } /* Required */
-.ob-table th:nth-child(4), .ob-table td:nth-child(4) { width:150px; } /* To build */
-.ob-table th:nth-child(5), .ob-table td:nth-child(5) { width:112px; } /* Value */
-.ob-table th:nth-child(6), .ob-table td:nth-child(6) { width:118px; } /* PO */
-.ob-table th:nth-child(7), .ob-table td:nth-child(7) { width:104px; } /* Add button */
-.ob-table .ob-item { font-weight:700; white-space:nowrap; text-overflow:ellipsis; }
+/* Six compact columns (Description was moved to a per-row hover tooltip) so the
+   table fits its panel without a horizontal scroll. */
+.ob-table { font-size:13px; }
+.ob-table th, .ob-table td { padding:8px 10px; }
+.ob-table .ob-item { font-weight:700; white-space:nowrap; }
+.ob-item-no { font-weight:700; }
 .ob-table .ob-date { white-space:nowrap; }
-.ob-table .ob-desc { color:var(--text2); }
-.ob-desc-inner { display:flex; align-items:center; gap:6px; min-width:0; max-width:100%; }
-.ob-desc-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
 .ob-table .ob-value { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
 .ob-table .ob-po { color:var(--text3); white-space:nowrap; }
 .ob-table .ob-overdue { color:var(--red); font-weight:700; }
-.ob-notarget { color:var(--accent); font-size:11px; flex:0 0 auto; white-space:nowrap; }
+.ob-notarget { color:var(--accent); font-size:11px; font-weight:400; white-space:nowrap; margin-left:8px; }
 .ob-planned { color:var(--green); font-size:12px; font-weight:700; }
 .ob-row-planned { opacity:.55; }
 .ob-qty { white-space:nowrap; font-variant-numeric:tabular-nums; }

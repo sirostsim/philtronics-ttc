@@ -5420,20 +5420,18 @@ function orderBookTable(items) {
   const canPlan = canPlanWrite();
   const tbl = el('table', { className: 'dash-table ob-table' });
   tbl.appendChild(el('thead', {}, el('tr', {},
-    el('th', { textContent: 'Item' }), el('th', { textContent: 'Description' }),
+    el('th', { textContent: 'Item' }),
     el('th', { textContent: 'Required' }), el('th', { textContent: 'To build' }),
     el('th', { textContent: 'Value' }), el('th', { textContent: 'PO' }), el('th', { textContent: '' }),
   )));
   const tb = el('tbody', {});
   for (const it of items) {
-    // Description is the only wide column; constrain it with an ellipsis (full
-    // text on hover via title) so the table fits without a horizontal scrollbar.
-    // The "no target" flag sits after the text and stays visible.
-    const desc = el('td', { className: 'ob-desc', title: it.description || '' });
-    const descInner = el('div', { className: 'ob-desc-inner' },
-      el('span', { className: 'ob-desc-text', textContent: it.description || '' }));
-    if (!it.hasTarget) descInner.appendChild(el('span', { className: 'ob-notarget', title: 'No target time; you will enter an estimate when planning', textContent: 'no target' }));
-    desc.appendChild(descInner);
+    // The Description column was removed (it forced the table too wide); the
+    // description is shown as a hover tooltip on the whole row instead. The
+    // "no target" flag moves onto the Item cell so it stays visible.
+    const itemCell = el('td', { className: 'ob-item' },
+      el('span', { className: 'ob-item-no', textContent: it.itemNumber }));
+    if (!it.hasTarget) itemCell.appendChild(el('span', { className: 'ob-notarget', title: 'No target time; you will enter an estimate when planning', textContent: 'no target' }));
 
     // Quantity cell: remaining of ordered, e.g. "4 of 7" (or "fully planned" / "over-planned by N").
     const qtyCell = el('td', { className: 'ob-qty' });
@@ -5445,9 +5443,8 @@ function orderBookTable(items) {
     const action = el('td', {});
     if (canPlan) action.appendChild(el('button', { className: 'btn btn-sm', textContent: it.remainingQty > 0 ? 'Add' : 'Add more', title: it.remainingQty > 0 ? 'Add to planner' : 'Add more (over-build)', onclick: () => addOfferingToPlanner(it) }));
 
-    tb.appendChild(el('tr', { className: it.fullyPlanned ? 'ob-row-planned' : '' },
-      el('td', { className: 'ob-item', textContent: it.itemNumber }),
-      desc,
+    tb.appendChild(el('tr', { className: it.fullyPlanned ? 'ob-row-planned' : '', title: it.description || '' },
+      itemCell,
       el('td', { className: 'ob-date' + (it.overdue ? ' ob-overdue' : ''), textContent: it.effectiveDate || '—' }),
       qtyCell,
       el('td', { className: 'ob-value', textContent: it.lineValue != null ? obMoney(it.lineValue) : '' }),
@@ -5560,7 +5557,7 @@ function parseOrderBookText(text) {
   const header = okbSplitLine(lines[0], delim).map(h => h.trim().toLowerCase());
   const findCol = (...names) => { for (const n of names) { const i = header.indexOf(n); if (i >= 0) return i; } return -1; };
   const idx = {
-    part:    findCol('part number'),          desc:  findCol('material description'),
+    part:    findCol('part number'),          desc:  findCol('material description', 'description', 'part description', 'material text', 'item description'),
     req:     findCol('required by'),          due:   findCol('current due date'),
     created: findCol('po creation date'),
     qty:     findCol('bal due qty'),          value: findCol('line value', 'value'),
