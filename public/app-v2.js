@@ -2246,6 +2246,12 @@ function renderEntryList(containerId, timers, showOperator = false) {
     if (t.woNumber)        left.appendChild(el('div', { className: 'entry-meta-tag', textContent: '📋 W/O: ' + t.woNumber }));
     if (t.routeCardNumber) left.appendChild(el('div', { className: 'entry-meta-tag', textContent: '🔢 RC: ' + t.routeCardNumber }));
     if (t.timerCategory === 'rework') left.appendChild(el('div', { className: 'entry-meta-tag', style: 'color:var(--amber);border-color:var(--amber)', textContent: '🔄 Rework' }));
+    // Lifecycle: this assembly's time across all four stages (needs a WO to key on).
+    if (t.woNumber) {
+      const lcBtn = el('button', { className: 'entry-lifecycle-btn', textContent: '⧉ Stages', title: 'Time across all stages for this assembly' });
+      lcBtn.addEventListener('click', () => openAssemblyLifecycleModal(t));
+      left.appendChild(lcBtn);
+    }
     if (t.timeCheck)   left.appendChild(el('span', { className: 'badge badge-timecheck', textContent: '✓ Time Check' }));
     if (t.targetSeconds) left.appendChild(el('div', { className: 'entry-target',
       textContent: '🎯 Target: ' + formatHM(t.targetSeconds) }));
@@ -2286,6 +2292,74 @@ function renderEntryList(containerId, timers, showOperator = false) {
     card.appendChild(right);
     container.appendChild(card);
   });
+}
+
+// ─── Assembly lifecycle (per-stage breakdown) ─────────────────────────────────
+// On-demand view of one assembly's time across the four stages (departments),
+// plus the item total. Reuses GET /api/timers/assembly. Opened from a history
+// entry's "Stages" chip. Stages are shown in lifecycle order; a stage with no
+// timers yet is shown as "not started".
+const STAGE_ORDER = ['Stores', 'PCB', 'Production', 'Test and Inspection'];
+
+async function openAssemblyLifecycleModal(t) {
+  const item = t.itemNumber, wo = t.woNumber || '', rc = t.routeCardNumber || '';
+  const body = el('div', {});
+
+  const idCard = el('div', { className: 'lc-idcard' });
+  idCard.appendChild(el('div', { className: 'lc-item', textContent: item }));
+  const tags = el('div', { className: 'lc-tags' });
+  if (wo) tags.appendChild(el('span', { className: 'lc-tag', textContent: 'W/O: ' + wo }));
+  if (rc) tags.appendChild(el('span', { className: 'lc-tag', textContent: 'RC: ' + rc }));
+  idCard.appendChild(tags);
+  body.appendChild(idCard);
+
+  const totalLine = el('div', { className: 'lc-total', textContent: 'Loading…' });
+  body.appendChild(totalLine);
+  const stagesWrap = el('div', { className: 'lc-stages' });
+  body.appendChild(stagesWrap);
+
+  openModal('Assembly lifecycle', body, [ el('button', { className: 'btn btn-ghost', textContent: 'Close', onclick: () => closeModal() }) ]);
+
+  try {
+    const qs = `item=${encodeURIComponent(item)}&wo=${encodeURIComponent(wo)}` + (rc ? `&rc=${encodeURIComponent(rc)}` : '');
+    const asm = await GET('/timers/assembly?' + qs);
+    totalLine.textContent = 'Item total (all stages): ' + formatDuration(asm.totalSeconds || 0);
+
+    const byDept = {};
+    (asm.stages || []).forEach(s => { byDept[s.department] = s; });
+    // Canonical lifecycle order first, then any other departments that appear.
+    const order = STAGE_ORDER.concat((asm.stages || []).map(s => s.department).filter(d => !STAGE_ORDER.includes(d)));
+    const seen = new Set();
+    stagesWrap.innerHTML = '';
+    order.forEach(dept => {
+      if (seen.has(dept)) return;
+      seen.add(dept);
+      const s = byDept[dept];
+      const row = el('div', { className: 'lc-stage' + (s ? '' : ' lc-stage-empty') });
+      const head = el('div', { className: 'lc-stage-head' },
+        el('span', { className: 'lc-stage-name', textContent: dept }),
+        el('span', { className: 'lc-stage-time', textContent: s ? formatDuration(s.totalSeconds) : 'not started' }),
+      );
+      row.appendChild(head);
+      if (s) {
+        const meta = [s.timerCount + ' timer' + (s.timerCount !== 1 ? 's' : '')];
+        if (s.hasActive) meta.push('active now');
+        if (s.hasRework) meta.push('rework logged');
+        row.appendChild(el('div', { className: 'lc-stage-meta', textContent: meta.join(' · ') }));
+        (s.operators || []).forEach(op => {
+          row.appendChild(el('div', { className: 'lc-op' },
+            el('span', { className: 'lc-op-name', textContent: op.operatorName }),
+            el('span', { className: 'lc-op-time', textContent: formatDuration(op.totalSeconds) }),
+          ));
+        });
+      }
+      stagesWrap.appendChild(row);
+    });
+  } catch (err) {
+    totalLine.textContent = '';
+    stagesWrap.innerHTML = '';
+    stagesWrap.appendChild(el('div', { className: 'error-msg', textContent: err.message }));
+  }
 }
 
 // ─── Adjust timer times (supervisor+) ─────────────────────────────────────────

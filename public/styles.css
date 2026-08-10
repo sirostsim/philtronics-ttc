@@ -1144,6 +1144,28 @@ main { padding-bottom: 28px; }
   margin-top: 2px;
 }
 
+/* Lifecycle chip on a history entry + the per-stage modal it opens. */
+.entry-lifecycle-btn {
+  display: inline-block; margin-top: 4px; font-size: 11px; font-weight: 600;
+  color: var(--text2); background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 6px; padding: 2px 8px; cursor: pointer;
+}
+.entry-lifecycle-btn:hover { border-color: var(--accent); color: var(--text); }
+.lc-idcard { background: var(--bg3); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }
+.lc-item { font-size: 18px; font-weight: 700; color: var(--accent); margin-bottom: 6px; }
+.lc-tags { display: flex; gap: 8px; flex-wrap: wrap; }
+.lc-tag { font-size: 12px; color: var(--text2); background: var(--bg2); padding: 3px 10px; border-radius: 4px; }
+.lc-total { font-size: 14px; font-weight: 700; color: var(--green); margin-bottom: 12px; }
+.lc-stages { display: flex; flex-direction: column; gap: 8px; }
+.lc-stage { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.lc-stage-empty { opacity: .55; }
+.lc-stage-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.lc-stage-name { font-size: 13px; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: .04em; }
+.lc-stage-time { font-size: 15px; font-weight: 700; color: var(--text); }
+.lc-stage-meta { font-size: 11px; color: var(--text3); margin-top: 3px; }
+.lc-op { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; color: var(--text2); margin-top: 4px; padding-left: 8px; }
+.lc-op-time { color: var(--text); font-weight: 600; }
+
 /* ─── User Manual nav link ───────────────────────────────────────────────── */
 .nav-manual-btn {
   display: block;
