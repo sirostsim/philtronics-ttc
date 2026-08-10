@@ -852,38 +852,40 @@ document.getElementById('btnStart').addEventListener('click', async () => {
 
   if (woNumber && routeCard) {
     try {
-      const sevenDaysAgo = new Date(Date.now() - 7*24*60*60*1000).toISOString();
-      const prevTimers = await GET(
-        `/timers?from=${encodeURIComponent(sevenDaysAgo)}&itemNumber=${encodeURIComponent(itemNumber)}`
+      const fmtSecs = s => {
+        if (!s) return '0m';
+        const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+        return h > 0 ? `${h}h ${String(m).padStart(2,'0')}m` : `${m}m`;
+      };
+      const asm = await GET(
+        `/timers/assembly?item=${encodeURIComponent(itemNumber)}&wo=${encodeURIComponent(woNumber)}&rc=${encodeURIComponent(routeCard)}`
       );
-      const prevMatch = (prevTimers || []).filter(t =>
-        t.itemNumber?.toLowerCase() === itemNumber.toLowerCase() &&
-        t.woNumber                  === woNumber &&
-        (t.routeCardNumber || '')   === routeCard &&
-        (t.status === 'completed' || t.status === 'cancelled')
-      );
-      if (prevMatch.length > 0) {
-        const totalSecs = prevMatch.reduce((s, t) => s + (t.durationSeconds || 0), 0);
-        const fmtSecs = s => {
-          if (!s) return '0m';
-          const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
-          return h > 0 ? `${h}h ${String(m).padStart(2,'0')}m` : `${m}m`;
-        };
-        const opMap = {};
-        prevMatch.forEach(t => {
-          if (!opMap[t.operatorId]) opMap[t.operatorId] = { operatorId: t.operatorId, operatorName: t.operatorName, totalSeconds: 0, stints: [] };
-          opMap[t.operatorId].totalSeconds += (t.durationSeconds || 0);
-          opMap[t.operatorId].stints.push({ seconds: t.durationSeconds || 0 });
-        });
-        const operators = Object.values(opMap).map(o => ({ ...o, totalDisplay: fmtSecs(o.totalSeconds) }));
+      // Only ask "continuation or rework?" when the operator's OWN stage
+      // (department) already has finished work on this assembly. Prior work in a
+      // different stage — e.g. Stores picking before a Production build — is a
+      // normal handover to the next stage, not a return to this one, so it must
+      // not trigger the prompt. The per-stage breakdown is still shown for context.
+      if (asm && asm.ownStage && asm.ownStage.priorWork) {
+        const myStage   = (asm.stages || []).find(s => s.department === asm.ownStage.department) || { operators: [], totalSeconds: 0 };
+        const operators = (myStage.operators || []).map(o => ({
+          operatorId: o.operatorId, operatorName: o.operatorName,
+          totalSeconds: o.totalSeconds, totalDisplay: fmtSecs(o.totalSeconds),
+          stints: Array.from({ length: o.timerCount || 0 }),
+        }));
         const assemblyObj = {
           itemNumber, woNumber, routeCardNumber: routeCard,
           operatorCount:   operators.length,
           operators,
-          combinedSeconds: totalSecs,
-          combinedDisplay: fmtSecs(totalSecs),
+          combinedSeconds: myStage.totalSeconds,
+          combinedDisplay: fmtSecs(myStage.totalSeconds),
           elapsedDisplay:  null,
           multiOperator:   operators.length > 1,
+          ownStageDepartment:    asm.ownStage.department,
+          lifecycleTotalDisplay: fmtSecs(asm.totalSeconds),
+          stages: (asm.stages || []).map(s => ({
+            department: s.department, totalDisplay: fmtSecs(s.totalSeconds),
+            hasActive: s.hasActive, isOwn: s.department === asm.ownStage.department,
+          })),
         };
         const result = await showAssemblyResumePrompt(assemblyObj);
         if (result === null) { btn.disabled = false; return; }
@@ -1669,13 +1671,13 @@ function showAssemblyResumePrompt(assembly) {
     tags.appendChild(el('span', { textContent: 'W/O: ' + assembly.woNumber, style: 'font-size:13px;color:var(--text2);background:var(--bg2);padding:3px 10px;border-radius:4px' }));
     if (assembly.routeCardNumber) tags.appendChild(el('span', { textContent: 'RC: ' + assembly.routeCardNumber, style: 'font-size:13px;color:var(--text2);background:var(--bg2);padding:3px 10px;border-radius:4px' }));
     identityCard.appendChild(tags); body.appendChild(identityCard);
-    body.appendChild(el('p', { textContent: 'Time has already been recorded on this assembly:', style: 'font-size:14px;color:var(--text2);margin-bottom:12px' }));
-    // Time grid
+    body.appendChild(el('p', { textContent: 'Time has already been recorded on this assembly in your stage' + (assembly.ownStageDepartment ? ' (' + assembly.ownStageDepartment + ')' : '') + ':', style: 'font-size:14px;color:var(--text2);margin-bottom:12px' }));
+    // Time grid — figures scoped to the operator's own stage, plus the item total.
     const grid = el('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px' });
     [{ label: 'Your time so far', value: assembly.operators?.find(o => o.operatorId === state.user?.id)?.totalDisplay || assembly.combinedDisplay || '—', color: 'var(--text)' },
-     { label: 'Total combined time', value: assembly.combinedDisplay || '—', color: 'var(--text)' },
-     { label: 'Contributors', value: assembly.operatorCount + ' operator' + (assembly.operatorCount !== 1 ? 's' : ''), color: 'var(--text2)' },
-     { label: 'Elapsed (wall clock)', value: assembly.elapsedDisplay || '—', color: 'var(--green)' },
+     { label: 'This stage (combined)', value: assembly.combinedDisplay || '—', color: 'var(--text)' },
+     { label: 'Contributors (this stage)', value: assembly.operatorCount + ' operator' + (assembly.operatorCount !== 1 ? 's' : ''), color: 'var(--text2)' },
+     { label: 'Item total (all stages)', value: assembly.lifecycleTotalDisplay || assembly.combinedDisplay || '—', color: 'var(--green)' },
     ].forEach(({ label, value, color }) => {
       const box = el('div', { style: 'background:var(--bg3);border-radius:8px;padding:10px 12px' });
       box.appendChild(el('div', { textContent: label, style: 'font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px' }));
@@ -1683,6 +1685,19 @@ function showAssemblyResumePrompt(assembly) {
       grid.appendChild(box);
     });
     body.appendChild(grid);
+    // Lifecycle across stages (Stores / PCB / Production / Test and Inspection).
+    // The operator's own stage is outlined so the handover context is clear.
+    if (assembly.stages && assembly.stages.length) {
+      body.appendChild(el('div', { textContent: 'Time by stage', style: 'font-size:13px;font-weight:600;color:var(--text2);margin-bottom:6px' }));
+      const sgrid = el('div', { style: 'display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px' });
+      assembly.stages.forEach(s => {
+        const box = el('div', { style: `background:var(--bg3);border-radius:8px;padding:8px 12px;border:1px solid ${s.isOwn ? 'var(--accent)' : 'var(--border)'}` });
+        box.appendChild(el('div', { textContent: s.department + (s.hasActive ? ' • active' : ''), style: 'font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px' }));
+        box.appendChild(el('div', { textContent: s.totalDisplay, style: 'font-size:15px;font-weight:700;color:var(--text)' }));
+        sgrid.appendChild(box);
+      });
+      body.appendChild(sgrid);
+    }
     // Multi-op breakdown
     if (assembly.operatorCount > 1) {
       body.appendChild(el('div', { textContent: 'Operators who have worked on this assembly:', style: 'font-size:13px;font-weight:600;color:var(--text2);margin-bottom:6px' }));

@@ -622,6 +622,80 @@ router.patch('/:id', validate(schemas.adjustTimer), async (req, res) => {
 
 
 
+// ─── GET /api/timers/assembly ─────────────────────────────────────────────────
+// Lifecycle view of one assembly (item + WO + route card) across the four stages
+// (departments: Stores, PCB, Production, Test and Inspection). Used by the
+// start-timer flow to scope the continuation/rework prompt to the operator's OWN
+// stage, and to report each stage's time plus the item total. Identity-scoped
+// (not time-windowed) and case-insensitive on the item number to match how items
+// are normalised elsewhere. Defined before '/:id' so 'assembly' is not read as an id.
+router.get('/assembly', async (req, res) => {
+  try {
+    const item = String(req.query.item || '').trim();
+    const wo   = String(req.query.wo   || '').trim();
+    const rc   = String(req.query.rc   || '').trim();
+    if (!item || !wo) return res.status(400).json({ error: 'item and wo are required.' });
+
+    const rows = await query(
+      `SELECT department, status, timer_category, duration_seconds, operator_id, operator_name
+         FROM timers
+        WHERE UPPER(item_number) = UPPER($1)
+          AND wo_number = $2
+          AND route_card_number IS NOT DISTINCT FROM $3`,
+      [item, wo, rc || null]
+    );
+
+    // Bucket every timer by stage (department), summing time and per-operator time.
+    const byDept = {};
+    let totalSeconds = 0;
+    for (const r of rows) {
+      const dept = r.department || 'Production';
+      const secs = r.duration_seconds || 0;
+      totalSeconds += secs;
+      const b = (byDept[dept] = byDept[dept] || { department: dept, totalSeconds: 0, timerCount: 0, hasRework: false, hasActive: false, ops: {} });
+      b.totalSeconds += secs;
+      b.timerCount   += 1;
+      if (r.timer_category === 'rework') b.hasRework = true;
+      if (r.status === 'active')         b.hasActive = true;
+      const op = (b.ops[r.operator_id] = b.ops[r.operator_id] || { operatorId: r.operator_id, operatorName: r.operator_name, totalSeconds: 0, timerCount: 0 });
+      op.totalSeconds += secs;
+      op.timerCount   += 1;
+    }
+
+    const stages = Object.values(byDept).map(b => ({
+      department:   b.department,
+      totalSeconds: b.totalSeconds,
+      timerCount:   b.timerCount,
+      hasRework:    b.hasRework,
+      hasActive:    b.hasActive,
+      operators:    Object.values(b.ops).sort((a, z) => z.totalSeconds - a.totalSeconds),
+    }));
+
+    // The requesting operator's own stage = their department. Only prior FINISHED
+    // work in that same stage should drive the continuation/rework prompt; prior
+    // work in other stages is a normal handover and must be ignored for that.
+    const myDept = req.user.department || 'Production';
+    const mine   = rows.filter(r => (r.department || 'Production') === myDept);
+    const priorWork = mine.some(r => r.status === 'completed' || r.status === 'cancelled');
+
+    res.json({
+      item, wo, routeCard: rc || null,
+      totalSeconds,
+      stages,
+      ownStage: {
+        department:   myDept,
+        priorWork,
+        totalSeconds: mine.reduce((s, r) => s + (r.duration_seconds || 0), 0),
+      },
+    });
+  } catch (err) {
+    console.error('GET /timers/assembly error:', err.message);
+    res.status(500).json({ error: 'Could not load the assembly.' });
+  }
+});
+
+
+
 // ─── GET /api/timers ──────────────────────────────────────────────────────────
 
 router.get('/', async (req, res) => {
