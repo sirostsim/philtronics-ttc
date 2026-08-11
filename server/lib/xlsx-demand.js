@@ -119,7 +119,10 @@ function mapOrderBook(sheet) {
     balDueQty:   Math.round(numOf(o['bal due qty'])),
     value:       (o['line value'] != null && o['line value'] !== '') ? numOf(o['line value'])
                  : (o['value'] != null && o['value'] !== '' ? numOf(o['value']) : null),
-    rework:      String(o['rework'] || '').trim() !== '',
+    // KLA's rework flag is the letter 'L'. Some weekly exports leave stray
+    // numbers in this column, so only an alphabetic marker counts as rework -
+    // a number is not a flag (treating it as one hides the whole order book).
+    rework:      /[a-z]/i.test(String(o['rework'] || '')),
   })).filter(r => r.itemNumber);
 }
 
