@@ -21,14 +21,18 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { query, getClient } = require('../db');
-const { requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole } = require('../middleware/auth');
 const { validate, schemas } = require('../middleware/validate');
 const { readSheet, mapOrderBook, mapPriority, computeReport } = require('../lib/xlsx-demand');
 
 const router = express.Router();
 
+// Authenticate first (populates req.user from the login cookie), then gate the
+// whole feature at manager and above (which includes the planner role).
+router.use(requireAuth, requireRole('manager'));
+
 // GET /api/push-pull/customers -> distinct customers with snapshots
-router.get('/customers', requireRole('manager'), async (req, res) => {
+router.get('/customers', async (req, res) => {
   try {
     const rows = await query('SELECT DISTINCT customer FROM demand_snapshots ORDER BY customer ASC');
     res.json(rows.map(r => r.customer));
@@ -39,7 +43,7 @@ router.get('/customers', requireRole('manager'), async (req, res) => {
 });
 
 // GET /api/push-pull/report?customer=KLA -> full push/pull report
-router.get('/report', requireRole('manager'), async (req, res) => {
+router.get('/report', async (req, res) => {
   try {
     const customer = (req.query.customer || 'KLA').toString();
     const snaps = await query(
@@ -60,7 +64,7 @@ router.get('/report', requireRole('manager'), async (req, res) => {
 
 // POST /api/push-pull/snapshot  { customer, snapshotDate, orderBookB64, priorityB64 }
 // Stores a weekly snapshot of both sheets AND refreshes the live order book.
-router.post('/snapshot', requireRole('manager'), validate(schemas.pushPullSnapshot), async (req, res) => {
+router.post('/snapshot', validate(schemas.pushPullSnapshot), async (req, res) => {
   const { customer, snapshotDate } = req.body;
   let orderRows, priRows;
   try {
@@ -118,7 +122,7 @@ router.post('/snapshot', requireRole('manager'), validate(schemas.pushPullSnapsh
 });
 
 // DELETE /api/push-pull/snapshot?customer=&date=  (manager+; remove one week)
-router.delete('/snapshot', requireRole('manager'), async (req, res) => {
+router.delete('/snapshot', async (req, res) => {
   try {
     const { customer, date } = req.query;
     if (!customer || !date) return res.status(400).json({ error: 'customer and date are required.' });
