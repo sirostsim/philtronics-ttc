@@ -134,6 +134,15 @@ const schemas = {
       rework:      Joi.boolean().default(false),
     })).required(),
   }),
+
+  // Push/Pull weekly upload: two .xlsx files as base64 (parsed server-side).
+  pushPullSnapshot: Joi.object({
+    customer:     Joi.string().trim().min(1).max(60).required(),
+    snapshotDate: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).required()
+      .messages({ 'string.pattern.base': 'Snapshot date must be a valid date (YYYY-MM-DD).' }),
+    orderBookB64: Joi.string().base64().max(16000000).required(),
+    priorityB64:  Joi.string().base64().max(16000000).required(),
+  }),
 };
 
 module.exports = { validate, schemas };

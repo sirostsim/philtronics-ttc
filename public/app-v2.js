@@ -203,6 +203,7 @@ const PAGES = {
   'wb-pcb':      { id: 'page-pcb-wb',          label: '📋 Wall Board — PCB',           minRole: 'supervisor', dept: 'PCB'                },
   'wbc-pcb':     { id: 'page-pcb-wbc',         label: '📺 Compact — PCB',              minRole: 'supervisor', dept: 'PCB'                },
   planner:        { id: 'pagePlanner',           label: '📅 Planner',                    minRole: 'supervisor'  },
+  pushpull:       { id: 'pagePushPull',          label: '🔀 Push/Pull',                  minRole: 'manager'     },
   dashboard:      { id: 'pageDashboard',         label: 'Dashboard',                     minRole: 'manager'     },
   targets:        { id: 'pageTargets',           label: 'Target Times',                  minRole: 'manager'     },
   reports:        { id: 'pageReports',           label: 'Reports',                       minRole: 'manager'     },
@@ -225,7 +226,7 @@ function buildNav() {
   list.innerHTML = '';
 
   // Non-wallboard pages — render as normal nav items
-  const topPages    = ['home','timer','history','planner','dashboard','targets','reports','charts','devrequests','admin'];
+  const topPages    = ['home','timer','history','planner','pushpull','dashboard','targets','reports','charts','devrequests','admin'];
   const wbPageKeys  = Object.keys(PAGES).filter(k => k.startsWith('wb-') || k.startsWith('wbc-'));
   const visibleWbs  = wbPageKeys.filter(k => canSeePage(PAGES[k]));
 
@@ -318,6 +319,7 @@ function navigateTo(page) {
   else if (page === 'history')   loadHistoryPage();
   else if (page === 'dashboard') loadDashboard();
   else if (page === 'planner')   loadPlannerPage();
+  else if (page === 'pushpull')  loadPushPullPage();
   else if (page === 'targets')   loadTargetsPage();
   else if (page === 'reports')   loadReportsPage();
   else if (page === 'charts')    loadChartsPage();
@@ -5592,6 +5594,284 @@ function parseOrderBookText(text) {
     });
   }
   return { rows, skippedBlank, dateFormat: dayFirst ? 'DD/MM/YYYY' : 'MM/DD/YYYY' };
+}
+
+// ── PUSH / PULL PAGE ──────────────────────────────────────────────────────────
+// KLA's two weekly sheets, diffed week-over-week: what demand pulled in (needed
+// sooner), pushed out (later), was added or dropped, weighted by order-book value.
+const _pp = { report: null, cur: 0, wired: false, customer: 'KLA' };
+const PP_NS = 'http://www.w3.org/2000/svg';
+const PP_PULL = '#d9772e', PP_PUSH = '#3f8fd6', PP_ADD = '#1fa06e', PP_AMBER = '#e0a92e';
+const _PP_MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function ppSvg(t, a) { const e = document.createElementNS(PP_NS, t); for (const k in a) e.setAttribute(k, a[k]); return e; }
+function ppMoney(n) { n = Math.round(n || 0); const a = Math.abs(n); if (a >= 1e6) return '£' + (n / 1e6).toFixed(2) + 'm'; if (a >= 1e3) return '£' + (n / 1e3).toFixed(a >= 1e5 ? 0 : 1) + 'k'; return '£' + n.toLocaleString(); }
+function ppMoneyFull(n) { return '£' + Math.round(n || 0).toLocaleString(); }
+function ppFmtWeek(iso) { if (!iso) return ''; const p = iso.split('-'); return (+p[2]) + ' ' + _PP_MON[+p[1] - 1]; }
+function ppMonShort(ym) { const p = ym.split('-'); return _PP_MON[+p[1] - 1] + ' ' + p[0].slice(2); }
+function ppShiftDate(iso) { if (!iso) return '–'; const p = iso.split('-'); return p[2] + '/' + p[1]; }
+
+function ppTipEl() { let t = document.getElementById('ppTipEl'); if (!t) { t = el('div', { id: 'ppTipEl', className: 'pp-tip' }); document.body.appendChild(t); } return t; }
+function ppShowTip(html, x, y) { const t = ppTipEl(); t.innerHTML = html; t.style.opacity = 1; const r = t.getBoundingClientRect(); let nx = x + 14, ny = y + 14; if (nx + r.width > innerWidth - 8) nx = x - r.width - 14; if (ny + r.height > innerHeight - 8) ny = y - r.height - 14; t.style.left = nx + 'px'; t.style.top = ny + 'px'; }
+function ppHideTip() { const t = document.getElementById('ppTipEl'); if (t) t.style.opacity = 0; }
+
+function ppReadB64(file) {
+  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = () => rej(new Error('Could not read ' + file.name)); r.readAsDataURL(file); });
+}
+
+async function loadPushPullPage() {
+  if (!_pp.wired) {
+    _pp.wired = true;
+    const toggle = document.getElementById('ppUploadToggle');
+    const panel = document.getElementById('ppUploadPanel');
+    if (toggle && panel) toggle.addEventListener('click', () => { panel.hidden = !panel.hidden; toggle.textContent = panel.hidden ? 'Upload this week' : 'Close'; });
+    const up = document.getElementById('ppUploadBtn');
+    if (up) up.addEventListener('click', ppUpload);
+    const cust = document.getElementById('ppCustomer');
+    if (cust) cust.addEventListener('change', () => { _pp.customer = cust.value; ppLoadReport(cust.value); });
+    const d = document.getElementById('ppDate'); if (d && !d.value) d.value = new Date().toISOString().slice(0, 10);
+  }
+  await ppFillCustomers();
+  await ppLoadReport(_pp.customer);
+}
+
+async function ppFillCustomers() {
+  const sel = document.getElementById('ppCustomer'); if (!sel) return;
+  let list = []; try { list = await GET('/push-pull/customers'); } catch (_) {}
+  if (!list.length) list = [_pp.customer || 'KLA'];
+  if (!list.includes(_pp.customer)) _pp.customer = list[0];
+  sel.innerHTML = '';
+  for (const c of list) sel.appendChild(el('option', { value: c, textContent: c }));
+  sel.value = _pp.customer;
+}
+
+async function ppUpload() {
+  const of = document.getElementById('ppOrderFile').files[0];
+  const pf = document.getElementById('ppPriorityFile').files[0];
+  const date = document.getElementById('ppDate').value;
+  const customer = document.getElementById('ppCustomerName').value.trim() || 'KLA';
+  const note = document.getElementById('ppUploadNote');
+  if (!of || !pf) { note.textContent = 'Choose both spreadsheets.'; return; }
+  if (!date) { note.textContent = 'Pick the week (Tuesday).'; return; }
+  note.textContent = 'Uploading…';
+  try {
+    const [orderBookB64, priorityB64] = await Promise.all([ppReadB64(of), ppReadB64(pf)]);
+    const res = await POST('/push-pull/snapshot', { customer, snapshotDate: date, orderBookB64, priorityB64 });
+    toast('Uploaded ' + res.orderLines + ' order lines and ' + res.priorityLines + ' demand lines for ' + customer + '.', 'success');
+    note.textContent = '';
+    document.getElementById('ppOrderFile').value = '';
+    document.getElementById('ppPriorityFile').value = '';
+    _pp.customer = customer;
+    await ppFillCustomers();
+    await ppLoadReport(customer);
+  } catch (err) { note.textContent = err.message; toast(err.message, 'error'); }
+}
+
+async function ppLoadReport(customer) {
+  const body = document.getElementById('ppBody'); if (!body) return;
+  body.innerHTML = ''; body.appendChild(el('div', { className: 'empty-state', style: 'padding:24px', textContent: 'Loading…' }));
+  try {
+    const rep = await GET('/push-pull/report?customer=' + encodeURIComponent(customer));
+    _pp.report = rep; _pp.cur = Math.max(0, (rep.transitions || []).length - 1);
+    ppRender();
+  } catch (err) { body.innerHTML = ''; body.appendChild(el('div', { className: 'error-msg', style: 'padding:16px', textContent: err.message })); }
+}
+
+function ppRender() {
+  const body = document.getElementById('ppBody'); if (!body) return;
+  const rep = _pp.report; body.innerHTML = '';
+  if (!rep || !rep.perWeek.length) {
+    body.appendChild(el('div', { className: 'pp-empty' },
+      el('div', { className: 'pp-empty-title', textContent: 'No weeks uploaded yet' }),
+      el('div', { textContent: 'Use "Upload this week" to add KLA’s order book and priority-requirements spreadsheets. Upload two or more weeks to see the push/pull.' })));
+    return;
+  }
+  body.appendChild(ppStepper(rep));
+  if (!rep.transitions.length) {
+    body.appendChild(el('div', { className: 'pp-note-panel', textContent: 'One week uploaded. Add a second week to compare and reveal the push/pull.' }));
+    body.appendChild(ppProfileSection(rep));
+    return;
+  }
+  body.appendChild(ppControls(rep));
+  body.appendChild(ppKpis());
+  body.appendChild(ppProfileSection(rep));
+  body.appendChild(ppScatterSection());
+  body.appendChild(ppMoversSection());
+  body.appendChild(ppTakeaway(rep));
+}
+
+function ppStepper(rep) {
+  const wrap = el('div', { className: 'pp-stepper' });
+  rep.perWeek.forEach((w, i) => {
+    const prev = i > 0 ? rep.perWeek[i - 1] : null;
+    const card = el('div', { className: 'pp-snap' + (i === rep.perWeek.length - 1 ? ' now' : '') },
+      el('div', { className: 'pp-snap-dow', textContent: 'Snapshot' }),
+      el('div', { className: 'pp-snap-date', textContent: ppFmtWeek(w.week) + ' ' + w.week.slice(0, 4) }),
+      el('div', { className: 'pp-snap-oblab', textContent: 'Order book' }),
+      el('div', { className: 'pp-snap-ob', textContent: ppMoneyFull(w.orderBookValue) }),
+      el('div', { className: 'pp-snap-meta', textContent: w.demandSlots + ' demand lines · ' + w.obLines + ' PO lines' }));
+    if (prev) {
+      const diff = w.orderBookValue - prev.orderBookValue;
+      card.appendChild(el('div', { className: 'pp-snap-delta ' + (diff >= 0 ? 'up' : 'down'), textContent: (diff >= 0 ? '+' : '−') + ppMoney(Math.abs(diff)) + ' order book' }));
+    }
+    wrap.appendChild(card);
+  });
+  return wrap;
+}
+
+function ppControls(rep) {
+  const head = el('div', { className: 'pp-sec-head' },
+    el('div', {},
+      el('h3', { className: 'pp-sec-title', textContent: 'What moved in one week' }),
+      el('p', { className: 'pp-sec-sub', textContent: 'Pulled in = KLA now needs it sooner (expedite pressure); pushed out = later (built stock waits, cash tied up). Values are the demand £ whose timing shifted.' })));
+  const seg = el('div', { className: 'pp-seg' });
+  rep.transitions.forEach((t, i) => {
+    const b = el('button', { textContent: ppFmtWeek(t.from) + ' → ' + ppFmtWeek(t.to), onclick: () => { _pp.cur = i; ppRender(); } });
+    b.setAttribute('aria-pressed', i === _pp.cur);
+    seg.appendChild(b);
+  });
+  head.appendChild(seg);
+  return head;
+}
+
+function ppKpis() {
+  const t = _pp.report.transitions[_pp.cur], s = t.sums, net = s.pushOut - s.pullIn;
+  const grid = el('div', { className: 'pp-kpis' });
+  const cards = [
+    { c: 'pull', dot: PP_PULL, lab: 'Pulled in (sooner)', big: ppMoney(s.pullIn), meta: s.pullInN + ' parts now needed earlier' },
+    { c: 'push', dot: PP_PUSH, lab: 'Pushed out (later)', big: ppMoney(s.pushOut), meta: s.pushOutN + ' parts slipped later' },
+    { c: 'net', dot: PP_AMBER, lab: 'Net timing swing', big: (net >= 0 ? 'out ' : 'in ') + ppMoney(Math.abs(net)), meta: 'push minus pull · direction of the week' },
+    { c: 'new', dot: PP_ADD, lab: 'Brand-new demand', big: ppMoney(s.added), meta: s.addedN + ' new parts · ' + s.droppedN + ' dropped' },
+  ];
+  for (const k of cards) {
+    grid.appendChild(el('div', { className: 'pp-kpi pp-k-' + k.c },
+      el('div', { className: 'pp-kpi-lab' }, el('span', { className: 'pp-dot', style: 'background:' + k.dot }), document.createTextNode(k.lab)),
+      el('div', { className: 'pp-kpi-big', textContent: k.big }),
+      el('div', { className: 'pp-kpi-meta', textContent: k.meta })));
+  }
+  return grid;
+}
+
+function ppProfileSection(rep) {
+  const sec = el('div', { className: 'pp-section' });
+  sec.appendChild(el('div', { className: 'pp-sec-head' }, el('div', {},
+    el('h3', { className: 'pp-sec-title', textContent: 'The order book breathing' }),
+    el('p', { className: 'pp-sec-sub', textContent: 'Demand value by the month KLA needs it, drawn for each uploaded week. Watch the near months empty and later months swell as demand marches outward.' }))));
+  const card = el('div', { className: 'pp-card' });
+  const months = rep.months;
+  if (!months.length) { card.appendChild(el('div', { className: 'empty-state', textContent: 'No dated demand yet.' })); sec.appendChild(card); return sec; }
+  const W = 1000, H = 330, mL = 62, mR = 16, mT = 14, mB = 40;
+  const svg = ppSvg('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'pp-chart' });
+  const maxV = Math.max(1, ...rep.profile.flatMap(p => p.values));
+  const x = i => mL + (months.length <= 1 ? 0 : i * (W - mL - mR) / (months.length - 1));
+  const y = v => H - mB - (v / maxV) * (H - mT - mB);
+  for (let i = 0; i <= 4; i++) { const v = maxV * i / 4, yy = y(v); svg.appendChild(ppSvg('line', { x1: mL, y1: yy, x2: W - mR, y2: yy, class: 'pp-grid' })); const tl = ppSvg('text', { x: mL - 8, y: yy + 4, 'text-anchor': 'end', class: 'pp-axis' }); tl.textContent = ppMoney(v); svg.appendChild(tl); }
+  months.forEach((m, i) => { const tx = ppSvg('text', { x: x(i), y: H - mB + 18, 'text-anchor': 'middle', class: 'pp-axis' }); tx.textContent = ppMonShort(m); svg.appendChild(tx); });
+  const n = rep.profile.length;
+  rep.profile.forEach((p, idx) => {
+    const latest = idx === n - 1;
+    const shade = latest ? PP_AMBER : ('rgba(154,161,184,' + (0.35 + 0.4 * (idx / Math.max(1, n - 1))) + ')');
+    let d = ''; p.values.forEach((v, i) => { d += (i ? 'L' : 'M') + x(i) + ' ' + y(v) + ' '; });
+    if (latest) { svg.appendChild(ppSvg('path', { d: d + 'L' + x(months.length - 1) + ' ' + (H - mB) + ' L' + x(0) + ' ' + (H - mB) + ' Z', fill: PP_AMBER, 'fill-opacity': .08 })); }
+    svg.appendChild(ppSvg('path', { d, fill: 'none', stroke: shade, 'stroke-width': latest ? 2.6 : 1.6, 'stroke-linejoin': 'round' }));
+    if (latest) p.values.forEach((v, i) => {
+      const c = ppSvg('circle', { cx: x(i), cy: y(v), r: 3.4, fill: PP_AMBER, stroke: '#161a25', 'stroke-width': 1.5 }); c.style.cursor = 'pointer';
+      c.addEventListener('mousemove', e => ppShowTip('<b>' + esc(ppMonShort(months[i])) + '</b>' + rep.profile.map(pp => '<div class="pp-tip-row"><span>' + esc(ppFmtWeek(pp.week)) + '</span><span>' + ppMoneyFull(pp.values[i]) + '</span></div>').join(''), e.clientX, e.clientY));
+      c.addEventListener('mouseleave', ppHideTip); svg.appendChild(c);
+    });
+  });
+  card.appendChild(svg);
+  const leg = el('div', { className: 'pp-legend' });
+  rep.profile.forEach((p, i) => leg.appendChild(el('span', { className: 'pp-lg' }, el('span', { className: 'pp-lg-line', style: 'background:' + (i === n - 1 ? PP_AMBER : 'rgba(154,161,184,' + (0.35 + 0.4 * (i / Math.max(1, n - 1))) + ')') }), document.createTextNode(ppFmtWeek(p.week)))));
+  card.appendChild(leg);
+  sec.appendChild(card);
+  return sec;
+}
+
+function ppScatterSection() {
+  const t = _pp.report.transitions[_pp.cur];
+  const pts = t.movers.filter(m => m.cat === 'pullIn' || m.cat === 'pushOut');
+  const sec = el('div', { className: 'pp-section' });
+  sec.appendChild(el('div', { className: 'pp-sec-head' }, el('div', {},
+    el('h3', { className: 'pp-sec-title', textContent: 'Every move, one dot a part' }),
+    el('p', { className: 'pp-sec-sub', textContent: 'Left = pulled in (sooner), right = pushed out (later). Height = demand £ affected. Bubble size = quantity. Hover for detail.' }))));
+  const card = el('div', { className: 'pp-card' });
+  if (!pts.length) { card.appendChild(el('div', { className: 'empty-state', textContent: 'No timing shifts this week.' })); sec.appendChild(card); return sec; }
+  const W = 1000, H = 360, mL = 64, mR = 20, mT = 16, mB = 44;
+  const svg = ppSvg('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'pp-chart' });
+  const maxShift = Math.max(30, ...pts.map(p => Math.abs(p.shift)));
+  const maxVal = Math.max(1, ...pts.map(p => p.val));
+  const maxQty = Math.max(1, ...pts.map(p => p.qty));
+  const x = s => mL + (s + maxShift) / (2 * maxShift) * (W - mL - mR);
+  const yv = v => H - mB - (Math.sqrt(v) / Math.sqrt(maxVal)) * (H - mT - mB);
+  const rq = q => 5 + (Math.sqrt(Math.max(q, 1)) / Math.sqrt(maxQty)) * 15;
+  [0, .25, .5, 1].forEach(f => { const v = maxVal * f, yy = yv(v); svg.appendChild(ppSvg('line', { x1: mL, y1: yy, x2: W - mR, y2: yy, class: 'pp-grid' })); const tl = ppSvg('text', { x: mL - 8, y: yy + 4, 'text-anchor': 'end', class: 'pp-axis' }); tl.textContent = ppMoney(v); svg.appendChild(tl); });
+  svg.appendChild(ppSvg('line', { x1: x(0), y1: mT, x2: x(0), y2: H - mB, class: 'pp-zero' }));
+  [-maxShift, -maxShift / 2, 0, maxShift / 2, maxShift].forEach(s => { const tx = ppSvg('text', { x: x(s), y: H - mB + 18, 'text-anchor': 'middle', class: 'pp-axis' }); tx.textContent = (s > 0 ? '+' : '') + Math.round(s) + 'd'; svg.appendChild(tx); });
+  const l1 = ppSvg('text', { x: mL + 2, y: H - mB + 36, 'text-anchor': 'start', class: 'pp-axis-lab', fill: PP_PULL }); l1.textContent = '◄ pulled in (sooner)'; svg.appendChild(l1);
+  const l2 = ppSvg('text', { x: W - mR - 2, y: H - mB + 36, 'text-anchor': 'end', class: 'pp-axis-lab', fill: PP_PUSH }); l2.textContent = 'pushed out (later) ►'; svg.appendChild(l2);
+  pts.slice().sort((a, b) => b.val - a.val).forEach(p => {
+    const col = p.cat === 'pullIn' ? PP_PULL : PP_PUSH;
+    const c = ppSvg('circle', { cx: x(p.shift), cy: yv(p.val), r: rq(p.qty), fill: col, 'fill-opacity': .42, stroke: col, 'stroke-width': 1.5 }); c.style.cursor = 'pointer';
+    c.addEventListener('mousemove', e => ppShowTip('<b class="pp-tip-part">' + esc(p.part) + '</b><div class="pp-tip-desc">' + esc(p.desc || '') + '</div>' +
+      '<div class="pp-tip-row"><span>Shift</span><span>' + (p.shift > 0 ? '+' : '') + p.shift + 'd ' + (p.cat === 'pullIn' ? 'earlier' : 'later') + '</span></div>' +
+      '<div class="pp-tip-row"><span>Required</span><span>' + ppShiftDate(p.from) + ' → ' + ppShiftDate(p.to) + '</span></div>' +
+      '<div class="pp-tip-row"><span>Qty</span><span>' + Math.round(p.qty) + '</span></div>' +
+      '<div class="pp-tip-row"><span>Value</span><span>' + ppMoneyFull(p.val) + '</span></div>', e.clientX, e.clientY));
+    c.addEventListener('mouseleave', ppHideTip); svg.appendChild(c);
+  });
+  card.appendChild(svg);
+  card.appendChild(el('div', { className: 'pp-legend' },
+    el('span', { className: 'pp-lg' }, el('span', { className: 'pp-lg-sw', style: 'background:' + PP_PULL }), document.createTextNode('Pulled in')),
+    el('span', { className: 'pp-lg' }, el('span', { className: 'pp-lg-sw', style: 'background:' + PP_PUSH }), document.createTextNode('Pushed out')),
+    el('span', { className: 'pp-lg pp-lg-muted', textContent: 'bubble = qty' })));
+  sec.appendChild(card);
+  return sec;
+}
+
+function ppMoversSection() {
+  const t = _pp.report.transitions[_pp.cur];
+  const rows = t.movers.filter(m => m.cat === 'pullIn' || m.cat === 'pushOut').slice(0, 12);
+  const sec = el('div', { className: 'pp-section' });
+  sec.appendChild(el('div', { className: 'pp-sec-head' }, el('div', {},
+    el('h3', { className: 'pp-sec-title', textContent: 'Biggest movers' }),
+    el('p', { className: 'pp-sec-sub', textContent: 'The dozen largest timing swings by value – the parts driving this week’s push/pull, and the ones worth a call to KLA.' }))));
+  const wrap = el('div', { className: 'pp-tbl-wrap' });
+  const tbl = el('table', { className: 'dash-table pp-tbl' });
+  tbl.appendChild(el('thead', {}, el('tr', {},
+    el('th', { textContent: 'Part' }), el('th', { textContent: 'Description' }), el('th', { textContent: 'Move' }),
+    el('th', { textContent: 'Required date' }), el('th', { className: 'num', textContent: 'Qty' }), el('th', { className: 'num', textContent: 'Value' }))));
+  const tb = el('tbody', {});
+  for (const m of rows) {
+    const pull = m.cat === 'pullIn';
+    tb.appendChild(el('tr', {},
+      el('td', { className: 'pp-part', textContent: m.part }),
+      el('td', { className: 'pp-desc', title: m.desc || '', textContent: m.desc || '' }),
+      el('td', {}, el('span', { className: 'pp-chip ' + (pull ? 'pull' : 'push'), textContent: (pull ? '▼ ' : '▲ +') + m.shift + 'd' })),
+      el('td', { className: 'pp-dates', textContent: ppShiftDate(m.from) + ' → ' + ppShiftDate(m.to) }),
+      el('td', { className: 'num', textContent: String(Math.round(m.qty)) }),
+      el('td', { className: 'num', textContent: ppMoneyFull(m.val) })));
+  }
+  tbl.appendChild(tb); wrap.appendChild(tbl); sec.appendChild(wrap);
+  return sec;
+}
+
+function ppTakeaway(rep) {
+  const t = rep.transitions[_pp.cur], s = t.sums;
+  const toWeek = rep.perWeek.find(w => w.week === t.to);
+  const ob = toWeek ? toWeek.orderBookValue : 0;
+  const churn = s.pullIn + s.pushOut + s.added + s.dropped;
+  const nervous = ob ? (churn / ob * 100) : 0;
+  const net = s.pushOut - s.pullIn;
+  const sec = el('div', { className: 'pp-section' });
+  sec.appendChild(el('h3', { className: 'pp-sec-title', textContent: 'What it means for Philtronics' }));
+  const box = el('div', { className: 'pp-takeaway' });
+  box.appendChild(el('p', {}, document.createTextNode('In the week to '), el('b', { textContent: ppFmtWeek(t.to) }), document.createTextNode(', KLA re-timed '), el('b', { textContent: ppMoneyFull(churn) }), document.createTextNode(' of demand against an order book of '), el('b', { textContent: ppMoneyFull(ob) }), document.createTextNode(' – a schedule nervousness of '), el('b', { textContent: Math.round(nervous) + '%' }), document.createTextNode('. That is the share of the book that moved, was added or dropped in a week.')));
+  box.appendChild(el('p', {},
+    el('span', { className: 'pp-hl-pull', textContent: ppMoneyFull(s.pullIn) }), document.createTextNode(' pulled forward (' + s.pullInN + ' parts needed sooner: expedite and material-chase pressure), while '),
+    el('span', { className: 'pp-hl-push', textContent: ppMoneyFull(s.pushOut) }), document.createTextNode(' pushed back (' + s.pushOutN + ' parts: stock that now waits, tying up cash and floor space). Net drift '), el('b', { textContent: (net >= 0 ? 'outward ' + ppMoneyFull(net) : 'inward ' + ppMoneyFull(-net)) }), document.createTextNode('.')));
+  sec.appendChild(box);
+  return sec;
 }
 
 // ── CHARTS PAGE ───────────────────────────────────────────────────────────────
