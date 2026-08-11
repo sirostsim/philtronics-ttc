@@ -18,6 +18,7 @@ const PORT = process.env.PORT || 3000;
 
 app.use('/api/avatars', express.json({ limit: '6mb' }));
 app.use('/api/order-book', express.json({ limit: '4mb' })); // full order-book upload can exceed 64kb
+app.use('/api/push-pull', express.json({ limit: '12mb' })); // two base64 .xlsx files in one POST
 app.use(express.json({ limit: '64kb' }));
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
@@ -72,6 +73,7 @@ app.use('/api/avatars',  require('./routes/avatars'));
 app.use('/api/targets',  require('./routes/targets'));
 app.use('/api/planner',  require('./routes/planner'));
 app.use('/api/order-book', require('./routes/order-book'));
+app.use('/api/push-pull', require('./routes/push-pull'));
 app.use('/api/time-checks', require('./routes/timechecks'));
 app.use('/api/availability', require('./routes/availability'));
 app.use('/api/admin/reasons', require('./routes/admin-reasons'));

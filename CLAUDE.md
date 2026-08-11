@@ -53,6 +53,10 @@ operator -> supervisor -> manager -> administrator -> superuser
   at/above the level yet must be excluded), so it is checked with
   `canPlanWrite(user)` / `requirePlannerWrite` (server) and `canPlanWrite()`
   (frontend). NEVER gate planner-write with hasRole('planner') — a manager passes.
+  - ONE deliberate exception: the Push/Pull weekly upload (routes/push-pull.js,
+    manager+) also refreshes the live customer_orders, so a manager CAN rewrite
+    the order book through that path (a product decision). The Planner's own
+    "Upload order book" button stays planner-write-only.
 - The role level lives in FOUR maps that must stay in sync: middleware/auth.js
   (ROLE_HIERARCHY), routes/pause.js and routes/messages.js (local ROLE_LEVEL), and
   public/app-v2.js (ROLE_LEVEL). Add any new role to all four.
@@ -97,12 +101,20 @@ operator -> supervisor -> manager -> administrator -> superuser
   img-src. NOTE: Chart.js from cdnjs is currently blocked by script-src (charts
   page may not load) — a known outstanding issue; fix is adding
   https://cdnjs.cloudflare.com to script-src.
-- Migrations are additive and run on boot. Latest migration number is 025
+- Migrations are additive and run on boot. Latest migration number is 028
   (016 settings, 017 timer_quantity_runs, 018 dev_requests, 019 user_avatars,
   020 planned_work, 021 customer_orders, 022 planned_work source_required_by,
   023 planned_work source_po_line, 024 planned_work ordered_qty,
-  025 planner_role — adds 'planner' to the users.role CHECK constraint).
+  025 planner_role — adds 'planner' to the users.role CHECK constraint,
+  026 order_book_item_upper, 027 pause_events,
+  028 demand_snapshots — Push/Pull weekly snapshots of both KLA sheets).
   008_add_pcb_department.sql is a deliberate no-op placeholder (SELECT 1).
+- Push/Pull (routes/push-pull.js, lib/xlsx-demand.js, page 'pushpull', manager+):
+  archives each Tuesday's KLA order-book + priority-requirements upload as a
+  snapshot and reports the week-over-week demand push/pull. .xlsx is parsed
+  server-side with Node's built-in zlib (lib/xlsx-demand.js, dependency-free) —
+  the client base64-posts both files. See [[kla-push-pull]] in memory for the
+  data model of the two sheets.
 - Frontend uses safe DOM construction via an el(tag, attrs, ...children) helper
   and esc() for escaping; prefer these over innerHTML. Other helpers: api(),
   GET/POST/PATCH/DELETE wrappers, toast(), openModal(title, bodyEl, footerEls),

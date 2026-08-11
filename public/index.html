@@ -633,6 +633,39 @@
     </div>
   </section>
 
+  <!-- ── PUSH/PULL PAGE ───────────────────────────────────────────────────── -->
+  <section id="pagePushPull" class="page" aria-label="Push / Pull" hidden>
+    <div class="page-content">
+      <div class="page-heading-row">
+        <h2 class="page-heading">Push / Pull</h2>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <select id="ppCustomer" class="planner-dept" aria-label="Customer"></select>
+          <button id="ppUploadToggle" class="btn btn-sm">Upload this week</button>
+        </div>
+      </div>
+
+      <div id="ppUploadPanel" class="pp-upload" hidden>
+        <div class="pp-upload-grid">
+          <label class="pp-field"><span>Order book (.xlsx)</span>
+            <input id="ppOrderFile" type="file" accept=".xlsx" /></label>
+          <label class="pp-field"><span>Priority requirements (.xlsx)</span>
+            <input id="ppPriorityFile" type="file" accept=".xlsx" /></label>
+          <label class="pp-field pp-field-sm"><span>Week (Tuesday)</span>
+            <input id="ppDate" type="date" /></label>
+          <label class="pp-field pp-field-sm"><span>Customer</span>
+            <input id="ppCustomerName" type="text" value="KLA" autocapitalize="characters" /></label>
+        </div>
+        <div class="pp-upload-actions">
+          <button id="ppUploadBtn" class="btn btn-primary">Upload week</button>
+          <span id="ppUploadNote" class="pp-note"></span>
+        </div>
+        <p class="pp-hint">Uploading refreshes the Push/Pull reporting and the live Planner order book for this customer. Re-uploading a week replaces it.</p>
+      </div>
+
+      <div id="ppBody"></div>
+    </div>
+  </section>
+
   <!-- ── REPORTS PAGE ─────────────────────────────────────────────────────── -->
   <!-- ── REPORTS (data tables) ──────────────────────────────────────────── -->
   <section id="pageReports" class="page" aria-label="Reports" hidden>
