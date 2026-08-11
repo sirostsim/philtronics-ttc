@@ -5627,6 +5627,8 @@ async function loadPushPullPage() {
     if (toggle && panel) toggle.addEventListener('click', () => { panel.hidden = !panel.hidden; toggle.textContent = panel.hidden ? 'Upload this week' : 'Close'; });
     const up = document.getElementById('ppUploadBtn');
     if (up) up.addEventListener('click', ppUpload);
+    const clr = document.getElementById('ppClearBtn');
+    if (clr) clr.addEventListener('click', ppOpenClearModal);
     const cust = document.getElementById('ppCustomer');
     if (cust) cust.addEventListener('change', () => { _pp.customer = cust.value; ppLoadReport(cust.value); });
     const d = document.getElementById('ppDate'); if (d && !d.value) d.value = new Date().toISOString().slice(0, 10);
@@ -5665,6 +5667,35 @@ async function ppUpload() {
     await ppFillCustomers();
     await ppLoadReport(customer);
   } catch (err) { note.textContent = err.message; toast(err.message, 'error'); }
+}
+
+// Manager+ "start again": wipe every uploaded week for the selected customer.
+// Confirmed by typing CLEAR, mirroring the Planner's clear modal.
+function ppOpenClearModal() {
+  const customer = _pp.customer || 'KLA';
+  const input = el('input', { type: 'text', placeholder: 'Type CLEAR to confirm', autocapitalize: 'characters' });
+  const btn = el('button', { className: 'btn btn-sm dev-danger', textContent: 'Clear all weeks' });
+  btn.disabled = true;   // set via property: el() would apply a boolean attr even for false
+  input.addEventListener('input', () => { btn.disabled = input.value.trim().toUpperCase() !== 'CLEAR'; });
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      const res = await POST('/push-pull/clear', { customer });
+      toast('Cleared ' + res.cleared + ' uploaded week' + (res.cleared !== 1 ? 's' : '') + ' for ' + res.customer + '.', 'success');
+      closeModal();
+      await ppFillCustomers();
+      await ppLoadReport(_pp.customer);
+    } catch (err) { toast(err.message, 'error'); btn.disabled = false; }
+  });
+  const body = el('div', {},
+    el('div', { className: 'clear-warn', textContent: '⚠ This permanently deletes every uploaded Push/Pull week and cannot be undone.' }),
+    el('div', { className: 'clear-section' },
+      el('div', { className: 'clear-title', textContent: 'Clear Push/Pull (' + customer + ')' }),
+      el('div', { className: 'clear-desc', textContent: 'Removes every uploaded week for ' + customer + ' and its reporting. The live Planner order book is untouched.' }),
+      el('div', { style: 'display:flex;gap:8px;margin-top:8px;' }, input, btn),
+    ),
+  );
+  openModal('Clear Push/Pull', body, [ el('button', { className: 'btn btn-ghost', textContent: 'Close', onclick: () => closeModal() }) ]);
 }
 
 async function ppLoadReport(customer) {

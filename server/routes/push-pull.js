@@ -134,4 +134,27 @@ router.delete('/snapshot', async (req, res) => {
   }
 });
 
+// POST /api/push-pull/clear  { customer }  -> wipe ALL uploaded weeks for a
+// customer (start again). Cascades to the snapshot line tables. The live
+// customer_orders (Planner order book) is deliberately left untouched.
+router.post('/clear', async (req, res) => {
+  try {
+    const customer = ((req.body && req.body.customer) || '').trim();
+    if (!customer) return res.status(400).json({ error: 'A customer is required.' });
+    const deleted = await query('DELETE FROM demand_snapshots WHERE customer = $1 RETURNING id', [customer]);
+    const cleared = deleted.length;
+    try {
+      await query(
+        `INSERT INTO audit_log (id, timer_id, action, performed_by, details)
+         VALUES ($1, NULL, 'push_pull_cleared', $2, $3)`,
+        [uuidv4(), req.user.id, JSON.stringify({ customer, cleared })]
+      );
+    } catch (_) {}
+    res.json({ ok: true, customer, cleared });
+  } catch (err) {
+    console.error('POST /push-pull/clear error:', err.message);
+    res.status(500).json({ error: 'Could not clear the Push/Pull data.' });
+  }
+});
+
 module.exports = router;
