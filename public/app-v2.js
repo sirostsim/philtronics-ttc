@@ -5590,7 +5590,9 @@ function parseOrderBookText(text) {
       dueDate:     okbParseDate(get(idx.due), dayFirst),
       quantity:    parseInt(get(idx.qty), 10) || 0,
       lineValue:   okbNum(get(idx.value)),
-      rework:      get(idx.rework).trim() !== '',
+      // Rework flag is the letter 'L'; a stray number in this column is not a
+      // rework marker (matches server/lib/xlsx-demand.js).
+      rework:      /[a-z]/i.test(get(idx.rework)),
     });
   }
   return { rows, skippedBlank, dateFormat: dayFirst ? 'DD/MM/YYYY' : 'MM/DD/YYYY' };
