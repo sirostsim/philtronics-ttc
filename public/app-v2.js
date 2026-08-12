@@ -4844,6 +4844,11 @@ function loadPlannerPage() {
     if (!resetBtn._wired) { resetBtn._wired = true; resetBtn.addEventListener('click', openClearModal); }
   }
   wire('planFullscreen', () => plannerToggleFullscreen(true));
+  const summaryBtn = document.getElementById('btnOrderBookSummary');
+  if (summaryBtn) {
+    summaryBtn.hidden = !hasRole('manager');   // manager+ (includes planner)
+    if (!summaryBtn._wired) { summaryBtn._wired = true; summaryBtn.addEventListener('click', openOrderBookReport); }
+  }
   initOrderBook();
   renderPlanner();
 }
@@ -5519,6 +5524,171 @@ function addOfferingToPlanner(it) {
   openPlannerForm(null, { itemNumber: it.itemNumber, quantity: Math.max(1, it.remainingQty), woNumber: it.poNumber,
     requiredDate: it.effectiveDate, perItemMinutes: it.perItemMinutes,
     sourcePoLine: it.poLine, sourceOrderedQty: it.quantity, remainingQty: it.remainingQty });
+}
+
+// ── Order Book Summary report (manager+) ──────────────────────────────────────
+// Builds the printable weekly report of build-completion dates vs required dates
+// for the customer's order lines, and opens it in a new tab ready to print /
+// save as PDF. Data comes from GET /order-book/report; the report is a
+// self-contained HTML document (isolated from the app's styles).
+async function openOrderBookReport() {
+  const customer = _obState.customer || 'KLA';
+  const btn = document.getElementById('btnOrderBookSummary');
+  if (btn) btn.disabled = true;
+  try {
+    const rep = await GET('/order-book/report?customer=' + encodeURIComponent(customer));
+    const url = URL.createObjectURL(new Blob([buildOrderBookReportHtml(rep)], { type: 'text/html' }));
+    const w = window.open(url, '_blank');
+    if (!w) toast('Allow pop-ups for this site to open the report.', 'error');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally { if (btn) btn.disabled = false; }
+}
+
+function rptDate(iso, full) {
+  if (!iso) return '';
+  const d = new Date(iso + 'T12:00:00Z');
+  return d.toLocaleDateString('en-GB', full
+    ? { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }
+    : { day: '2-digit', month: 'short', timeZone: 'UTC' });
+}
+function rptMoney(v)      { return '£' + Math.round(Number(v) || 0).toLocaleString('en-GB'); }
+function rptMoneyShort(v) { v = Number(v) || 0; return v >= 1e6 ? '£' + (v / 1e6).toFixed(2) + 'm' : v >= 1e3 ? '£' + Math.round(v / 1e3) + 'k' : '£' + Math.round(v); }
+
+function buildOrderBookReportHtml(rep) {
+  const S = rep.summary || { openLines: 0, committedValue: 0, onTrack: 0, late: 0, awaiting: 0 };
+  const tot = S.openLines || 1;
+  const pct = n => (n / tot * 100).toFixed(1);
+  const genFull = rptDate(rep.generatedAt, true);
+  const weekOf  = rptDate(plannerMonday(rep.generatedAt), true);
+  const preparedBy = (state.user && state.user.fullName) || '';
+  const cust = esc(rep.customer || 'KLA');
+
+  const vari = l => {
+    if (l.varianceDays == null) return '<span class="var-none">n/a</span>';
+    if (l.varianceDays === 0)   return '<span class="var-early">on time</span>';
+    if (l.varianceDays > 0)     return '<span class="var-early">' + l.varianceDays + ' day' + (l.varianceDays !== 1 ? 's' : '') + ' early</span>';
+    const n = -l.varianceDays;  return '<span class="var-late">' + n + ' day' + (n !== 1 ? 's' : '') + ' late</span>';
+  };
+  const chip = s => s === 'ontrack' ? '<span class="chip ok">On track</span>'
+    : s === 'late' ? '<span class="chip late">Late</span>'
+    : '<span class="chip wait">Awaiting schedule</span>';
+
+  const rows = (rep.lines || []).map(l => `<tr class="${l.status === 'late' ? 'late-row' : ''}">
+      <td class="item">${esc(l.item || '')}</td>
+      <td class="desc">${esc(l.description || '')}</td>
+      <td class="mono">${esc(l.po || '')}</td>
+      <td class="r mono">${l.qty}</td>
+      <td class="mono">${l.requiredBy ? rptDate(l.requiredBy) : '<span class="var-none">no date</span>'}</td>
+      <td class="mono">${l.expected ? rptDate(l.expected) : '<span class="var-none">unplanned</span>'}</td>
+      <td>${vari(l)}</td>
+      <td>${chip(l.status)}</td>
+      <td class="r val">${l.value != null ? rptMoney(l.value) : ''}</td>
+    </tr>`).join('');
+
+  const lateLines = (rep.lines || []).filter(l => l.status === 'late').sort((a, b) => a.varianceDays - b.varianceDays);
+  const attnItems = lateLines.slice(0, 8).map(l =>
+    `<li><span class="code">${esc(l.item || '')}</span><span class="desc">${esc(l.description || '')}</span><span class="slip">${-l.varianceDays} days late &middot; req ${rptDate(l.requiredBy)}</span></li>`).join('');
+  const attn = lateLines.length ? `
+    <div class="sec"><h2>Needs attention</h2><span class="rule"></span><span class="count">${Math.min(8, lateLines.length)} of ${lateLines.length} shown</span></div>
+    <div class="attn"><div class="ah">&#9650; Lines forecast to finish after their required date</div>
+      <ul>${attnItems}${lateLines.length > 8 ? `<li><span class="code">+ ${lateLines.length - 8} more</span></li>` : ''}</ul></div>` : '';
+
+  return `<!doctype html><html lang="en-GB"><head><meta charset="utf-8">
+<title>Order Book Status Report - ${cust}</title>
+<style>
+:root{--paper:#fbfcfd;--sheet:#fff;--ink:#141922;--muted:#5a6675;--faint:#8a94a2;--hair:#e3e8ee;--hair2:#eef1f5;--brand:#2e75b6;--brand-deep:#1e3a5f;--ok:#1e7f5c;--ok-bg:#e7f4ee;--late:#c0392b;--late-bg:#fdecea;--wait:#8a94a2;--wait-bg:#eef1f4;--sans:ui-sans-serif,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;--mono:ui-monospace,"SF Mono","Cascadia Code",Consolas,"Liberation Mono",monospace}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.5;-webkit-font-smoothing:antialiased;padding:28px 20px 60px}
+.sheet{max-width:900px;margin:0 auto;background:var(--sheet);border:1px solid var(--hair);border-radius:6px;box-shadow:0 1px 2px rgba(20,25,34,.04),0 12px 32px rgba(20,25,34,.06);padding:40px 44px 36px}
+.mast{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;padding-bottom:18px;border-bottom:2px solid var(--brand)}
+.mast-left{display:flex;flex-direction:column;gap:14px}
+.brand{display:flex;align-items:center;gap:11px}
+.brand .mark{width:26px;height:26px;border-radius:5px;background:var(--brand);position:relative;flex:0 0 auto}
+.brand .mark::after{content:"";position:absolute;inset:7px;border:2px solid #fff;border-radius:2px}
+.brand .name{font-weight:800;letter-spacing:.14em;font-size:15px;color:var(--brand-deep)}
+.brand .sub{font-size:11px;letter-spacing:.06em;color:var(--muted);margin-top:1px}
+.mast .title{font-size:23px;font-weight:800;letter-spacing:-.01em;margin:0}
+.mast .for{font-size:13px;color:var(--muted);margin-top:3px}
+.mast .for b{color:var(--ink)}
+.meta{text-align:right;font-family:var(--mono);font-size:11.5px;color:var(--muted);line-height:1.7;white-space:nowrap}
+.meta b{color:var(--ink)}
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--hair);border:1px solid var(--hair);border-radius:6px;overflow:hidden;margin:22px 0 18px}
+.kpi{background:var(--sheet);padding:13px 15px 14px}
+.kpi .lab{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-weight:700}
+.kpi .num{font-family:var(--mono);font-size:23px;font-weight:600;margin-top:6px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.kpi .cap{font-size:11px;color:var(--muted);margin-top:1px}
+.kpi.good .num{color:var(--ok)}.kpi.bad .num{color:var(--late)}.kpi.wait .num{color:var(--wait)}
+.dist{margin:0 0 26px}
+.dist-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px}
+.dist-head .t{font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:var(--muted)}
+.dist-head .r{font-family:var(--mono);font-size:11.5px;color:var(--faint)}
+.bar{display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--hair2)}
+.bar span{display:block}.bar .s-ok{background:var(--ok)}.bar .s-late{background:var(--late)}.bar .s-wait{background:var(--wait)}
+.legend{display:flex;gap:20px;margin-top:9px;font-size:11.5px;color:var(--muted)}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px}
+.legend b{color:var(--ink);font-family:var(--mono)}
+.sec{display:flex;align-items:center;gap:10px;margin:0 0 11px}
+.sec h2{font-size:13px;font-weight:800;margin:0}.sec .rule{flex:1;height:1px;background:var(--hair)}
+.sec .count{font-family:var(--mono);font-size:11px;color:var(--faint)}
+.attn{border:1px solid var(--late-bg);background:#fffafa;border-left:3px solid var(--late);border-radius:6px;padding:13px 16px;margin-bottom:26px}
+.attn .ah{font-size:12px;font-weight:800;color:var(--late);margin-bottom:8px;display:flex;align-items:center;gap:7px}
+.attn ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+.attn li{display:flex;gap:10px;align-items:baseline;font-size:12.5px}
+.attn li .code{font-family:var(--mono);font-weight:600;color:var(--ink);flex:0 0 118px}
+.attn li .desc{color:var(--muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attn li .slip{font-family:var(--mono);color:var(--late);font-weight:600;flex:0 0 auto}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+thead th{text-align:left;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:700;padding:0 12px 8px;border-bottom:1.5px solid var(--ink)}
+th.r,td.r{text-align:right}
+tbody td{padding:11px 12px;border-bottom:1px solid var(--hair2);vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.item{font-family:var(--mono);font-weight:600;white-space:nowrap}
+.desc{color:var(--muted)}.val{font-family:var(--mono);white-space:nowrap}
+.var-early{color:var(--ok);font-family:var(--mono);white-space:nowrap}
+.var-late{color:var(--late);font-weight:600;font-family:var(--mono);white-space:nowrap}
+.var-none{color:var(--faint)}
+tr.late-row td{background:linear-gradient(90deg,var(--late-bg),transparent 60%)}
+tr.late-row .item{box-shadow:inset 2px 0 0 var(--late)}
+.chip{display:inline-block;font-size:10.5px;font-weight:700;padding:2.5px 9px;border-radius:20px;white-space:nowrap}
+.chip.ok{color:var(--ok);background:var(--ok-bg)}.chip.late{color:var(--late);background:var(--late-bg)}.chip.wait{color:#586372;background:var(--wait-bg)}
+.tfoot{font-size:11px;color:var(--faint);margin-top:12px;padding-top:11px;border-top:1px solid var(--hair)}
+footer{max-width:900px;margin:20px auto 0;display:flex;justify-content:space-between;gap:20px;font-size:10.5px;color:var(--faint);padding:0 4px}
+footer b{color:var(--muted)}
+@media print{@page{size:A4;margin:13mm}body{background:#fff;padding:0}.sheet{max-width:none;margin:0;border:0;border-radius:0;box-shadow:none;padding:0}thead{display:table-header-group}tr{break-inside:avoid}.attn,.kpis{break-inside:avoid}footer{margin-top:14px}}
+</style></head><body>
+<div class="sheet">
+  <header class="mast">
+    <div class="mast-left">
+      <div class="brand"><div class="mark"></div><div><div class="name">PHILTRONICS</div><div class="sub">Production Planning</div></div></div>
+      <div><h1 class="title">Order Book Status Report</h1><div class="for">Prepared for <b>${cust}</b> &middot; build completion against required dates</div></div>
+    </div>
+    <div class="meta">Report date <b>${genFull}</b><br>Week commencing <b>${weekOf}</b><br>Scope <b>Full order book</b><br>Prepared by <b>${esc(preparedBy)}</b></div>
+  </header>
+  <section class="kpis">
+    <div class="kpi"><div class="lab">Open lines</div><div class="num">${S.openLines}</div><div class="cap">on the order book</div></div>
+    <div class="kpi"><div class="lab">Committed value</div><div class="num">${rptMoneyShort(S.committedValue)}</div><div class="cap">${rptMoney(S.committedValue)} total</div></div>
+    <div class="kpi good"><div class="lab">On track</div><div class="num">${S.onTrack}</div><div class="cap">complete on or before</div></div>
+    <div class="kpi bad"><div class="lab">Late</div><div class="num">${S.late}</div><div class="cap">finish after required</div></div>
+    <div class="kpi wait"><div class="lab">Awaiting schedule</div><div class="num">${S.awaiting}</div><div class="cap">not yet planned</div></div>
+  </section>
+  <section class="dist">
+    <div class="dist-head"><div class="t">Delivery confidence</div><div class="r">${S.openLines} lines &middot; by line count</div></div>
+    <div class="bar"><span class="s-ok" style="width:${pct(S.onTrack)}%"></span><span class="s-late" style="width:${pct(S.late)}%"></span><span class="s-wait" style="width:${pct(S.awaiting)}%"></span></div>
+    <div class="legend"><span><i style="background:var(--ok)"></i>On track <b>${S.onTrack}</b></span><span><i style="background:var(--late)"></i>Late <b>${S.late}</b></span><span><i style="background:var(--wait)"></i>Awaiting schedule <b>${S.awaiting}</b></span></div>
+  </section>
+  ${attn}
+  <div class="sec"><h2>Line item detail</h2><span class="rule"></span><span class="count">${S.openLines} lines &middot; by required date</span></div>
+  <table>
+    <thead><tr><th>Item</th><th>Description</th><th>PO</th><th class="r">Qty</th><th>Required by</th><th>Expected completion</th><th>Variance</th><th>Status</th><th class="r">Value</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div class="tfoot">Expected completion is Philtronics' current planned build finish date, scheduled across working days. Lines awaiting schedule are not yet planned.</div>
+</div>
+<footer><span>Commercial in confidence &middot; prepared by Philtronics Ltd for ${cust} account management</span><span>Generated by <b>Work Time</b> &middot; pt-worktime.srscloud.co.uk</span></footer>
+</body></html>`;
 }
 
 async function handleOrderBookFile(file) {
