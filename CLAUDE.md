@@ -101,13 +101,14 @@ operator -> supervisor -> manager -> administrator -> superuser
   img-src. NOTE: Chart.js from cdnjs is currently blocked by script-src (charts
   page may not load) — a known outstanding issue; fix is adding
   https://cdnjs.cloudflare.com to script-src.
-- Migrations are additive and run on boot. Latest migration number is 028
+- Migrations are additive and run on boot. Latest migration number is 029
   (016 settings, 017 timer_quantity_runs, 018 dev_requests, 019 user_avatars,
   020 planned_work, 021 customer_orders, 022 planned_work source_required_by,
   023 planned_work source_po_line, 024 planned_work ordered_qty,
   025 planner_role — adds 'planner' to the users.role CHECK constraint,
   026 order_book_item_upper, 027 pause_events,
-  028 demand_snapshots — Push/Pull weekly snapshots of both KLA sheets).
+  028 demand_snapshots — Push/Pull weekly snapshots of both KLA sheets,
+  029 planned_work works_order — OUR internal works order, display-only).
   008_add_pcb_department.sql is a deliberate no-op placeholder (SELECT 1).
 - Push/Pull (routes/push-pull.js, lib/xlsx-demand.js, page 'pushpull', manager+):
   archives each Tuesday's KLA order-book + priority-requirements upload as a
@@ -115,6 +116,23 @@ operator -> supervisor -> manager -> administrator -> superuser
   server-side with Node's built-in zlib (lib/xlsx-demand.js, dependency-free) —
   the client base64-posts both files. See [[kla-push-pull]] in memory for the
   data model of the two sheets.
+- WORKS ORDER vs PURCHASING DOCUMENT trap: planned_work.wo_number does NOT hold
+  our works order — it holds KLA's Purchasing Document (PO), and it is the
+  order-book matching key (item + PO + PO-line via source_po_line). It is
+  labelled "Purchasing Document" in the UI. The separate planned_work.works_order
+  column (migration 029) is OUR internal works order, typed by the planner,
+  display-only, NOT on either uploaded sheet, and NEVER used for matching. Do not
+  match on works_order or relabel wo_number as "works order".
+- Order book / Planner offering (routes/order-book.js GET /offering): returns the
+  WHOLE order book, not just the 8-week window. WINDOW_DAYS (56) is now a LABEL
+  (each line gets withinWindow) so build-ahead work is visible and can be pulled
+  forward; it is NOT a filter. The planner horizon selector defaults to 26 weeks.
+  Rework lines (rework=TRUE) and zero-balance lines are still excluded.
+- Order Book Summary report (routes/order-book.js GET /order-book/report,
+  manager+): each open line's planned completion (latest finish of its allocated
+  planner jobs) vs required date, with status (ontrack/late/awaiting) and value,
+  time-fenced to a horizon (week count or 'all'); rendered client-side to a
+  printable PDF (no server PDF dependency).
 - Frontend uses safe DOM construction via an el(tag, attrs, ...children) helper
   and esc() for escaping; prefer these over innerHTML. Other helpers: api(),
   GET/POST/PATCH/DELETE wrappers, toast(), openModal(title, bodyEl, footerEls),
