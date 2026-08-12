@@ -5536,7 +5536,8 @@ async function openOrderBookReport() {
   const btn = document.getElementById('btnOrderBookSummary');
   if (btn) btn.disabled = true;
   try {
-    const rep = await GET('/order-book/report?customer=' + encodeURIComponent(customer));
+    const horizon = _obState.horizon || 'all';   // match the planner's "Next X weeks" selector
+    const rep = await GET('/order-book/report?customer=' + encodeURIComponent(customer) + '&horizon=' + encodeURIComponent(horizon));
     const url = URL.createObjectURL(new Blob([buildOrderBookReportHtml(rep)], { type: 'text/html' }));
     const w = window.open(url, '_blank');
     if (!w) toast('Allow pop-ups for this site to open the report.', 'error');
@@ -5564,6 +5565,7 @@ function buildOrderBookReportHtml(rep) {
   const weekOf  = rptDate(plannerMonday(rep.generatedAt), true);
   const preparedBy = (state.user && state.user.fullName) || '';
   const cust = esc(rep.customer || 'KLA');
+  const scope = (rep.horizon && rep.horizon !== 'all') ? 'Next ' + rep.horizon + ' weeks' : 'Full order book';
 
   const vari = l => {
     if (l.varianceDays == null) return '<span class="var-none">n/a</span>';
@@ -5665,7 +5667,7 @@ footer b{color:var(--muted)}
       <div class="brand"><div class="mark"></div><div><div class="name">PHILTRONICS</div><div class="sub">Production Planning</div></div></div>
       <div><h1 class="title">Order Book Status Report</h1><div class="for">Prepared for <b>${cust}</b> &middot; build completion against required dates</div></div>
     </div>
-    <div class="meta">Report date <b>${genFull}</b><br>Week commencing <b>${weekOf}</b><br>Scope <b>Full order book</b><br>Prepared by <b>${esc(preparedBy)}</b></div>
+    <div class="meta">Report date <b>${genFull}</b><br>Week commencing <b>${weekOf}</b><br>Scope <b>${esc(scope)}</b><br>Prepared by <b>${esc(preparedBy)}</b></div>
   </header>
   <section class="kpis">
     <div class="kpi"><div class="lab">Open lines</div><div class="num">${S.openLines}</div><div class="cap">on the order book</div></div>

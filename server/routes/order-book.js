@@ -128,13 +128,26 @@ router.get('/report', requireRole('manager'), async (req, res) => {
     const customer = req.query.customer || 'KLA';
     const s = await settings.get();
 
+    // Optional time fence: horizon = a week count (matches the planner's "Next X
+    // weeks" selector) or 'all'. When a number, only lines whose effective date
+    // falls within that window are reported (undated lines drop out).
+    const horizon = String(req.query.horizon || 'all');
+    const params = [customer];
+    let horizonClause = '';
+    if (/^\d+$/.test(horizon)) {
+      params.push(parseInt(horizon, 10) * 7);
+      horizonClause = `AND COALESCE(co.required_by, co.due_date) IS NOT NULL
+                       AND COALESCE(co.required_by, co.due_date) <= CURRENT_DATE + $${params.length}`;
+    }
+
     const orders = await query(
       `SELECT co.po_number, co.po_line, co.item_number, co.description,
               COALESCE(co.required_by, co.due_date) AS eff, co.quantity, co.line_value
          FROM customer_orders co
         WHERE co.customer = $1 AND co.rework = FALSE AND co.quantity > 0
+          ${horizonClause}
         ORDER BY COALESCE(co.required_by, co.due_date) ASC NULLS LAST, co.line_value DESC NULLS LAST`,
-      [customer]
+      params
     );
 
     // Planner jobs for these items, with the target (or estimate) to size them.
@@ -189,7 +202,7 @@ router.get('/report', requireRole('manager'), async (req, res) => {
       late:           lines.filter(l => l.status === 'late').length,
       awaiting:       lines.filter(l => l.status === 'awaiting').length,
     };
-    res.json({ customer, generatedAt: new Date().toISOString().slice(0, 10), summary, lines });
+    res.json({ customer, horizon, generatedAt: new Date().toISOString().slice(0, 10), summary, lines });
   } catch (err) {
     console.error('GET /order-book/report error:', err.message);
     res.status(500).json({ error: 'Could not build the order book report.' });
