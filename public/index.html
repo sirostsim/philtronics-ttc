@@ -608,8 +608,14 @@
       </div>
       <div id="orderBookPanel" class="ob-panel">
         <div class="ob-head">
-          <h3 class="ob-title">Available to Build <span class="ob-sub">order book &middot; next 8 weeks</span></h3>
+          <h3 class="ob-title">Available to Build <span class="ob-sub">full order book &middot; 8-week window highlighted</span></h3>
           <div class="ob-actions">
+            <select id="obHorizon" class="planner-dept" aria-label="Show horizon">
+              <option value="all">All dates</option>
+              <option value="8">Next 8 weeks</option>
+              <option value="16">Next 16 weeks</option>
+              <option value="26">Next 26 weeks</option>
+            </select>
             <select id="obCustomer" class="planner-dept"></select>
             <button id="btnUploadOrderBook" class="btn btn-sm" hidden>Upload order book</button>
             <input id="obFileInput" type="file" accept=".csv,.tsv,.txt" hidden />

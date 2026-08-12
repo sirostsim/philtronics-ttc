@@ -19,7 +19,9 @@ const { validate, schemas } = require('../middleware/validate');
 
 const router = express.Router();
 
-// Shippable window: items requested (or due) within this many days may be built.
+// Shippable window: KLA lets us build and ship anything whose effective date is
+// within this many days. It is used to LABEL lines (withinWindow), not to filter
+// them - the planner sees the whole book so it can pull build-ahead work forward.
 const WINDOW_DAYS = 56; // 8 weeks
 
 // View is supervisor and above; upload/clear is the planner role or superuser.
@@ -38,7 +40,9 @@ router.get('/customers', async (req, res) => {
 });
 
 // ── GET /api/order-book/offering ──────────────────────────────────────────────
-// Items available to build within the window, one row per order line.
+// The whole order book, one row per order line, sorted by effective date (undated
+// last). Each line is flagged withinWindow (inside the 8-week shippable window)
+// so the client can highlight shippable work and mark the rest as build-ahead.
 router.get('/offering', async (req, res) => {
   try {
     const customer = req.query.customer;
@@ -62,15 +66,17 @@ router.get('/offering', async (req, res) => {
        LEFT JOIN target_times tt ON tt.item_number = co.item_number
        WHERE co.rework = FALSE
          AND co.quantity > 0
-         AND COALESCE(co.required_by, co.due_date) IS NOT NULL
-         AND COALESCE(co.required_by, co.due_date) <= (CURRENT_DATE + INTERVAL '${WINDOW_DAYS} days')
          ${customerClause}
-       ORDER BY COALESCE(co.required_by, co.due_date) ASC, co.line_value DESC NULLS LAST`,
+       ORDER BY COALESCE(co.required_by, co.due_date) ASC NULLS LAST, co.line_value DESC NULLS LAST`,
       params
     );
 
     const iso = d => (d instanceof Date ? d.toISOString().slice(0, 10) : (d ? String(d).slice(0, 10) : null));
-    const today = new Date().toISOString().slice(0, 10);
+    const today  = new Date().toISOString().slice(0, 10);
+    // The 8-week window is now a LABEL, not a filter: the whole order book is
+    // returned so the planner can see (and pull forward) build-ahead work, with
+    // each line flagged for whether it falls in the shippable window.
+    const winEnd = new Date(Date.now() + WINDOW_DAYS * 86400000).toISOString().slice(0, 10);
     res.json(rows.map(r => {
       const eff = iso(r.effective_date);
       const ordered   = r.quantity;
@@ -96,6 +102,8 @@ router.get('/offering', async (req, res) => {
         // Per-item target minutes (for backward scheduling on the planner); null when no target.
         perItemMinutes: r.has_target ? (r.t_hours * 60 + r.t_minutes) : null,
         overdue:        eff != null && eff < today,
+        // In the 8-week shippable window? Undated lines are never in-window.
+        withinWindow:   eff != null && eff <= winEnd,
       };
     }));
   } catch (err) {

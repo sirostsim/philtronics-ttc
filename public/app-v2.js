@@ -5345,7 +5345,7 @@ async function deletePlannerItem(it) {
 // Managers upload a CSV/tab export; the browser parses it and posts clean rows,
 // and each line can be added straight onto the planner.
 
-const _obState = { customer: '', collapsed: false, wired: false };
+const _obState = { customer: '', collapsed: false, wired: false, horizon: 'all', items: null };
 
 function initOrderBook() {
   if (_obState.wired) { loadOrderBook(); return; }
@@ -5353,6 +5353,10 @@ function initOrderBook() {
 
   const cust = document.getElementById('obCustomer');
   if (cust) cust.addEventListener('change', () => { _obState.customer = cust.value; renderOrderBook(); });
+
+  // Horizon just filters what is shown from the already-loaded book — no refetch.
+  const horizon = document.getElementById('obHorizon');
+  if (horizon) { horizon.value = _obState.horizon; horizon.addEventListener('change', () => { _obState.horizon = horizon.value; paintOrderBook(); }); }
 
   const uploadBtn = document.getElementById('btnUploadOrderBook');
   const fileInput = document.getElementById('obFileInput');
@@ -5394,31 +5398,92 @@ async function loadOrderBook() {
 
 async function renderOrderBook() {
   const list = document.getElementById('obList');
-  const summary = document.getElementById('obSummary');
   if (!list) return;
   list.innerHTML = '<div class="empty-state" style="padding:12px">Loading…</div>';
   try {
     const qs = _obState.customer ? `?customer=${encodeURIComponent(_obState.customer)}` : '';
-    const items = await GET(`/order-book/offering${qs}`);
-    if (summary) {
-      const total = items.reduce((s, it) => s + (it.lineValue || 0), 0);
-      summary.textContent = items.length
-        ? `${items.length} line${items.length !== 1 ? 's' : ''} available to build · ${obMoney(total)} total value`
-        : 'Nothing available to build in the next 8 weeks.';
-    }
-    list.innerHTML = '';
-    if (items.length) list.appendChild(orderBookTable(items));
+    _obState.items = await GET(`/order-book/offering${qs}`);
+    paintOrderBook();
   } catch (err) {
+    _obState.items = null;
     list.innerHTML = '';
     list.appendChild(el('div', { className: 'error-msg', style: 'padding:12px', textContent: err.message }));
   }
+}
+
+// Paint the cached order book, applying the selected horizon. The whole book is
+// held in _obState.items; changing the horizon re-paints without re-fetching.
+function paintOrderBook() {
+  const list = document.getElementById('obList');
+  const summary = document.getElementById('obSummary');
+  if (!list) return;
+  const all = _obState.items || [];
+
+  const dated   = all.filter(it => it.effectiveDate);
+  const undated = all.filter(it => !it.effectiveDate);
+  const inWin   = dated.filter(it => it.withinWindow).length;
+  const beyond  = dated.length - inWin;
+  const totalVal = all.reduce((s, it) => s + (it.lineValue || 0), 0);
+  if (summary) {
+    summary.textContent = all.length
+      ? `${inWin} within 8 weeks · ${beyond} beyond · ${undated.length} undated · ${obMoney(totalVal)} total value`
+      : 'No order book loaded for this customer.';
+  }
+
+  // Horizon: 'all' shows everything (including undated); a week count shows only
+  // dated lines whose effective date is within that many weeks from today.
+  const horizon = _obState.horizon || 'all';
+  let shownDated = dated, shownUndated = undated;
+  if (horizon !== 'all') {
+    const cutoff = new Date(Date.now() + parseInt(horizon, 10) * 7 * 86400000).toISOString().slice(0, 10);
+    shownDated = dated.filter(it => it.effectiveDate <= cutoff);
+    shownUndated = [];   // undated lines only appear in the full 'All dates' view
+  }
+
+  list.innerHTML = '';
+  if (!shownDated.length && !shownUndated.length) {
+    list.appendChild(el('div', { className: 'empty-state', style: 'padding:12px',
+      textContent: all.length ? 'Nothing in this horizon — widen it to see more of the book.' : 'Nothing available to build.' }));
+    return;
+  }
+  list.appendChild(orderBookTable(shownDated, shownUndated));
 }
 
 function obMoney(v) {
   return '£' + (v || 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function orderBookTable(items) {
+// Build one offering <tr>. Beyond-window and undated lines get a muted class so
+// the in-window (shippable) lines stand out; the description is a hover tooltip.
+function obRow(it, canPlan) {
+  const itemCell = el('td', { className: 'ob-item' },
+    el('span', { className: 'ob-item-no', textContent: it.itemNumber }));
+  if (!it.hasTarget) itemCell.appendChild(el('span', { className: 'ob-notarget', title: 'No target time; you will enter an estimate when planning', textContent: 'no target' }));
+
+  // Quantity cell: remaining of ordered, e.g. "4 of 7" (or "fully planned" / "over-planned by N").
+  const qtyCell = el('td', { className: 'ob-qty' });
+  if (it.overPlanned) qtyCell.appendChild(el('span', { className: 'ob-over', textContent: 'over-planned by ' + (it.plannedQty - it.quantity) }));
+  else if (it.fullyPlanned) qtyCell.appendChild(el('span', { className: 'ob-planned', textContent: '✓ ' + it.quantity + ' planned' }));
+  else qtyCell.appendChild(el('span', {}, String(it.remainingQty) + ' of ' + it.quantity));
+
+  // Managers can always add (to over-build for MOQ, or to pull build-ahead work forward).
+  const action = el('td', {});
+  if (canPlan) action.appendChild(el('button', { className: 'btn btn-sm', textContent: it.remainingQty > 0 ? 'Add' : 'Add more', title: it.remainingQty > 0 ? 'Add to planner' : 'Add more (over-build)', onclick: () => addOfferingToPlanner(it) }));
+
+  const rowClass = (it.fullyPlanned ? 'ob-row-planned ' : '') + (it.withinWindow ? '' : 'ob-row-beyond');
+  return el('tr', { className: rowClass.trim(), title: it.description || '' },
+    itemCell,
+    el('td', { className: 'ob-date' + (it.overdue ? ' ob-overdue' : ''), textContent: it.effectiveDate || 'no date' }),
+    qtyCell,
+    el('td', { className: 'ob-value', textContent: it.lineValue != null ? obMoney(it.lineValue) : '' }),
+    el('td', { className: 'ob-po', textContent: it.poNumber || '' }),
+    action,
+  );
+}
+
+// dated: in-date-order lines (in-window first, then build-ahead); undated: no
+// required/due date. A divider marks the 8-week boundary and the undated group.
+function orderBookTable(dated, undated) {
   const canPlan = canPlanWrite();
   const tbl = el('table', { className: 'dash-table ob-table' });
   tbl.appendChild(el('thead', {}, el('tr', {},
@@ -5427,32 +5492,17 @@ function orderBookTable(items) {
     el('th', { textContent: 'Value' }), el('th', { textContent: 'PO' }), el('th', { textContent: '' }),
   )));
   const tb = el('tbody', {});
-  for (const it of items) {
-    // The Description column was removed (it forced the table too wide); the
-    // description is shown as a hover tooltip on the whole row instead. The
-    // "no target" flag moves onto the Item cell so it stays visible.
-    const itemCell = el('td', { className: 'ob-item' },
-      el('span', { className: 'ob-item-no', textContent: it.itemNumber }));
-    if (!it.hasTarget) itemCell.appendChild(el('span', { className: 'ob-notarget', title: 'No target time; you will enter an estimate when planning', textContent: 'no target' }));
+  const divider = text => el('tr', { className: 'ob-divider' }, el('td', { colspan: '6', textContent: text }));
 
-    // Quantity cell: remaining of ordered, e.g. "4 of 7" (or "fully planned" / "over-planned by N").
-    const qtyCell = el('td', { className: 'ob-qty' });
-    if (it.overPlanned) qtyCell.appendChild(el('span', { className: 'ob-over', textContent: 'over-planned by ' + (it.plannedQty - it.quantity) }));
-    else if (it.fullyPlanned) qtyCell.appendChild(el('span', { className: 'ob-planned', textContent: '✓ ' + it.quantity + ' planned' }));
-    else qtyCell.appendChild(el('span', {}, String(it.remainingQty) + ' of ' + it.quantity));
-
-    // Managers can always add (to over-build for MOQ); the row greys when nothing remains.
-    const action = el('td', {});
-    if (canPlan) action.appendChild(el('button', { className: 'btn btn-sm', textContent: it.remainingQty > 0 ? 'Add' : 'Add more', title: it.remainingQty > 0 ? 'Add to planner' : 'Add more (over-build)', onclick: () => addOfferingToPlanner(it) }));
-
-    tb.appendChild(el('tr', { className: it.fullyPlanned ? 'ob-row-planned' : '', title: it.description || '' },
-      itemCell,
-      el('td', { className: 'ob-date' + (it.overdue ? ' ob-overdue' : ''), textContent: it.effectiveDate || '—' }),
-      qtyCell,
-      el('td', { className: 'ob-value', textContent: it.lineValue != null ? obMoney(it.lineValue) : '' }),
-      el('td', { className: 'ob-po', textContent: it.poNumber || '' }),
-      action,
-    ));
+  let boundaryDone = false;
+  for (const it of dated) {
+    // Drop the boundary marker in once, before the first beyond-window line.
+    if (!it.withinWindow && !boundaryDone) { tb.appendChild(divider('End of 8-week shippable window — build ahead below')); boundaryDone = true; }
+    tb.appendChild(obRow(it, canPlan));
+  }
+  if (undated.length) {
+    tb.appendChild(divider('No required date yet'));
+    for (const it of undated) tb.appendChild(obRow(it, canPlan));
   }
   tbl.appendChild(tb);
   return tbl;
