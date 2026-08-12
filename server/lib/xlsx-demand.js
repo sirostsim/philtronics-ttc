@@ -111,7 +111,11 @@ function mapOrderBook(sheet) {
   return sheet.rows.map(o => ({
     poNumber:    String(o['purchasing document'] || '').trim(),
     poLine:      String(o['item'] || '').trim(),
-    itemNumber:  String(o['part number'] || '').trim(),
+    // Uppercase the part number so it matches target_times / planned_work /
+    // customer_orders (all uppercased). Without this, the snapshot's refresh of
+    // the live customer_orders would reintroduce the case-mismatch that breaks the
+    // Planner's target join, planned-qty, drift and value matching.
+    itemNumber:  String(o['part number'] || '').trim().toUpperCase(),
     description: String(o['material description'] || '').trim(),
     requiredBy:  serialDate(o['required by']),
     dueDate:     serialDate(o['current due date']),
@@ -132,7 +136,9 @@ function mapPriority(sheet) {
     wo:         String(o['planned order/work order number'] || '').trim(),
     lineItem:   String(o['top demand line item'] || '').trim(),
     startDate:  serialDate(o['open planned/wo start date'] || o['start date']),
-    itemNumber: String(o['material'] || '').trim(),
+    // Uppercase to match the order-book part number, so the report's order->
+    // priority unit-value lookup and cross-week transitions match reliably.
+    itemNumber: String(o['material'] || '').trim().toUpperCase(),
     description:String(o['material description'] || '').trim(),
     qty:        numOf(o['qty needed per slot']) || 1,
   })).filter(r => r.itemNumber);
