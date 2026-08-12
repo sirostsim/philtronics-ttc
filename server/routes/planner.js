@@ -103,7 +103,8 @@ function formatRow(row, s, ordersByKey, valueByLineKey) {
   return {
     id:               row.id,
     itemNumber:       row.item_number,
-    woNumber:         row.wo_number || null,
+    woNumber:         row.wo_number || null,   // KLA Purchasing Document (order-book link)
+    worksOrder:       row.works_order || null, // our internal works order (display only)
     startDate:        startISO,
     quantity:         row.quantity,
     department:       row.department || null,
@@ -212,10 +213,10 @@ router.post('/', requirePlannerWrite, validate(schemas.plannedWork), async (req,
     const id = uuidv4();
     await query(
       `INSERT INTO planned_work
-         (id, item_number, wo_number, start_date, quantity, estimated_minutes, department,
+         (id, item_number, wo_number, works_order, start_date, quantity, estimated_minutes, department,
           source_required_by, source_po_line, source_ordered_qty, created_by, updated_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11)`,
-      [id, item, b.woNumber || null, b.startDate, b.quantity, estimate, b.department || null,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12)`,
+      [id, item, b.woNumber || null, b.worksOrder || null, b.startDate, b.quantity, estimate, b.department || null,
        b.sourceRequiredBy || null, b.sourcePoLine || null,
        b.sourceOrderedQty != null ? b.sourceOrderedQty : null, req.user.id]
     );
@@ -236,7 +237,8 @@ router.patch('/:id', requirePlannerWrite, validate(schemas.plannedWorkUpdate), a
 
     const b = req.body;
     const item      = b.itemNumber ? String(b.itemNumber).trim().toUpperCase() : existing.item_number;
-    const woNumber  = b.woNumber   !== undefined ? (b.woNumber || null)   : existing.wo_number;
+    const woNumber   = b.woNumber   !== undefined ? (b.woNumber || null)   : existing.wo_number;
+    const worksOrder = b.worksOrder !== undefined ? (b.worksOrder || null) : existing.works_order;
     const startDate = b.startDate  || startISOof(existing);
     const quantity  = b.quantity   != null ? b.quantity : existing.quantity;
     const department = b.department !== undefined ? (b.department || null) : existing.department;
@@ -252,10 +254,10 @@ router.patch('/:id', requirePlannerWrite, validate(schemas.plannedWorkUpdate), a
 
     await query(
       `UPDATE planned_work
-         SET item_number=$1, wo_number=$2, start_date=$3, quantity=$4,
-             estimated_minutes=$5, department=$6, updated_at=NOW(), updated_by=$7
-       WHERE id=$8`,
-      [item, woNumber, startDate, quantity, estimate, department, req.user.id, req.params.id]
+         SET item_number=$1, wo_number=$2, works_order=$3, start_date=$4, quantity=$5,
+             estimated_minutes=$6, department=$7, updated_at=NOW(), updated_by=$8
+       WHERE id=$9`,
+      [item, woNumber, worksOrder, startDate, quantity, estimate, department, req.user.id, req.params.id]
     );
     const s = await settings.get();
     const joined = await queryOne(`${JOIN_SQL} WHERE p.id = $1`, [req.params.id]);

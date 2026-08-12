@@ -98,6 +98,7 @@ const schemas = {
   plannedWork: Joi.object({
     itemNumber:       itemNumberSchema,
     woNumber:         Joi.string().trim().max(100).optional().allow('', null),
+    worksOrder:       Joi.string().trim().max(100).optional().allow('', null),
     startDate:        Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).required()
       .messages({ 'string.pattern.base': 'Start date must be a valid date (YYYY-MM-DD).' }),
     quantity:         Joi.number().integer().min(1).max(9999).required(),
@@ -112,6 +113,7 @@ const schemas = {
   plannedWorkUpdate: Joi.object({
     itemNumber:       itemNumberSchema.optional(),
     woNumber:         Joi.string().trim().max(100).optional().allow('', null),
+    worksOrder:       Joi.string().trim().max(100).optional().allow('', null),
     startDate:        Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).optional(),
     quantity:         Joi.number().integer().min(1).max(9999).optional(),
     estimatedHours:   Joi.number().integer().min(0).max(999).optional().allow(null),

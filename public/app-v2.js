@@ -5066,9 +5066,9 @@ function plannerBoard(items, days) {
     const info = el('div', { className: 'planner-jobinfo' },
       el('div', { className: 'planner-jobtitle' },
         el('span', { className: 'planner-jobitem', textContent: it.itemNumber, title: it.itemNumber }),
-        el('span', { className: 'planner-jobwo', textContent: it.woNumber || '(no WO)', title: it.woNumber || '(no WO)' }),
+        el('span', { className: 'planner-jobwo', textContent: it.woNumber ? 'PO ' + it.woNumber : '(no PO)', title: it.woNumber ? 'Purchasing Document ' + it.woNumber : 'No purchasing document' }),
       ),
-      el('div', { className: 'planner-jobmeta', textContent: 'Qty ' + it.quantity + ' · ' + fmtPlanMins(it.totalMinutes) + ' · ' + it.durationSource }),
+      el('div', { className: 'planner-jobmeta', textContent: 'Qty ' + it.quantity + ' · ' + fmtPlanMins(it.totalMinutes) + ' · ' + it.durationSource + (it.worksOrder ? ' · WO ' + it.worksOrder : '') }),
     );
     const driftBadge = plannerDriftBadge(it.drift);
     if (driftBadge) info.appendChild(driftBadge);
@@ -5225,7 +5225,10 @@ function openPlannerForm(existing, prefill) {
   const isEdit = !!existing;
   const pf = prefill || {};
   const itemInput = el('input', { type: 'text', value: existing ? existing.itemNumber : (pf.itemNumber || ''), placeholder: 'e.g. PHL-1001', autocapitalize: 'characters' });
-  const woInput   = el('input', { type: 'text', value: existing ? (existing.woNumber || '') : (pf.woNumber || ''), placeholder: 'Optional' });
+  // woInput holds KLA's Purchasing Document (the order-book link, prefilled from
+  // the offering). worksInput is OUR works order, entered here (not on any upload).
+  const woInput    = el('input', { type: 'text', value: existing ? (existing.woNumber || '') : (pf.woNumber || ''), placeholder: 'KLA purchasing document (optional)' });
+  const worksInput = el('input', { type: 'text', value: existing ? (existing.worksOrder || '') : (pf.worksOrder || ''), placeholder: 'Our works order (optional)' });
   const dateInput = el('input', { type: 'date', value: existing ? existing.startDate : new Date().toISOString().slice(0, 10) });
   const qtyInput  = el('input', { type: 'number', min: '1', max: '9999', value: String(existing ? existing.quantity : (pf.quantity || 1)) });
   const hasEst    = existing && existing.estimatedMinutes != null;
@@ -5282,7 +5285,8 @@ function openPlannerForm(existing, prefill) {
 
   const body = el('div', { className: 'planner-form' },
     el('label', { className: 'dev-form-label', textContent: 'Item Number' }), itemInput,
-    el('label', { className: 'dev-form-label', textContent: 'W/O Number' }), woInput,
+    el('label', { className: 'dev-form-label', textContent: 'Purchasing Document (KLA)' }), woInput,
+    el('label', { className: 'dev-form-label', textContent: 'W/O Number (ours)' }), worksInput,
     el('label', { className: 'dev-form-label', textContent: 'Start date' }), dateInput,
     scheduleNote,
     el('label', { className: 'dev-form-label', textContent: 'Quantity' }), qtyInput,
@@ -5308,6 +5312,7 @@ function openPlannerForm(existing, prefill) {
     const payload = {
       itemNumber: itemInput.value.trim(),
       woNumber: woInput.value.trim(),
+      worksOrder: worksInput.value.trim(),
       startDate: dateInput.value,
       quantity: parseInt(qtyInput.value, 10) || 1,
       estimatedHours: estHInput.value === '' ? null : parseInt(estHInput.value, 10),
