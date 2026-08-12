@@ -5345,7 +5345,7 @@ async function deletePlannerItem(it) {
 // Managers upload a CSV/tab export; the browser parses it and posts clean rows,
 // and each line can be added straight onto the planner.
 
-const _obState = { customer: '', collapsed: false, wired: false, horizon: 'all', items: null };
+const _obState = { customer: '', collapsed: false, wired: false, horizon: '26', items: null };
 
 function initOrderBook() {
   if (_obState.wired) { loadOrderBook(); return; }
