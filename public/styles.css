@@ -138,8 +138,11 @@ ul     { list-style: none; }
 .nav-list  { flex: 1; padding: 12px 0; overflow-y: auto; }
 .nav-list li button {
   width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 13px;
   text-align: left;
-  padding: 16px 24px;
+  padding: 15px 24px;
   font-size: 16px;
   font-weight: 600;
   color: var(--text2);
@@ -148,6 +151,9 @@ ul     { list-style: none; }
   letter-spacing: .04em;
   transition: background var(--transition), color var(--transition);
 }
+/* Fixed icon slot so every label lines up, whatever the emoji width. */
+.nav-ico { flex: 0 0 auto; width: 1.45em; text-align: center; font-size: 17px; line-height: 1; }
+.nav-group-title { display: flex; align-items: center; gap: 13px; min-width: 0; }
 .nav-list li button:hover,
 .nav-list li button.active {
   background: var(--bg3);

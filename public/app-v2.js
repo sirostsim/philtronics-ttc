@@ -190,9 +190,9 @@ const DEPARTMENTS = ['Production', 'Stores', 'Test and Inspection', 'PCB'];
 const DEPT_SLUGS  = { 'Production': 'prod', 'Stores': 'stores', 'Test and Inspection': 'testinsp', 'PCB': 'pcb' };
 
 const PAGES = {
-  home:           { id: 'pageHome',             label: 'Home',                          minRole: 'supervisor'  },
-  timer:          { id: 'pageTimer',             label: 'Timer',                         minRole: 'operator'    },
-  history:        { id: 'pageHistory',           label: 'History',                       minRole: 'operator'    },
+  home:           { id: 'pageHome',             icon: '🏠', label: 'Home',                    minRole: 'supervisor'  },
+  timer:          { id: 'pageTimer',            icon: '⏱️', label: 'Timer',                   minRole: 'operator'    },
+  history:        { id: 'pageHistory',          icon: '🕘', label: 'History',                 minRole: 'operator'    },
   // Department wallboards — shown/hidden based on role + department
   'wb-prod':   { id: 'page-production-wb',   label: '📋 Wall Board — Production',    minRole: 'supervisor', dept: 'Production'          },
   'wb-stores': { id: 'page-stores-wb',        label: '📋 Wall Board — Stores',        minRole: 'supervisor', dept: 'Stores'              },
@@ -202,14 +202,14 @@ const PAGES = {
   'wbc-testinsp':{ id: 'page-testinsp-wbc',   label: '📺 Compact — Test & Insp',      minRole: 'supervisor', dept: 'Test and Inspection' },
   'wb-pcb':      { id: 'page-pcb-wb',          label: '📋 Wall Board — PCB',           minRole: 'supervisor', dept: 'PCB'                },
   'wbc-pcb':     { id: 'page-pcb-wbc',         label: '📺 Compact — PCB',              minRole: 'supervisor', dept: 'PCB'                },
-  planner:        { id: 'pagePlanner',           label: '📅 Planner',                    minRole: 'supervisor'  },
-  pushpull:       { id: 'pagePushPull',          label: '🔀 Push/Pull',                  minRole: 'manager'     },
-  dashboard:      { id: 'pageDashboard',         label: 'Dashboard',                     minRole: 'manager'     },
-  targets:        { id: 'pageTargets',           label: 'Target Times',                  minRole: 'manager'     },
-  reports:        { id: 'pageReports',           label: 'Reports',                       minRole: 'manager'     },
-  charts:         { id: 'pageCharts',            label: 'Charts',                        minRole: 'manager'     },
-  devrequests:    { id: 'pageDevRequests',       label: '💡 Dev Requests',               minRole: 'supervisor'  },
-  admin:          { id: 'pageAdmin',             label: 'Admin',                         minRole: 'administrator' },
+  planner:        { id: 'pagePlanner',          icon: '📅', label: 'Planner',                 minRole: 'supervisor'  },
+  pushpull:       { id: 'pagePushPull',         icon: '🔀', label: 'Push/Pull',               minRole: 'manager'     },
+  dashboard:      { id: 'pageDashboard',        icon: '📊', label: 'Dashboard',               minRole: 'manager'     },
+  targets:        { id: 'pageTargets',          icon: '🎯', label: 'Target Times',            minRole: 'manager'     },
+  reports:        { id: 'pageReports',          icon: '📄', label: 'Reports',                 minRole: 'manager'     },
+  charts:         { id: 'pageCharts',           icon: '📈', label: 'Charts',                  minRole: 'manager'     },
+  devrequests:    { id: 'pageDevRequests',      icon: '💡', label: 'Dev Requests',            minRole: 'supervisor'  },
+  admin:          { id: 'pageAdmin',            icon: '⚙️', label: 'Admin',                   minRole: 'administrator' },
 };
 
 function canSeePage(p) {
@@ -233,10 +233,10 @@ function buildNav() {
   for (const key of topPages) {
     const p = PAGES[key];
     if (!p || !canSeePage(p)) continue;
-    const btn = el('button', {
-      textContent: p.label,
-      onclick: () => { navigateTo(key); closeNav(); },
-    });
+    const btn = el('button', { onclick: () => { navigateTo(key); closeNav(); } },
+      el('span', { className: 'nav-ico', textContent: p.icon || '' }),
+      el('span', { className: 'nav-lbl', textContent: p.label }),
+    );
     if (state.currentPage === key) btn.classList.add('active');
     list.appendChild(el('li', {}, btn));
   }
@@ -247,7 +247,9 @@ function buildNav() {
     const groupLi = el('li', {});
 
     const header = el('button', { className: 'nav-group-header' + (isWbActive ? ' open' : '') });
-    header.appendChild(el('span', { textContent: '📋 Wall Boards' }));
+    header.appendChild(el('span', { className: 'nav-group-title' },
+      el('span', { className: 'nav-ico', textContent: '📋' }),
+      el('span', { className: 'nav-lbl', textContent: 'Wall Boards' })));
     header.appendChild(el('span', { className: 'nav-group-arrow', textContent: '▼' }));
 
     const children = el('div', { className: 'nav-group-children' + (isWbActive ? ' open' : '') });
