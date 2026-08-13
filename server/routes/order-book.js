@@ -136,8 +136,10 @@ router.get('/report', requireRole('manager'), async (req, res) => {
     let horizonClause = '';
     if (/^\d+$/.test(horizon)) {
       params.push(parseInt(horizon, 10) * 7);
+      // $n::int cast is required: "CURRENT_DATE + $n" is ambiguous (date + int vs
+      // date + interval) and Postgres cannot infer an untyped parameter's type.
       horizonClause = `AND COALESCE(co.required_by, co.due_date) IS NOT NULL
-                       AND COALESCE(co.required_by, co.due_date) <= CURRENT_DATE + $${params.length}`;
+                       AND COALESCE(co.required_by, co.due_date) <= CURRENT_DATE + $${params.length}::int`;
     }
 
     const orders = await query(
