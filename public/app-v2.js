@@ -5599,6 +5599,15 @@ function buildOrderBookReportHtml(rep) {
     <div class="attn"><div class="ah">&#9650; Lines forecast to finish after their required date</div>
       <ul>${attnItems}${lateLines.length > 8 ? `<li><span class="code">+ ${lateLines.length - 8} more</span></li>` : ''}</ul></div>` : '';
 
+  // Evidence of the customer's Push/Pull impact on the order book (latest weekly
+  // demand change), mirroring the Push/Pull page. Omitted when there is no
+  // week-over-week snapshot data.
+  const pp = rep.pushPull;
+  const nLines = n => n + ' line' + (n === 1 ? '' : 's');
+  const ppSection = pp ? `
+    <div class="sec"><h2>Demand volatility</h2><span class="rule"></span><span class="count">${rptDate(pp.from)} to ${rptDate(pp.to)}</span></div>
+    <div class="pp-note">Between ${rptDate(pp.from)} and ${rptDate(pp.to)}, ${cust}'s demand re-prioritisation pulled <b>${rptMoney(pp.pullIn)}</b> of build value forward (${nLines(pp.pullInN)} needed sooner) and pushed <b>${rptMoney(pp.pushOut)}</b> out (${nLines(pp.pushOutN)} needed later), added <b>${rptMoney(pp.added)}</b> of new demand (${nLines(pp.addedN)}) and removed <b>${rptMoney(pp.dropped)}</b> (${nLines(pp.droppedN)}). Over the same period the order book value moved from ${rptMoney(pp.obValueFrom)} to ${rptMoney(pp.obValueTo)} (${pp.obValueDelta >= 0 ? 'up' : 'down'} ${rptMoney(Math.abs(pp.obValueDelta))}).</div>` : '';
+
   return `<!doctype html><html lang="en-GB"><head><meta charset="utf-8">
 <title>Order Book Status Report - ${cust}</title>
 <style>
@@ -5643,6 +5652,8 @@ body{background:var(--paper);color:var(--ink);font-family:var(--sans);line-heigh
 .attn li .code{font-family:var(--mono);font-weight:600;color:var(--ink);flex:0 0 118px}
 .attn li .desc{color:var(--muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .attn li .slip{font-family:var(--mono);color:var(--late);font-weight:600;flex:0 0 auto}
+.pp-note{border:1px solid var(--hair);border-left:3px solid var(--brand);background:#f6fafd;border-radius:6px;padding:13px 16px;margin-bottom:26px;font-size:12.5px;line-height:1.7;color:var(--ink)}
+.pp-note b{font-family:var(--mono);color:var(--brand-deep);font-weight:700}
 table{width:100%;border-collapse:collapse;font-size:12.5px}
 thead th{text-align:left;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:700;padding:0 12px 8px;border-bottom:1.5px solid var(--ink)}
 th.r,td.r{text-align:right}
@@ -5683,6 +5694,7 @@ footer b{color:var(--muted)}
     <div class="bar"><span class="s-ok" style="width:${pct(S.onTrack)}%"></span><span class="s-late" style="width:${pct(S.late)}%"></span><span class="s-wait" style="width:${pct(S.awaiting)}%"></span></div>
     <div class="legend"><span><i style="background:var(--ok)"></i>On track <b>${S.onTrack}</b></span><span><i style="background:var(--late)"></i>Late <b>${S.late}</b></span><span><i style="background:var(--wait)"></i>Awaiting schedule <b>${S.awaiting}</b></span></div>
   </section>
+  ${ppSection}
   ${attn}
   <div class="sec"><h2>Line item detail</h2><span class="rule"></span><span class="count">${S.openLines} lines &middot; by required date</span></div>
   <table>

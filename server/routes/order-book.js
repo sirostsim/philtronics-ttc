@@ -18,6 +18,7 @@ const { requireAuth, requireRole, requirePlannerWrite } = require('../middleware
 const { validate, schemas } = require('../middleware/validate');
 const settings = require('../settings');
 const { plannedEndDate } = require('../lib/planner-schedule');
+const { computeReport } = require('../lib/xlsx-demand');
 
 const router = express.Router();
 
@@ -204,7 +205,45 @@ router.get('/report', requireRole('manager'), async (req, res) => {
       late:           lines.filter(l => l.status === 'late').length,
       awaiting:       lines.filter(l => l.status === 'awaiting').length,
     };
-    res.json({ customer, horizon, generatedAt: new Date().toISOString().slice(0, 10), summary, lines });
+
+    // Push/Pull impact: summarise the most recent week-over-week demand change
+    // from the archived KLA snapshots, so the report can evidence to the customer
+    // the effect their re-prioritisation has on our order book. Best-effort: with
+    // fewer than two snapshots (or the feature unused) it is simply omitted.
+    let pushPull = null;
+    try {
+      const snaps = await query(
+        `SELECT id, snapshot_date, order_lines_count, priority_lines_count, order_book_value
+           FROM demand_snapshots WHERE customer = $1 ORDER BY snapshot_date ASC`, [customer]);
+      if (snaps.length >= 2) {
+        const ids = snaps.map(s => s.id);
+        const orderLines = await query(
+          `SELECT snapshot_id, item_number, ordered_qty, line_value FROM snapshot_order_lines WHERE snapshot_id = ANY($1)`, [ids]);
+        const priLines = await query(
+          `SELECT snapshot_id, item_number, description, start_date, qty FROM snapshot_priority_lines WHERE snapshot_id = ANY($1)`, [ids]);
+        const rep = computeReport(customer, snaps, orderLines, priLines);
+        const t  = rep.transitions[rep.transitions.length - 1];
+        const pw = rep.perWeek;
+        if (t) {
+          const obTo   = pw.length     ? pw[pw.length - 1].orderBookValue : 0;
+          const obFrom = pw.length >= 2 ? pw[pw.length - 2].orderBookValue : 0;
+          pushPull = {
+            from: t.from, to: t.to,
+            pullIn:  Math.round(t.sums.pullIn),  pullInN:  t.sums.pullInN,
+            pushOut: Math.round(t.sums.pushOut), pushOutN: t.sums.pushOutN,
+            added:   Math.round(t.sums.added),   addedN:   t.sums.addedN,
+            dropped: Math.round(t.sums.dropped), droppedN: t.sums.droppedN,
+            obValueFrom: Math.round(obFrom), obValueTo: Math.round(obTo), obValueDelta: Math.round(obTo - obFrom),
+          };
+        }
+      }
+    } catch (e) {
+      if (!/relation .*(demand_snapshots|snapshot_).* does not exist/i.test(e.message)) {
+        console.error('order-book report push/pull summary skipped:', e.message);
+      }
+    }
+
+    res.json({ customer, horizon, generatedAt: new Date().toISOString().slice(0, 10), summary, pushPull, lines });
   } catch (err) {
     console.error('GET /order-book/report error:', err.message);
     res.status(500).json({ error: 'Could not build the order book report.' });
