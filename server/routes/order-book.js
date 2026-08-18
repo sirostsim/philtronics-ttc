@@ -250,6 +250,92 @@ router.get('/report', requireRole('manager'), async (req, res) => {
   }
 });
 
+// ── GET /api/order-book/upload-impact ── manager+ ─────────────────────────────
+// Compares the two most recent archived order-book snapshots (from the weekly
+// Push/Pull upload) to evidence what the latest upload changed in the available
+// work, and how much SCHEDULED build value (order lines that carry planner jobs)
+// it disturbs. Returns null when there are fewer than two snapshots. Feeds the
+// internal planning report.
+router.get('/upload-impact', requireRole('manager'), async (req, res) => {
+  try {
+    const customer = req.query.customer || 'KLA';
+    const snaps = await query(
+      `SELECT id, snapshot_date FROM demand_snapshots WHERE customer = $1 ORDER BY snapshot_date DESC LIMIT 2`, [customer]);
+    if (snaps.length < 2) return res.json(null);
+    const [cur, prev] = snaps;
+    const cols = 'item_number, po_number, po_line, description, bal_due_qty, line_value, COALESCE(required_by, due_date) AS eff';
+    const curLines  = await query(`SELECT ${cols} FROM snapshot_order_lines WHERE snapshot_id = $1`, [cur.id]);
+    const prevLines = await query(`SELECT ${cols} FROM snapshot_order_lines WHERE snapshot_id = $1`, [prev.id]);
+
+    const keyOf = r => r.item_number + '||' + (r.po_number || '') + '||' + (r.po_line || '');
+    const curMap = {}, prevMap = {};
+    for (const r of curLines)  curMap[keyOf(r)]  = r;
+    for (const r of prevLines) prevMap[keyOf(r)] = r;
+
+    const added = [], removed = [], changed = [];
+    for (const k of new Set([...Object.keys(curMap), ...Object.keys(prevMap)])) {
+      const c = curMap[k], p = prevMap[k];
+      const cv = c && c.line_value != null ? Number(c.line_value) : 0;
+      const pv = p && p.line_value != null ? Number(p.line_value) : 0;
+      if (c && !p)      added.push({ key: k, item: c.item_number, po: c.po_number, description: c.description, value: cv, qty: c.bal_due_qty });
+      else if (!c && p) removed.push({ key: k, item: p.item_number, po: p.po_number, description: p.description, value: pv, qty: p.bal_due_qty, unit: (p.bal_due_qty > 0 ? pv / p.bal_due_qty : 0) });
+      else if (c && p) {
+        const qd = (c.bal_due_qty || 0) - (p.bal_due_qty || 0);
+        const vd = cv - pv;
+        const dateMoved = isoOf(c.eff) !== isoOf(p.eff);
+        if (qd !== 0 || Math.abs(vd) > 0.005 || dateMoved)
+          changed.push({ key: k, item: c.item_number, po: c.po_number, description: c.description, fromQty: p.bal_due_qty, toQty: c.bal_due_qty, valueDelta: vd, dateFrom: isoOf(p.eff), dateTo: isoOf(c.eff), unit: (c.bal_due_qty > 0 ? cv / c.bal_due_qty : 0) });
+      }
+    }
+    added.sort((a, b) => b.value - a.value);
+    removed.sort((a, b) => b.value - a.value);
+    changed.sort((a, b) => Math.abs(b.valueDelta) - Math.abs(a.valueDelta));
+
+    // Planned-value impact: which of the removed/changed lines carry planner jobs,
+    // and how much scheduled build value (order value x planned share) they hold.
+    let planned = { disturbedValue: 0, disturbedN: 0, lines: [] };
+    const items = [...new Set([...removed, ...changed].map(a => a.item))];
+    if (items.length) {
+      const jobs = await query(
+        `SELECT item_number, wo_number, source_po_line, SUM(quantity) AS planned_qty
+           FROM planned_work WHERE item_number = ANY($1)
+          GROUP BY item_number, wo_number, source_po_line`, [items]);
+      const plannedByKey = {};
+      for (const j of jobs) plannedByKey[j.item_number + '||' + (j.wo_number || '') + '||' + (j.source_po_line || '')] = Number(j.planned_qty) || 0;
+      const affected = [];
+      for (const a of removed) {
+        const pq = plannedByKey[a.key]; if (!pq) continue;
+        affected.push({ item: a.item, po: a.po, description: a.description, change: 'removed', plannedQty: pq, plannedValue: Math.round((a.unit || 0) * pq) });
+      }
+      for (const a of changed) {
+        const pq = plannedByKey[a.key]; if (!pq) continue;
+        const change = a.toQty < a.fromQty ? 'reduced' : (a.dateFrom !== a.dateTo ? 'rescheduled' : 'changed');
+        affected.push({ item: a.item, po: a.po, description: a.description, change, plannedQty: pq, plannedValue: Math.round((a.unit || 0) * pq), dateFrom: a.dateFrom, dateTo: a.dateTo });
+      }
+      affected.sort((x, y) => y.plannedValue - x.plannedValue);
+      planned = { disturbedValue: affected.reduce((t, l) => t + l.plannedValue, 0), disturbedN: affected.length, lines: affected.slice(0, 15) };
+    }
+
+    const addedValue   = Math.round(added.reduce((t, a) => t + a.value, 0));
+    const removedValue = Math.round(removed.reduce((t, a) => t + a.value, 0));
+    const changedDelta = Math.round(changed.reduce((t, a) => t + a.valueDelta, 0));
+    res.json({
+      from: isoOf(prev.snapshot_date), to: isoOf(cur.snapshot_date),
+      order: {
+        added:   { count: added.length,   value: addedValue,   lines: added.slice(0, 12) },
+        removed: { count: removed.length, value: removedValue, lines: removed.slice(0, 12) },
+        changed: { count: changed.length, valueDelta: changedDelta, lines: changed.slice(0, 12) },
+        netDelta: addedValue - removedValue + changedDelta,
+      },
+      planned,
+    });
+  } catch (e) {
+    if (/relation .*(demand_snapshots|snapshot_).* does not exist/i.test(e.message)) return res.json(null);
+    console.error('GET /order-book/upload-impact error:', e.message);
+    res.status(500).json({ error: 'Could not compute the upload impact.' });
+  }
+});
+
 // ── POST /api/order-book ── planner/superuser ─────────────────────────────────
 // Replace a customer's order book with the uploaded rows (one transaction).
 router.post('/', requirePlannerWrite, validate(schemas.orderBookUpload), async (req, res) => {
