@@ -5601,6 +5601,7 @@ body{background:var(--paper);color:var(--ink);font-family:var(--sans);line-heigh
 .attn li .slip{font-family:var(--mono);color:var(--late);font-weight:600;flex:0 0 auto}
 .pp-note{border:1px solid var(--hair);border-left:3px solid var(--brand);background:#f6fafd;border-radius:6px;padding:13px 16px;margin-bottom:26px;font-size:12.5px;line-height:1.7;color:var(--ink)}
 .pp-note b{font-family:var(--mono);color:var(--brand-deep);font-weight:700}
+.imp-scope{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:var(--muted);margin:2px 0 6px}
 .imp-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
 .imp-card{border:1px solid var(--hair);border-radius:6px;padding:11px 13px}
 .imp-card .l{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:700}
@@ -5784,6 +5785,16 @@ function buildPlanningReportHtml(rep, impact) {
   if (impact) {
     const o = impact.order, p = impact.planned;
     const tag = c => `<span class="tag ${c}">${c}</span>`;
+    // The added/removed/net cards, shown at three horizons: 8 weeks, 12 weeks,
+    // and the full order book. Falls back to the full figures if an older API
+    // response has no windows.
+    const impGrid = (label, w) => `<div class="imp-scope">${label}</div>
+      <div class="imp-grid">
+        <div class="imp-card imp-add"><div class="l">Added</div><div class="v">+${rptMoney(w.added.value)}</div><div class="n">${w.added.count} new line${w.added.count !== 1 ? 's' : ''}</div></div>
+        <div class="imp-card imp-rem"><div class="l">Removed</div><div class="v">-${rptMoney(w.removed.value)}</div><div class="n">${w.removed.count} line${w.removed.count !== 1 ? 's' : ''} withdrawn</div></div>
+        <div class="imp-card imp-chg"><div class="l">Net change</div><div class="v">${w.netDelta >= 0 ? '+' : '-'}${rptMoney(Math.abs(w.netDelta))}</div><div class="n">${w.changed.count} line${w.changed.count !== 1 ? 's' : ''} amended</div></div>
+      </div>`;
+    const wins = o.windows || { w8: o, w12: o, full: o };
     const orderList = [
       ...o.removed.lines.map(r => ({ item: r.item, description: r.description, change: 'removed', amt: '-' + rptMoney(r.value) })),
       ...o.changed.lines.map(r => ({ item: r.item, description: r.description, change: (r.toQty < r.fromQty ? 'reduced' : (r.dateFrom !== r.dateTo ? 'rescheduled' : 'reduced')), amt: (r.valueDelta >= 0 ? '+' : '-') + rptMoney(Math.abs(r.valueDelta)) })),
@@ -5793,11 +5804,9 @@ function buildPlanningReportHtml(rep, impact) {
     const plRows = p.disturbedN ? p.lines.map(l => `<div class="imp-row"><span class="code">${esc(l.item || '')}</span><span class="desc">${esc(l.description || '')}</span>${tag(l.change)}<span class="amt">${rptMoney(l.plannedValue)}</span></div>`).join('') : '';
     impactHtml = `
     <div class="sec"><h2>Upload impact: available work</h2><span class="rule"></span><span class="count">${rptDate(impact.from)} to ${rptDate(impact.to)}</span></div>
-    <div class="imp-grid">
-      <div class="imp-card imp-add"><div class="l">Added</div><div class="v">+${rptMoney(o.added.value)}</div><div class="n">${o.added.count} new line${o.added.count !== 1 ? 's' : ''}</div></div>
-      <div class="imp-card imp-rem"><div class="l">Removed</div><div class="v">-${rptMoney(o.removed.value)}</div><div class="n">${o.removed.count} line${o.removed.count !== 1 ? 's' : ''} withdrawn</div></div>
-      <div class="imp-card imp-chg"><div class="l">Net change</div><div class="v">${o.netDelta >= 0 ? '+' : '-'}${rptMoney(Math.abs(o.netDelta))}</div><div class="n">${o.changed.count} line${o.changed.count !== 1 ? 's' : ''} amended</div></div>
-    </div>
+    ${impGrid('Within 8 weeks', wins.w8)}
+    ${impGrid('Within 12 weeks', wins.w12)}
+    ${impGrid('Full order book', wins.full)}
     ${orderRows ? `<div class="imp-list">${orderRows}</div>` : ''}
     <div class="sec"><h2>Upload impact: scheduled build value</h2><span class="rule"></span><span class="count">${p.disturbedN} planned line${p.disturbedN !== 1 ? 's' : ''} affected</span></div>
     ${p.disturbedN

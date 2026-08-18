@@ -277,14 +277,14 @@ router.get('/upload-impact', requireRole('manager'), async (req, res) => {
       const c = curMap[k], p = prevMap[k];
       const cv = c && c.line_value != null ? Number(c.line_value) : 0;
       const pv = p && p.line_value != null ? Number(p.line_value) : 0;
-      if (c && !p)      added.push({ key: k, item: c.item_number, po: c.po_number, description: c.description, value: cv, qty: c.bal_due_qty });
-      else if (!c && p) removed.push({ key: k, item: p.item_number, po: p.po_number, description: p.description, value: pv, qty: p.bal_due_qty, unit: (p.bal_due_qty > 0 ? pv / p.bal_due_qty : 0) });
+      if (c && !p)      added.push({ key: k, item: c.item_number, po: c.po_number, description: c.description, value: cv, qty: c.bal_due_qty, eff: isoOf(c.eff) });
+      else if (!c && p) removed.push({ key: k, item: p.item_number, po: p.po_number, description: p.description, value: pv, qty: p.bal_due_qty, unit: (p.bal_due_qty > 0 ? pv / p.bal_due_qty : 0), eff: isoOf(p.eff) });
       else if (c && p) {
         const qd = (c.bal_due_qty || 0) - (p.bal_due_qty || 0);
         const vd = cv - pv;
         const dateMoved = isoOf(c.eff) !== isoOf(p.eff);
         if (qd !== 0 || Math.abs(vd) > 0.005 || dateMoved)
-          changed.push({ key: k, item: c.item_number, po: c.po_number, description: c.description, fromQty: p.bal_due_qty, toQty: c.bal_due_qty, valueDelta: vd, dateFrom: isoOf(p.eff), dateTo: isoOf(c.eff), unit: (c.bal_due_qty > 0 ? cv / c.bal_due_qty : 0) });
+          changed.push({ key: k, item: c.item_number, po: c.po_number, description: c.description, fromQty: p.bal_due_qty, toQty: c.bal_due_qty, valueDelta: vd, dateFrom: isoOf(p.eff), dateTo: isoOf(c.eff), unit: (c.bal_due_qty > 0 ? cv / c.bal_due_qty : 0), eff: isoOf(c.eff) });
       }
     }
     added.sort((a, b) => b.value - a.value);
@@ -319,6 +319,17 @@ router.get('/upload-impact', requireRole('manager'), async (req, res) => {
     const addedValue   = Math.round(added.reduce((t, a) => t + a.value, 0));
     const removedValue = Math.round(removed.reduce((t, a) => t + a.value, 0));
     const changedDelta = Math.round(changed.reduce((t, a) => t + a.valueDelta, 0));
+    // The same added/removed/net figures at three horizons, by each line's
+    // effective date: 8 weeks, 12 weeks, and the full order book.
+    const cut = days => new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
+    const within = (eff, c) => c == null ? true : (eff != null && eff <= c);
+    const summarise = c => {
+      const a = added.filter(x => within(x.eff, c)), r = removed.filter(x => within(x.eff, c)), h = changed.filter(x => within(x.eff, c));
+      const av = Math.round(a.reduce((t, x) => t + x.value, 0));
+      const rv = Math.round(r.reduce((t, x) => t + x.value, 0));
+      const cd = Math.round(h.reduce((t, x) => t + x.valueDelta, 0));
+      return { added: { count: a.length, value: av }, removed: { count: r.length, value: rv }, changed: { count: h.length, valueDelta: cd }, netDelta: av - rv + cd };
+    };
     res.json({
       from: isoOf(prev.snapshot_date), to: isoOf(cur.snapshot_date),
       order: {
@@ -326,6 +337,7 @@ router.get('/upload-impact', requireRole('manager'), async (req, res) => {
         removed: { count: removed.length, value: removedValue, lines: removed.slice(0, 12) },
         changed: { count: changed.length, valueDelta: changedDelta, lines: changed.slice(0, 12) },
         netDelta: addedValue - removedValue + changedDelta,
+        windows: { w8: summarise(cut(56)), w12: summarise(cut(84)), full: summarise(null) },
       },
       planned,
     });
