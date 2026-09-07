@@ -4761,7 +4761,7 @@ function exportProductivityCSV() {
 // comes from the item's target time (x quantity) or a manager estimate; the
 // Gantt bar length is the server-computed span across working days.
 
-const _plannerState = { dept: '', viewStart: null, fullscreen: false, items: null, targets: { daily: 0, weekly: 0 } };
+const _plannerState = { dept: '', viewStart: null, fullscreen: false, view: 'gantt', items: null, targets: { daily: 0, weekly: 0 } };
 const _PLAN_WEEKS  = 4;    // weeks shown in the normal (in-page) board
 const _PLAN_DAYW   = 46;   // px per day column
 const _PLAN_LABELW = 320;  // px of the sticky Item/WO label column (matches CSS)
@@ -4822,6 +4822,33 @@ function plannerWindowDays() {
   return out;
 }
 
+// The next five working days (Mon-Fri) from today, for the card view. Unlike the
+// Gantt (Monday-anchored weeks) the card board is always today-anchored.
+function plannerNext5() {
+  const out = [];
+  const todayISO = new Date().toISOString().slice(0, 10);
+  for (let i = 0; out.length < 5 && i < 14; i++) {
+    const cur = plannerAddDays(todayISO, i);
+    const dow = new Date(cur + 'T12:00:00Z').getUTCDay();
+    if (dow >= 1 && dow <= 5) out.push(cur);
+  }
+  return out;
+}
+
+// Reflect the current planner view: highlight the toggle, and hide the Gantt-only
+// week navigation and full-screen controls while the card view is active.
+function _plannerApplyView() {
+  const cards = _plannerState.view === 'cards';
+  const g = document.getElementById('planViewGantt');
+  const c = document.getElementById('planViewCards');
+  if (g) g.classList.toggle('active', !cards);
+  if (c) c.classList.toggle('active', cards);
+  ['planPrev', 'planToday', 'planNext', 'planFullscreen'].forEach(id => {
+    const b = document.getElementById(id);
+    if (b) b.hidden = cards;
+  });
+}
+
 function loadPlannerPage() {
   if (!_plannerState.viewStart) _plannerState.viewStart = plannerMonday(new Date().toISOString().slice(0, 10));
   const filter = document.getElementById('plannerDeptFilter');
@@ -4846,6 +4873,19 @@ function loadPlannerPage() {
     if (!resetBtn._wired) { resetBtn._wired = true; resetBtn.addEventListener('click', openClearModal); }
   }
   wire('planFullscreen', () => plannerToggleFullscreen(true));
+  // View toggle (Gantt / Cards). The choice is remembered per browser. Full
+  // screen stays Gantt-only, so it is hidden while cards are showing.
+  const savedView = (() => { try { return localStorage.getItem('planner.view'); } catch (_) { return null; } })();
+  if (savedView === 'cards' || savedView === 'gantt') _plannerState.view = savedView;
+  const setPlannerView = (v) => {
+    _plannerState.view = v;
+    try { localStorage.setItem('planner.view', v); } catch (_) {}
+    _plannerApplyView();
+    _plannerPaint();
+  };
+  wire('planViewGantt', () => setPlannerView('gantt'));
+  wire('planViewCards', () => setPlannerView('cards'));
+  _plannerApplyView();
   const summaryBtn = document.getElementById('btnOrderBookSummary');
   if (summaryBtn) {
     summaryBtn.hidden = !hasRole('manager');   // manager+ (includes planner)
@@ -4954,15 +4994,16 @@ function _plannerPaint() {
   if (!board) return;
   const items = _plannerState.items;
   if (!items) return;
-  const days = plannerWindowDays();
-  if (range) range.textContent = plannerNiceDate(days[0]) + ' – ' + plannerNiceDate(days[days.length - 1]) + ' · Mon–Fri';
+  const cards = _plannerState.view === 'cards' && !_plannerState.fullscreen;
+  const days = cards ? plannerNext5() : plannerWindowDays();
+  if (range) range.textContent = plannerNiceDate(days[0]) + ' – ' + plannerNiceDate(days[days.length - 1]) + (cards ? ' · next 5 working days' : ' · Mon–Fri');
   board.innerHTML = '';
   const driftCount = items.filter(it => it.drift).length;
   if (driftCount) {
     board.appendChild(el('div', { className: 'planner-review',
       textContent: '⚠ ' + driftCount + ' planned job' + (driftCount !== 1 ? 's' : '') + ' need review: the order book changed under them (moved, removed, or quantity changed).' }));
   }
-  board.appendChild(plannerBoard(items, days));
+  board.appendChild(cards ? plannerKanban(items, days) : plannerBoard(items, days));
 }
 
 // ── Full-screen Gantt ─────────────────────────────────────────────────────────
@@ -5179,6 +5220,71 @@ function plannerBoard(items, days) {
   inner.appendChild(weekRow);
 
   return inner;
+}
+
+// Card (kanban) view of the planner: five day-columns (next five working days).
+// A job appears in every working-day column it runs across, tagged Day X of Y.
+// Read-only for now (no drag); Add/Edit/Delete still work via the card buttons.
+// Shares the cached items with the Gantt, so switching views does not refetch.
+function plannerKanban(items, days) {
+  const today = new Date().toISOString().slice(0, 10);
+  const canEdit = canPlanWrite();
+  const valByDate = plannerValueByDate(items);
+  const grid = el('div', { className: 'planner-kanban' });
+
+  // 1-based working-day index of an ISO date within a job's run, or 0 if the job
+  // is not running that day.
+  const dayOfRun = (it, iso) => {
+    if (!it.startDate || iso < it.startDate || (it.endDate && iso > it.endDate)) return 0;
+    let n = 0;
+    for (let i = 0; i < 500; i++) {
+      const cur = plannerAddDays(it.startDate, i);
+      if (cur > iso) break;
+      const dow = new Date(cur + 'T12:00:00Z').getUTCDay();
+      if (dow >= 1 && dow <= 5) { n++; if (cur === iso) return n; }
+    }
+    return 0;
+  };
+
+  for (const iso of days) {
+    const dt = new Date(iso + 'T12:00:00Z');
+    const isToday = iso === today;
+    const col = el('div', { className: 'kanban-col' + (isToday ? ' today' : '') });
+    const dayItems = items.filter(it => dayOfRun(it, iso) > 0);
+    const dayVal = valByDate[iso] || 0;
+    col.appendChild(el('div', { className: 'kanban-colhead' },
+      el('div', { className: 'kanban-dow', textContent: dt.toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'UTC' }) + (isToday ? ' · Today' : '') }),
+      el('div', { className: 'kanban-date', textContent: plannerNiceDate(iso) }),
+      el('div', { className: 'kanban-colmeta', textContent: dayItems.length + ' job' + (dayItems.length !== 1 ? 's' : '') + (dayVal > 0 ? ' · ' + plannerFmtMoney(dayVal) : '') }),
+    ));
+    const list = el('div', { className: 'kanban-cards' });
+    if (!dayItems.length) {
+      list.appendChild(el('div', { className: 'kanban-empty', textContent: 'Nothing planned' }));
+    } else {
+      for (const it of dayItems) {
+        const n = dayOfRun(it, iso);
+        const card = el('div', { className: 'kanban-card ' + (it.durationSource === 'estimate' ? 'estimate' : 'target') + (it.drift ? ' drift' : '') });
+        card.appendChild(el('div', { className: 'kanban-item', textContent: it.itemNumber, title: it.itemNumber }));
+        card.appendChild(el('div', { className: 'kanban-wo', textContent: (it.woNumber ? 'PO ' + it.woNumber : '(no PO)') + (it.worksOrder ? ' · WO ' + it.worksOrder : '') }));
+        if (it.department) card.appendChild(el('span', { className: 'dept-badge dept-' + (DEPT_SLUGS[it.department] || 'prod'), textContent: it.department }));
+        const row = el('div', { className: 'kanban-row' },
+          el('span', { className: 'kanban-dur', textContent: 'Qty ' + it.quantity + ' · ' + fmtPlanMins(it.totalMinutes) }));
+        if (it.value != null) row.appendChild(el('span', { className: 'kanban-val', textContent: plannerFmtMoney(it.value) }));
+        card.appendChild(row);
+        if ((it.workingDays || 1) > 1) card.appendChild(el('div', { className: 'kanban-dayof', textContent: 'Day ' + n + ' of ' + it.workingDays }));
+        const drift = plannerDriftBadge(it.drift);
+        if (drift) card.appendChild(drift);
+        if (canEdit) card.appendChild(el('div', { className: 'kanban-actions' },
+          el('button', { className: 'btn btn-sm btn-ghost', textContent: 'Edit', onclick: () => openPlannerForm(it) }),
+          el('button', { className: 'btn btn-sm btn-ghost dev-danger', textContent: 'Delete', onclick: () => deletePlannerItem(it) }),
+        ));
+        list.appendChild(card);
+      }
+    }
+    col.appendChild(list);
+    grid.appendChild(col);
+  }
+  return grid;
 }
 
 // Drag a bar sideways to reschedule a planned job. Managers only (the server
