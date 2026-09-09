@@ -3261,6 +3261,7 @@ body.planner-fs-open { overflow:hidden; }
 .assign-name { font-weight:700; }
 .assign-role { margin-left:auto; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--text3); }
 .mywork-sub { color:var(--text2); font-size:13px; margin:0 0 12px; }
+.kanban-start-btn { flex:1; font-weight:700; }
 
 /* Order book: available-to-build offering on the Planner page. */
 .ob-panel { border:1px solid var(--border); border-radius:var(--radius-lg); background:var(--bg2); padding:14px 16px; margin-bottom:16px; }

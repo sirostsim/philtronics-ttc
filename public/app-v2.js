@@ -715,6 +715,26 @@ async function openUnavailablePicker() {
   openModal('Mark Unavailable', wrap, []);
 }
 
+// "Start from card": launched from the My Work board. Stash the job's item and
+// works order, navigate to the Timer, and the start panel applies them so the
+// operative only sets route card / quantity / Time Check and taps START.
+let _timerPrefill = null;
+function startFromPlannedJob(it) {
+  _timerPrefill = { itemNumber: it.itemNumber, worksOrder: it.worksOrder || '' };
+  navigateTo('timer');
+}
+function applyTimerPrefill() {
+  if (!_timerPrefill) return;
+  const p = _timerPrefill; _timerPrefill = null;
+  const item = document.getElementById('itemNumberInput');
+  const wo   = document.getElementById('startWoNumber');
+  if (item && p.itemNumber) item.value = p.itemNumber;
+  if (wo && p.worksOrder)   wo.value = p.worksOrder;
+  const rc = document.getElementById('startRouteCard');
+  if (rc) rc.focus();
+  toast('Loaded ' + (p.itemNumber || 'job') + '. Set the route card and tap START.', 'success');
+}
+
 function showStartPanel() {
   show('panelStart');
   hide('panelActive');
@@ -728,9 +748,11 @@ function showStartPanel() {
   const rb = document.getElementById('btnResumeTimer');
   if (rb) rb.remove();
   clearError('startError');
+  applyTimerPrefill();
 }
 
 async function showActivePanel() {
+  _timerPrefill = null;
   hide('panelStart');
   show('panelActive');
 
@@ -5285,6 +5307,9 @@ function plannerKanban(items, days, opts) {
         if (canEdit) card.appendChild(el('div', { className: 'kanban-actions' },
           el('button', { className: 'btn btn-sm btn-ghost', textContent: 'Edit', onclick: () => openPlannerForm(it) }),
           el('button', { className: 'btn btn-sm btn-ghost dev-danger', textContent: 'Delete', onclick: () => deletePlannerItem(it) }),
+        ));
+        if (personal) card.appendChild(el('div', { className: 'kanban-actions' },
+          el('button', { className: 'btn btn-sm btn-primary kanban-start-btn', textContent: '▶ Start', onclick: () => startFromPlannedJob(it) }),
         ));
         list.appendChild(card);
       }
