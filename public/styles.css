@@ -3245,6 +3245,23 @@ body.planner-fs-open { overflow:hidden; }
 .kanban-actions { display:flex; gap:6px; margin-top:7px; }
 .kanban-empty { padding:14px 10px; text-align:center; font-size:12px; color:var(--text3); }
 
+/* Assignees on a planner card / Gantt row, and the assign picker modal. */
+.kanban-assignees { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin-top:7px; }
+.kanban-avatars { display:flex; }
+.kanban-avatars .user-avatar, .kanban-avatars .user-avatar-img { margin-left:-6px; border:2px solid var(--bg2); box-sizing:content-box; }
+.kanban-avatars > :first-child { margin-left:0; }
+.kanban-assignee-names { font-size:11px; color:var(--text2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:160px; }
+.kanban-unassigned { font-size:11px; font-weight:700; font-style:italic; color:var(--text3); }
+.kanban-assign-btn { margin-left:auto; padding:3px 9px; font-size:11px; }
+.planner-joblabel .kanban-assignees { margin-top:4px; }
+.assign-list { display:flex; flex-direction:column; gap:2px; max-height:360px; overflow:auto; }
+.assign-row { display:flex; align-items:center; gap:10px; padding:7px 8px; border-radius:var(--radius); cursor:pointer; }
+.assign-row:hover { background:var(--bg3); }
+.assign-row input[type="checkbox"] { width:17px; height:17px; flex:0 0 auto; }
+.assign-name { font-weight:700; }
+.assign-role { margin-left:auto; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--text3); }
+.mywork-sub { color:var(--text2); font-size:13px; margin:0 0 12px; }
+
 /* Order book: available-to-build offering on the Planner page. */
 .ob-panel { border:1px solid var(--border); border-radius:var(--radius-lg); background:var(--bg2); padding:14px 16px; margin-bottom:16px; }
 .ob-head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }

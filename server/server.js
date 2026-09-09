@@ -72,6 +72,7 @@ app.use('/api/users',    require('./routes/users'));
 app.use('/api/avatars',  require('./routes/avatars'));
 app.use('/api/targets',  require('./routes/targets'));
 app.use('/api/planner',  require('./routes/planner'));
+app.use('/api/my-work',  require('./routes/my-work'));
 app.use('/api/order-book', require('./routes/order-book'));
 app.use('/api/push-pull', require('./routes/push-pull'));
 app.use('/api/time-checks', require('./routes/timechecks'));

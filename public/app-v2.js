@@ -192,6 +192,7 @@ const DEPT_SLUGS  = { 'Production': 'prod', 'Stores': 'stores', 'Test and Inspec
 const PAGES = {
   home:           { id: 'pageHome',             icon: '🏠', label: 'Home',                    minRole: 'supervisor'  },
   timer:          { id: 'pageTimer',            icon: '⏱️', label: 'Timer',                   minRole: 'operator'    },
+  mywork:         { id: 'pageMyWork',           icon: '🗂️', label: 'My Work',                minRole: 'operator'    },
   history:        { id: 'pageHistory',          icon: '🕘', label: 'History',                 minRole: 'operator'    },
   // Department wallboards — shown/hidden based on role + department
   'wb-prod':   { id: 'page-production-wb',   label: '📋 Wall Board — Production',    minRole: 'supervisor', dept: 'Production'          },
@@ -226,7 +227,7 @@ function buildNav() {
   list.innerHTML = '';
 
   // Non-wallboard pages — render as normal nav items
-  const topPages    = ['home','timer','history','planner','pushpull','dashboard','targets','reports','charts','devrequests','admin'];
+  const topPages    = ['home','timer','mywork','history','planner','pushpull','dashboard','targets','reports','charts','devrequests','admin'];
   const wbPageKeys  = Object.keys(PAGES).filter(k => k.startsWith('wb-') || k.startsWith('wbc-'));
   const visibleWbs  = wbPageKeys.filter(k => canSeePage(PAGES[k]));
 
@@ -319,6 +320,7 @@ function navigateTo(page) {
   if (page === 'home')           loadHomePage();
   else if (page === 'timer')     loadTimerPage();
   else if (page === 'history')   loadHistoryPage();
+  else if (page === 'mywork')    loadMyWorkPage();
   else if (page === 'dashboard') loadDashboard();
   else if (page === 'planner')   loadPlannerPage();
   else if (page === 'pushpull')  loadPushPullPage();
@@ -5126,6 +5128,7 @@ function plannerBoard(items, days) {
     const driftBadge = plannerDriftBadge(it.drift);
     if (driftBadge) info.appendChild(driftBadge);
     const label = el('div', { className: 'planner-joblabel' }, info);
+    label.appendChild(plannerAssigneeStrip(it, hasRole('supervisor')));
     if (canEdit) {
       label.appendChild(el('div', { className: 'planner-jobactions' },
         el('button', { className: 'btn btn-sm btn-ghost', textContent: 'Edit', onclick: () => openPlannerForm(it) }),
@@ -5226,9 +5229,11 @@ function plannerBoard(items, days) {
 // A job appears in every working-day column it runs across, tagged Day X of Y.
 // Read-only for now (no drag); Add/Edit/Delete still work via the card buttons.
 // Shares the cached items with the Gantt, so switching views does not refetch.
-function plannerKanban(items, days) {
+function plannerKanban(items, days, opts) {
+  const personal = !!(opts && opts.personal);
   const today = new Date().toISOString().slice(0, 10);
-  const canEdit = canPlanWrite();
+  const canEdit = personal ? false : canPlanWrite();
+  const canAssign = !personal && hasRole('supervisor');
   const valByDate = plannerValueByDate(items);
   const grid = el('div', { className: 'planner-kanban' });
 
@@ -5255,7 +5260,7 @@ function plannerKanban(items, days) {
     col.appendChild(el('div', { className: 'kanban-colhead' },
       el('div', { className: 'kanban-dow', textContent: dt.toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'UTC' }) + (isToday ? ' · Today' : '') }),
       el('div', { className: 'kanban-date', textContent: plannerNiceDate(iso) }),
-      el('div', { className: 'kanban-colmeta', textContent: dayItems.length + ' job' + (dayItems.length !== 1 ? 's' : '') + (dayVal > 0 ? ' · ' + plannerFmtMoney(dayVal) : '') }),
+      el('div', { className: 'kanban-colmeta', textContent: dayItems.length + ' job' + (dayItems.length !== 1 ? 's' : '') + (!personal && dayVal > 0 ? ' · ' + plannerFmtMoney(dayVal) : '') }),
     ));
     const list = el('div', { className: 'kanban-cards' });
     if (!dayItems.length) {
@@ -5269,11 +5274,14 @@ function plannerKanban(items, days) {
         if (it.department) card.appendChild(el('span', { className: 'dept-badge dept-' + (DEPT_SLUGS[it.department] || 'prod'), textContent: it.department }));
         const row = el('div', { className: 'kanban-row' },
           el('span', { className: 'kanban-dur', textContent: 'Qty ' + it.quantity + ' · ' + fmtPlanMins(it.totalMinutes) }));
-        if (it.value != null) row.appendChild(el('span', { className: 'kanban-val', textContent: plannerFmtMoney(it.value) }));
+        if (!personal && it.value != null) row.appendChild(el('span', { className: 'kanban-val', textContent: plannerFmtMoney(it.value) }));
         card.appendChild(row);
         if ((it.workingDays || 1) > 1) card.appendChild(el('div', { className: 'kanban-dayof', textContent: 'Day ' + n + ' of ' + it.workingDays }));
-        const drift = plannerDriftBadge(it.drift);
-        if (drift) card.appendChild(drift);
+        if (!personal) {
+          const drift = plannerDriftBadge(it.drift);
+          if (drift) card.appendChild(drift);
+          card.appendChild(plannerAssigneeStrip(it, canAssign));
+        }
         if (canEdit) card.appendChild(el('div', { className: 'kanban-actions' },
           el('button', { className: 'btn btn-sm btn-ghost', textContent: 'Edit', onclick: () => openPlannerForm(it) }),
           el('button', { className: 'btn btn-sm btn-ghost dev-danger', textContent: 'Delete', onclick: () => deletePlannerItem(it) }),
@@ -5285,6 +5293,94 @@ function plannerKanban(items, days) {
     grid.appendChild(col);
   }
   return grid;
+}
+
+// A compact strip of assignee avatars for a planner card / Gantt row, plus an
+// Assign control for supervisors and above. Assignment is a lighter permission
+// than editing the plan, so supervisor+ get it even without planner-write.
+function plannerAssigneeStrip(it, canAssign) {
+  const strip = el('div', { className: 'kanban-assignees' });
+  const who = it.assignees || [];
+  if (who.length) {
+    const avs = el('div', { className: 'kanban-avatars' });
+    who.slice(0, 4).forEach(u => avs.appendChild(avatarEl(u, 22)));
+    strip.appendChild(avs);
+    strip.appendChild(el('span', { className: 'kanban-assignee-names',
+      textContent: who.map(u => u.fullName).join(', '), title: who.map(u => u.fullName).join(', ') }));
+  } else {
+    strip.appendChild(el('span', { className: 'kanban-unassigned', textContent: 'Unassigned' }));
+  }
+  if (canAssign) strip.appendChild(el('button', {
+    className: 'btn btn-sm btn-ghost kanban-assign-btn',
+    textContent: who.length ? 'Reassign' : 'Assign', onclick: () => openAssignModal(it) }));
+  return strip;
+}
+
+// Assign operatives to a planned job (supervisor+). Multi-select from the active
+// operators and supervisors; saving replaces the job's assignee set and repaints.
+let _assignableUsers = null;
+async function openAssignModal(it) {
+  let pool = _assignableUsers;
+  if (!pool) {
+    try { pool = (await GET('/planner/assignable-users')).users || []; _assignableUsers = pool; }
+    catch (err) { toast(err.message, 'error'); return; }
+  }
+  const current = new Set((it.assignees || []).map(u => u.id));
+  const rows = pool.map(u => {
+    const cb = el('input', { type: 'checkbox' });
+    cb.checked = current.has(u.id);
+    cb.value = u.id;
+    const rowEl = el('label', { className: 'assign-row' },
+      cb, avatarEl(u, 28),
+      el('span', { className: 'assign-name', textContent: u.fullName }),
+      el('span', { className: 'assign-role', textContent: u.role }),
+    );
+    return { cb, rowEl };
+  });
+  const list = el('div', { className: 'assign-list' }, ...rows.map(r => r.rowEl));
+  if (!rows.length) list.appendChild(el('div', { className: 'empty-state', textContent: 'No assignable users found.' }));
+  const err = el('div', { className: 'error-msg', style: 'margin-top:8px' });
+  const save = el('button', { className: 'btn btn-primary', textContent: 'Save assignment' });
+  save.addEventListener('click', async () => {
+    save.disabled = true; err.textContent = '';
+    const userIds = rows.filter(r => r.cb.checked).map(r => r.cb.value);
+    try {
+      const res = await PATCH('/planner/' + encodeURIComponent(it.id) + '/assignees', { userIds });
+      it.assignees = res.assignees || [];
+      toast('Assignment updated', 'success');
+      closeModal();
+      _plannerPaint();
+    } catch (e) { err.textContent = e.message; save.disabled = false; }
+  });
+  openModal('Assign operatives · ' + it.itemNumber, el('div', {}, list, err),
+    [ el('button', { className: 'btn btn-ghost', textContent: 'Cancel', onclick: () => closeModal() }), save ]);
+}
+
+// ── MY WORK PAGE ────────────────────────────────────────────────────────────
+// An operative's personal card board: the jobs assigned to them across the next
+// five working days. Read-only, no commercial value. Reuses the planner card
+// renderer in "personal" mode.
+async function loadMyWorkPage() {
+  const board = document.getElementById('myWorkBoard');
+  const range = document.getElementById('myWorkRange');
+  if (!board) return;
+  const days = plannerNext5();
+  if (range) range.textContent = plannerNiceDate(days[0]) + ' – ' + plannerNiceDate(days[days.length - 1]) + ' · next 5 working days';
+  board.innerHTML = '<div class="empty-state">Loading…</div>';
+  try {
+    const resp = await GET('/my-work');
+    const items = resp.items || [];
+    board.innerHTML = '';
+    if (!items.length) {
+      board.appendChild(el('div', { className: 'empty-state', style: 'padding:28px',
+        textContent: 'No work is assigned to you yet. Your supervisor assigns jobs on the Planner.' }));
+      return;
+    }
+    board.appendChild(plannerKanban(items, days, { personal: true }));
+  } catch (err) {
+    board.innerHTML = '';
+    board.appendChild(el('div', { className: 'error-msg', style: 'padding:16px', textContent: err.message }));
+  }
 }
 
 // Drag a bar sideways to reschedule a planned job. Managers only (the server

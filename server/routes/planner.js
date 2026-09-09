@@ -187,8 +187,10 @@ router.get('/', async (req, res) => {
           { qty: o.quantity, value: o.line_value != null ? Number(o.line_value) : null };
       }
     }
+    const shaped = rows.map(r => formatRow(r, s, ordersByKey, valueByLineKey));
+    await attachAssignees(shaped);
     res.json({
-      items: rows.map(r => formatRow(r, s, ordersByKey, valueByLineKey)),
+      items: shaped,
       targets: {
         daily:  s.output_target_daily  || 0,
         weekly: s.output_target_weekly || 0,
@@ -290,6 +292,87 @@ router.post('/clear', requirePlannerWrite, async (req, res) => {
   } catch (err) {
     console.error('POST /planner/clear error:', err.message);
     res.status(500).json({ error: 'Could not clear the planner.' });
+  }
+});
+
+// ── Assignment (supervisor+, a lighter permission than planner-write) ─────────
+// Assigning operatives to a job is NOT a structural plan edit, so it is allowed
+// for supervisors and above (the router's base gate) and deliberately does NOT
+// require planner-write. Each assignee sees the job on their My Work board.
+
+// Fetch and attach the assignee list to each shaped planner item (one query).
+async function attachAssignees(shaped) {
+  if (!shaped.length) return;
+  const ids = shaped.map(i => i.id);
+  const rows = await query(
+    `SELECT a.planned_work_id, u.id, u.full_name, u.role, u.avatar_url
+     FROM planned_work_assignees a
+     JOIN users u ON u.id = a.user_id
+     WHERE a.planned_work_id = ANY($1)
+     ORDER BY u.full_name`,
+    [ids]
+  );
+  const byJob = {};
+  for (const r of rows) {
+    (byJob[r.planned_work_id] = byJob[r.planned_work_id] || []).push(
+      { id: r.id, fullName: r.full_name, role: r.role, avatarUrl: r.avatar_url || null }
+    );
+  }
+  for (const item of shaped) item.assignees = byJob[item.id] || [];
+}
+
+// GET /api/planner/assignable-users -- active operators and supervisors who can be
+// assigned to a job. Supervisor+ (the router gate). Avatars included for chips.
+router.get('/assignable-users', async (req, res) => {
+  try {
+    const rows = await query(
+      `SELECT id, full_name, role, department, avatar_url
+       FROM users
+       WHERE is_active = TRUE AND role IN ('operator','supervisor')
+       ORDER BY full_name`
+    );
+    res.json({ users: rows.map(u => ({
+      id: u.id, fullName: u.full_name, role: u.role, department: u.department, avatarUrl: u.avatar_url || null,
+    })) });
+  } catch (err) {
+    console.error('GET /planner/assignable-users error:', err.message);
+    res.status(500).json({ error: 'Could not load assignable users.' });
+  }
+});
+
+// PATCH /api/planner/:id/assignees -- replace the job's assignee set. Supervisor+
+// (NOT planner-write): assignment is a lighter action than editing the plan.
+router.patch('/:id/assignees', validate(schemas.plannerAssignees), async (req, res) => {
+  try {
+    const job = await queryOne('SELECT id FROM planned_work WHERE id = $1', [req.params.id]);
+    if (!job) return res.status(404).json({ error: 'Planned job not found.' });
+    const wanted = [...new Set(req.body.userIds)];
+    let valid = [];
+    if (wanted.length) {
+      const rows = await query(
+        `SELECT id FROM users WHERE id = ANY($1) AND is_active = TRUE AND role IN ('operator','supervisor')`,
+        [wanted]
+      );
+      valid = rows.map(r => r.id);
+    }
+    await query('DELETE FROM planned_work_assignees WHERE planned_work_id = $1', [req.params.id]);
+    for (const uid of valid) {
+      await query(
+        `INSERT INTO planned_work_assignees (planned_work_id, user_id, assigned_by)
+         VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+        [req.params.id, uid, req.user.id]
+      );
+    }
+    const out = await query(
+      `SELECT u.id, u.full_name, u.role, u.avatar_url
+       FROM planned_work_assignees a JOIN users u ON u.id = a.user_id
+       WHERE a.planned_work_id = $1 ORDER BY u.full_name`,
+      [req.params.id]
+    );
+    res.json({ assignees: out.map(u => ({ id: u.id, fullName: u.full_name, role: u.role, avatarUrl: u.avatar_url || null })) });
+  } catch (err) {
+    console.error('PATCH /planner/:id/assignees error:', err.message);
+    res.status(500).json({ error: 'Could not update the assignees.' });
   }
 });
 

@@ -121,6 +121,10 @@ const schemas = {
     department:       Joi.string().valid('Production','Stores','Test and Inspection','PCB').optional().allow('', null),
   }).min(1),
 
+  plannerAssignees: Joi.object({
+    userIds: Joi.array().items(Joi.string().trim().max(64)).max(50).required(),
+  }),
+
   orderBookUpload: Joi.object({
     customer: Joi.string().trim().min(1).max(60).required(),
     rows: Joi.array().max(10000).items(Joi.object({
