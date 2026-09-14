@@ -3267,6 +3267,8 @@ body.planner-fs-open { overflow:hidden; }
 .wb-search { background:var(--bg3); border:1px solid var(--border2); color:var(--text); border-radius:var(--radius); padding:8px 12px; font-size:14px; font-family:var(--font-body); min-width:240px; }
 .wb-search::placeholder { color:var(--text3); }
 .wb-search:focus { outline:none; border-color:var(--accent); }
+.wb-search-clear { background:var(--bg3); border:1px solid var(--border2); color:var(--text2); border-radius:var(--radius); padding:7px 11px; font-size:13px; line-height:1; cursor:pointer; }
+.wb-search-clear:hover { color:var(--text); border-color:var(--accent); }
 
 /* Order book: available-to-build offering on the Planner page. */
 .ob-panel { border:1px solid var(--border); border-radius:var(--radius-lg); background:var(--bg2); padding:14px 16px; margin-bottom:16px; }

@@ -3970,9 +3970,19 @@ async function loadDeptWallboard(dept) {
   if (_wbIntervals[pageKey]) clearInterval(_wbIntervals[pageKey]);
   const _wbSlug = DEPT_SLUGS[dept] || 'prod';
   const _wbSearch = document.getElementById('wallboard-' + _wbSlug + '-search');
+  const _wbClear = document.getElementById('wallboard-' + _wbSlug + '-search-clear');
   if (_wbSearch && !_wbSearch._wired) {
     _wbSearch._wired = true;
-    _wbSearch.addEventListener('input', () => paintDeptWallboard(dept));
+    _wbSearch.addEventListener('input', () => {
+      if (_wbClear) _wbClear.hidden = !_wbSearch.value;
+      paintDeptWallboard(dept);
+    });
+    if (_wbClear) _wbClear.addEventListener('click', () => {
+      _wbSearch.value = '';
+      _wbClear.hidden = true;
+      _wbSearch.focus();
+      paintDeptWallboard(dept);
+    });
   }
   await refreshDeptWallboard(dept);
   _wbIntervals[pageKey] = setInterval(() => {
