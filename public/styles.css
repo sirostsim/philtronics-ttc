@@ -3263,6 +3263,11 @@ body.planner-fs-open { overflow:hidden; }
 .mywork-sub { color:var(--text2); font-size:13px; margin:0 0 12px; }
 .kanban-start-btn { flex:1; font-weight:700; }
 
+/* Wallboard header search box (item / operator / W/O filter). */
+.wb-search { background:var(--bg3); border:1px solid var(--border2); color:var(--text); border-radius:var(--radius); padding:8px 12px; font-size:14px; font-family:var(--font-body); min-width:240px; }
+.wb-search::placeholder { color:var(--text3); }
+.wb-search:focus { outline:none; border-color:var(--accent); }
+
 /* Order book: available-to-build offering on the Planner page. */
 .ob-panel { border:1px solid var(--border); border-radius:var(--radius-lg); background:var(--bg2); padding:14px 16px; margin-bottom:16px; }
 .ob-head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }

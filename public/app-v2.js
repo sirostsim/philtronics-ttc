@@ -3968,10 +3968,31 @@ document.addEventListener('visibilitychange', () => {
 async function loadDeptWallboard(dept) {
   const { pageKey } = deptIds(dept);
   if (_wbIntervals[pageKey]) clearInterval(_wbIntervals[pageKey]);
+  const _wbSlug = DEPT_SLUGS[dept] || 'prod';
+  const _wbSearch = document.getElementById('wallboard-' + _wbSlug + '-search');
+  if (_wbSearch && !_wbSearch._wired) {
+    _wbSearch._wired = true;
+    _wbSearch.addEventListener('input', () => paintDeptWallboard(dept));
+  }
   await refreshDeptWallboard(dept);
   _wbIntervals[pageKey] = setInterval(() => {
     if (document.visibilityState === 'visible') refreshDeptWallboard(dept);
   }, 300000);
+}
+
+// Per-board cache of the last fetched timers + who is online, so the header
+// search can re-filter instantly without re-hitting the server.
+const _wbCache = {};
+function wbSearchValue(slug) {
+  const inp = document.getElementById('wallboard-' + slug + '-search');
+  return inp ? inp.value.trim().toLowerCase() : '';
+}
+// Match a timer against the search query on item number, operator name or W/O
+// number (case-insensitive substring). Empty query matches everything.
+function wbTimerMatches(t, q) {
+  if (!q) return true;
+  const hay = ((t.itemNumber || '') + ' | ' + (t.operatorName || '') + ' | ' + (t.woNumber || '')).toLowerCase();
+  return hay.indexOf(q) !== -1;
 }
 
 async function refreshDeptWallboard(dept) {
@@ -3989,14 +4010,47 @@ async function refreshDeptWallboard(dept) {
       GET('/messages/online').catch(() => ({ online: [] })),
     ]);
     const onlineSet = new Set(onlineData.online || []);
-    if (countEl)   countEl.textContent  = timers.length + ' active job' + (timers.length !== 1 ? 's' : '');
     if (updatedEl) updatedEl.textContent = 'Updated ' + new Date().toLocaleTimeString('en-GB');
+    _wbCache[pageKey] = { timers, onlineSet };
+    paintDeptWallboard(dept);
+  } catch (err) {
     container.innerHTML = '';
+    container.appendChild(el('div', { className: 'wallboard-empty', textContent: 'Could not load active timers: ' + err.message }));
+  }
+}
 
-    if (!timers.length) {
+// Paint (or re-paint) a full wallboard from its cached timers, applying the
+// header search filter. Runs after each fetch and on every keystroke in the
+// search box, so filtering is instant and never hits the network.
+function paintDeptWallboard(dept) {
+  const { tilesId, countId, pageKey } = deptIds(dept);
+  const slug = DEPT_SLUGS[dept] || 'prod';
+  const container = document.getElementById(tilesId);
+  const countEl   = document.getElementById(countId);
+  if (!container) return;
+  const cache = _wbCache[pageKey];
+  if (!cache) return;
+  const all = cache.timers || [];
+  const onlineSet = cache.onlineSet || new Set();
+  const q = wbSearchValue(slug);
+  const timers = all.filter(t => wbTimerMatches(t, q));
+
+  if (countEl) {
+    const base = all.length + ' active job' + (all.length !== 1 ? 's' : '');
+    countEl.textContent = q ? ('Showing ' + timers.length + ' of ' + base) : base;
+  }
+  container.innerHTML = '';
+
+  if (!all.length) {
       container.appendChild(el('div', { className: 'wallboard-empty' },
-        el('div', { className: 'wallboard-empty-icon', textContent: '\u2713' }),
+        el('div', { className: 'wallboard-empty-icon', textContent: '✓' }),
         el('div', { className: 'wallboard-empty-text', textContent: 'No active jobs right now' })));
+      return;
+    }
+  if (!timers.length) {
+      container.appendChild(el('div', { className: 'wallboard-empty' },
+        el('div', { className: 'wallboard-empty-icon', textContent: '🔍' }),
+        el('div', { className: 'wallboard-empty-text', textContent: 'No active jobs match your search' })));
       return;
     }
 
@@ -4153,10 +4207,6 @@ async function refreshDeptWallboard(dept) {
     });
 
     startDeptWallboardTick(dept, pageKey);
-  } catch (err) {
-    container.innerHTML = '';
-    container.appendChild(el('div', { className: 'wallboard-empty', textContent: 'Could not load active timers: ' + err.message }));
-  }
 }
 
 function startDeptWallboardTick(dept, pageKey) {
