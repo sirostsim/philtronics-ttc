@@ -5520,9 +5520,9 @@ function parseMobPaste(text) {
     }
     dataLines = lines.slice(1);
   } else {
-    // Fixed MOB column order, 0-indexed: A0 D3 E4 F5 X23 Z25 AA26 AB27
-    idx = { custRef: 3, itemNumber: 4, description: 5, worksOrder: 23, commitmentValue: 25, quantity: 26, commitmentDate: 27 };
-    dataLines = lines;
+    // No recognisable header row: do NOT guess column positions -- MOB layouts and
+    // empty cells vary, and a wrong guess creates wrong jobs. Ask for the header.
+    return { rows: [], skipped: 0, noHeader: true };
   }
   const rows = []; let skipped = 0;
   for (const line of dataLines) {
@@ -5544,7 +5544,7 @@ function parseMobPaste(text) {
       commitmentValue: val,
     });
   }
-  return { rows, skipped };
+  return { rows, skipped, noHeader: false };
 }
 
 function renderMobPreview(wrap, preview) {
@@ -5577,7 +5577,7 @@ function renderMobPreview(wrap, preview) {
 // the server (dryRun) so the preview shows real durations and finish dates.
 function openMobImportModal() {
   const ta = el('textarea', { className: 'mob-paste', rows: '5',
-    placeholder: 'Paste rows copied from the MOB here. You can include the header row, or paste whole rows without it.' });
+    placeholder: 'Paste the MOB header row plus your chosen rows here.' });
   const previewBtn = el('button', { className: 'btn btn-sm', textContent: 'Preview' });
   const previewWrap = el('div', { className: 'mob-preview' });
   const info = el('div', { className: 'mob-count' });
@@ -5588,8 +5588,12 @@ function openMobImportModal() {
   previewBtn.addEventListener('click', async () => {
     err.textContent = ''; previewWrap.innerHTML = ''; info.textContent = ''; addBtn.disabled = true; lastPreview = [];
     const parsed = parseMobPaste(ta.value);
+    if (parsed.noHeader) {
+      err.textContent = 'Include the MOB header row in your copy: select the header row plus the row(s) you want, so the columns can be matched by name.';
+      return;
+    }
     if (!parsed.rows.length) {
-      err.textContent = 'No usable rows found. Copy whole rows from the MOB (item code, Commitment Qty and Commitment Date are required).';
+      err.textContent = 'No usable rows found. Each row needs an Item Code, a Commitment Qty and a Commitment Date.';
       return;
     }
     try {
@@ -5627,7 +5631,7 @@ function openMobImportModal() {
   });
 
   const body = el('div', {},
-    el('p', { className: 'mob-help', textContent: 'Select the row(s) you want in the MOB, copy them, and paste below. Each job is back-scheduled to finish on its Commitment Date; items with no target time land flagged for an estimate.' }),
+    el('p', { className: 'mob-help', textContent: 'Copy the MOB header row plus the row(s) you want, and paste below. Columns are matched by name. Each job is back-scheduled to finish on its Commitment Date; items with no target time land flagged for an estimate.' }),
     ta,
     el('div', { style: 'margin-top:8px' }, previewBtn),
     previewWrap, info, err);
