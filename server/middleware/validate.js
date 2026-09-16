@@ -125,6 +125,19 @@ const schemas = {
     userIds: Joi.array().items(Joi.string().trim().max(64)).max(50).required(),
   }),
 
+  plannerMobImport: Joi.object({
+    dryRun: Joi.boolean().default(false),
+    rows: Joi.array().max(500).min(1).required().items(Joi.object({
+      itemNumber:      Joi.string().trim().max(60).required(),
+      worksOrder:      Joi.string().trim().max(60).allow('', null),
+      custRef:         Joi.string().trim().max(60).allow('', null),
+      description:     Joi.string().trim().max(200).allow('', null),
+      quantity:        Joi.number().integer().min(1).max(100000).required(),
+      commitmentDate:  Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).required(),
+      commitmentValue: Joi.number().min(0).allow(null),
+    })),
+  }),
+
   orderBookUpload: Joi.object({
     customer: Joi.string().trim().min(1).max(60).required(),
     rows: Joi.array().max(10000).items(Joi.object({

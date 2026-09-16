@@ -4951,6 +4951,11 @@ function loadPlannerPage() {
     addBtn.hidden = !canPlanWrite();
     if (!addBtn._wired) { addBtn._wired = true; addBtn.addEventListener('click', () => openPlannerForm(null)); }
   }
+  const mobBtn = document.getElementById('btnAddFromMob');
+  if (mobBtn) {
+    mobBtn.hidden = !canPlanWrite();
+    if (!mobBtn._wired) { mobBtn._wired = true; mobBtn.addEventListener('click', openMobImportModal); }
+  }
   const resetBtn = document.getElementById('btnPlannerReset');
   if (resetBtn) {
     resetBtn.hidden = !canPlanWrite();
@@ -5466,6 +5471,168 @@ async function loadMyWorkPage() {
     board.innerHTML = '';
     board.appendChild(el('div', { className: 'error-msg', style: 'padding:16px', textContent: err.message }));
   }
+}
+
+// Parse a date pasted from the MOB: a UK d/m/y string (Excel's displayed value),
+// an already-ISO date, or a raw Excel serial number. Returns YYYY-MM-DD or null.
+function parseMobDate(v) {
+  v = String(v == null ? '' : v).trim();
+  if (!v) return null;
+  if (/^\d{5}$/.test(v)) {                       // Excel serial (1900 system)
+    const ms = Date.UTC(1899, 11, 30) + (+v) * 86400000;
+    return new Date(ms).toISOString().slice(0, 10);
+  }
+  let m = v.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);   // d/m/y
+  if (m) {
+    let d = m[1], mo = m[2], y = m[3];
+    if (y.length === 2) y = '20' + y;
+    const iso = y + '-' + String(mo).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+    return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : null;
+  }
+  m = v.match(/^(\d{4})-(\d{2})-(\d{2})/);       // ISO
+  return m ? m[0] : null;
+}
+
+// Parse rows copied out of the MOB (tab-separated). If the first line looks like
+// the MOB header it is mapped by column name (tolerant of partial selections);
+// otherwise the standard MOB column order is assumed. Only rows with an item,
+// a positive Commitment Qty and a Commitment Date are kept.
+function parseMobPaste(text) {
+  const lines = String(text || '').split(/\r?\n/).filter(l => l.trim() !== '');
+  if (!lines.length) return { rows: [], skipped: 0 };
+  const ALIASES = {
+    itemNumber:      ['item code', 'item', 'part number', 'partnumber'],
+    worksOrder:      ['wo', 'works order', 'w/o'],
+    custRef:         ['cust. ref', 'cust ref', 'purchasing document', 'customer ref'],
+    description:     ['item description', 'description', 'material description'],
+    quantity:        ['commitment qty', 'commitment quantity'],
+    commitmentDate:  ['commitment date'],
+    commitmentValue: ['commitment value'],
+  };
+  const first = lines[0].split('\t').map(c => c.trim().toLowerCase());
+  const isHeader = first.some(c => c === 'item code' || c === 'commitment qty' || c === 'commitment date');
+  let idx, dataLines;
+  if (isHeader) {
+    idx = {};
+    for (const key in ALIASES) {
+      const at = first.findIndex(c => ALIASES[key].indexOf(c) !== -1);
+      if (at >= 0) idx[key] = at;
+    }
+    dataLines = lines.slice(1);
+  } else {
+    // Fixed MOB column order, 0-indexed: A0 D3 E4 F5 X23 Z25 AA26 AB27
+    idx = { custRef: 3, itemNumber: 4, description: 5, worksOrder: 23, commitmentValue: 25, quantity: 26, commitmentDate: 27 };
+    dataLines = lines;
+  }
+  const rows = []; let skipped = 0;
+  for (const line of dataLines) {
+    const c = line.split('\t');
+    const get = k => (idx[k] != null && idx[k] < c.length) ? String(c[idx[k]]).trim() : '';
+    const item = get('itemNumber');
+    const qty  = parseInt(String(get('quantity')).replace(/[^0-9-]/g, ''), 10);
+    const date = parseMobDate(get('commitmentDate'));
+    if (!item || !(qty > 0) || !date) { skipped++; continue; }
+    const valRaw = get('commitmentValue').replace(/[^0-9.\-]/g, '');
+    const val = valRaw && !isNaN(+valRaw) ? +valRaw : null;
+    rows.push({
+      itemNumber: item.toUpperCase(),
+      worksOrder: get('worksOrder') || null,
+      custRef:    get('custRef') || null,
+      description: get('description') || null,
+      quantity: qty,
+      commitmentDate: date,
+      commitmentValue: val,
+    });
+  }
+  return { rows, skipped };
+}
+
+function renderMobPreview(wrap, preview) {
+  wrap.innerHTML = '';
+  const table = el('table', { className: 'mob-table' });
+  table.appendChild(el('thead', {}, el('tr', {},
+    el('th', { textContent: '' }), el('th', { textContent: 'Item' }), el('th', { textContent: 'WO' }),
+    el('th', { textContent: 'Qty' }), el('th', { textContent: 'Commit date' }), el('th', { textContent: 'Duration / status' }))));
+  const tb = el('tbody', {});
+  preview.forEach((p, i) => {
+    const cb = el('input', { type: 'checkbox' });
+    cb.checked = true; cb.setAttribute('data-idx', String(i));
+    const status = p.needsEstimate
+      ? el('span', { className: 'mob-flag', textContent: '⚠ needs estimate' })
+      : el('span', { textContent: fmtPlanMins(p.totalMinutes) + ' · finishes ' + plannerNiceDate(p.endDate) });
+    tb.appendChild(el('tr', {},
+      el('td', {}, cb),
+      el('td', {}, el('span', { className: 'mob-item', textContent: p.itemNumber })),
+      el('td', { textContent: p.worksOrder || '—' }),
+      el('td', { textContent: String(p.quantity) }),
+      el('td', { textContent: plannerNiceDate(p.commitmentDate) }),
+      el('td', {}, status)));
+  });
+  table.appendChild(tb);
+  wrap.appendChild(table);
+}
+
+// "Add from MOB": paste selected MOB rows, preview the suggested jobs, choose
+// which to add. Planner-write only. Back-scheduling / target lookup is done by
+// the server (dryRun) so the preview shows real durations and finish dates.
+function openMobImportModal() {
+  const ta = el('textarea', { className: 'mob-paste', rows: '5',
+    placeholder: 'Paste rows copied from the MOB here. You can include the header row, or paste whole rows without it.' });
+  const previewBtn = el('button', { className: 'btn btn-sm', textContent: 'Preview' });
+  const previewWrap = el('div', { className: 'mob-preview' });
+  const info = el('div', { className: 'mob-count' });
+  const err  = el('div', { className: 'error-msg', style: 'margin-top:8px' });
+  const addBtn = el('button', { className: 'btn btn-primary', textContent: 'Add to planner', disabled: true });
+  let lastPreview = [];
+
+  previewBtn.addEventListener('click', async () => {
+    err.textContent = ''; previewWrap.innerHTML = ''; info.textContent = ''; addBtn.disabled = true; lastPreview = [];
+    const parsed = parseMobPaste(ta.value);
+    if (!parsed.rows.length) {
+      err.textContent = 'No usable rows found. Copy whole rows from the MOB (item code, Commitment Qty and Commitment Date are required).';
+      return;
+    }
+    try {
+      const res = await POST('/planner/mob-import', { dryRun: true, rows: parsed.rows });
+      lastPreview = res.preview || [];
+      renderMobPreview(previewWrap, lastPreview);
+      const needEst = lastPreview.filter(p => p.needsEstimate).length;
+      info.textContent = lastPreview.length + ' row' + (lastPreview.length !== 1 ? 's' : '') + ' ready'
+        + (needEst ? ', ' + needEst + ' need an estimate' : '')
+        + (parsed.skipped ? ', ' + parsed.skipped + ' skipped (missing item/qty/date)' : '');
+      addBtn.disabled = !lastPreview.length;
+    } catch (e) { err.textContent = e.message; }
+  });
+
+  addBtn.addEventListener('click', async () => {
+    err.textContent = '';
+    const chosen = [];
+    previewWrap.querySelectorAll('input[type="checkbox"][data-idx]').forEach(c => {
+      if (c.checked) chosen.push(lastPreview[+c.getAttribute('data-idx')]);
+    });
+    if (!chosen.length) { err.textContent = 'Tick at least one row to add.'; return; }
+    const rows = chosen.map(p => ({
+      itemNumber: p.itemNumber, worksOrder: p.worksOrder, custRef: p.custRef,
+      description: p.description, quantity: p.quantity,
+      commitmentDate: p.commitmentDate, commitmentValue: p.commitmentValue,
+    }));
+    addBtn.disabled = true;
+    try {
+      const res = await POST('/planner/mob-import', { dryRun: false, rows });
+      const total = (res.added || 0) + (res.updated || 0);
+      toast('Added ' + (res.added || 0) + ', updated ' + (res.updated || 0) + ' planner job' + (total !== 1 ? 's' : ''), 'success');
+      closeModal();
+      renderPlanner();
+    } catch (e) { err.textContent = e.message; addBtn.disabled = false; }
+  });
+
+  const body = el('div', {},
+    el('p', { className: 'mob-help', textContent: 'Select the row(s) you want in the MOB, copy them, and paste below. Each job is back-scheduled to finish on its Commitment Date; items with no target time land flagged for an estimate.' }),
+    ta,
+    el('div', { style: 'margin-top:8px' }, previewBtn),
+    previewWrap, info, err);
+  openModal('Add from MOB', body,
+    [ el('button', { className: 'btn btn-ghost', textContent: 'Cancel', onclick: () => closeModal() }), addBtn ]);
 }
 
 // Drag a bar sideways to reschedule a planned job. Managers only (the server

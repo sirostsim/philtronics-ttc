@@ -101,7 +101,7 @@ operator -> supervisor -> manager -> administrator -> superuser
   img-src. NOTE: Chart.js from cdnjs is currently blocked by script-src (charts
   page may not load) — a known outstanding issue; fix is adding
   https://cdnjs.cloudflare.com to script-src.
-- Migrations are additive and run on boot. Latest migration number is 030
+- Migrations are additive and run on boot. Latest migration number is 031
   (016 settings, 017 timer_quantity_runs, 018 dev_requests, 019 user_avatars,
   020 planned_work, 021 customer_orders, 022 planned_work source_required_by,
   023 planned_work source_po_line, 024 planned_work ordered_qty,
@@ -109,7 +109,8 @@ operator -> supervisor -> manager -> administrator -> superuser
   026 order_book_item_upper, 027 pause_events,
   028 demand_snapshots — Push/Pull weekly snapshots of both KLA sheets,
   029 planned_work works_order — OUR internal works order, display-only,
-  030 planned_work_assignees — many-to-many operative assignment for My Work).
+  030 planned_work_assignees — many-to-many operative assignment for My Work,
+  031 planned_work commitment_value — GBP value for MOB-pasted planner jobs).
   008_add_pcb_department.sql is a deliberate no-op placeholder (SELECT 1).
 - Push/Pull (routes/push-pull.js, lib/xlsx-demand.js, page 'pushpull', manager+):
   archives each Tuesday's KLA order-book + priority-requirements upload as a

@@ -118,7 +118,7 @@ function formatRow(row, s, ordersByKey, valueByLineKey) {
     sourceRequiredBy: isoDate(row.source_required_by),
     currentRequiredBy,
     drift,
-    value:            computeValue(row, valueByLineKey),
+    value:            row.commitment_value != null ? Number(row.commitment_value) : computeValue(row, valueByLineKey),
     updatedAt:        row.updated_at,
   };
 }
@@ -373,6 +373,87 @@ router.patch('/:id/assignees', validate(schemas.plannerAssignees), async (req, r
   } catch (err) {
     console.error('PATCH /planner/:id/assignees error:', err.message);
     res.status(500).json({ error: 'Could not update the assignees.' });
+  }
+});
+
+// ── POST /api/planner/mob-import ── planner/superuser ─────────────────────────
+// Create suggested planner jobs from rows pasted out of the MOB spreadsheet.
+// Each row carries item code, our WO, customer PO ref, Commitment Qty and
+// Commitment Date; the job is back-scheduled to FINISH on the commitment date
+// using target-time x qty (jobs whose item has no target land unscheduled and
+// flagged needsEstimate). With dryRun:true nothing is written and a per-row
+// preview is returned; otherwise rows are upserted (matched on our WO).
+router.post('/mob-import', requirePlannerWrite, validate(schemas.plannerMobImport), async (req, res) => {
+  try {
+    const s = await settings.get();
+    const rows = req.body.rows;
+    const items = [...new Set(rows.map(r => String(r.itemNumber).trim().toUpperCase()))];
+    const targets = {};
+    if (items.length) {
+      const tt = await query('SELECT item_number, hours, minutes FROM target_times WHERE item_number = ANY($1)', [items]);
+      for (const t of tt) targets[t.item_number] = (t.hours || 0) * 60 + (t.minutes || 0);
+    }
+    const baseline = d => settings.productivityBaselineMinutes(s, d);
+    const preview = rows.map(r => {
+      const item = String(r.itemNumber).trim().toUpperCase();
+      const qty  = r.quantity;
+      const perItem = targets[item] != null ? targets[item] : null;
+      const hasTarget = perItem != null;
+      const total = hasTarget ? perItem * qty : null;
+      let startDate = r.commitmentDate, endDate = r.commitmentDate, workingDays = 0;
+      if (total != null && total > 0) {
+        const sspan = plannedStartDate(r.commitmentDate, total, baseline);
+        startDate = sspan.startDate;
+        const espan = plannedEndDate(startDate, total, baseline);
+        endDate = espan.endDate; workingDays = espan.workingDays;
+      }
+      return {
+        itemNumber: item,
+        worksOrder: r.worksOrder ? String(r.worksOrder).trim() : null,
+        custRef:    r.custRef ? String(r.custRef).trim() : null,
+        description: r.description || null,
+        quantity: qty,
+        commitmentDate: r.commitmentDate,
+        commitmentValue: r.commitmentValue != null ? r.commitmentValue : null,
+        hasTarget, totalMinutes: total, startDate, endDate, workingDays,
+        needsEstimate: !hasTarget,
+      };
+    });
+    if (req.body.dryRun) return res.json({ preview });
+
+    let added = 0, updated = 0;
+    for (const p of preview) {
+      const existing = p.worksOrder
+        ? await queryOne('SELECT id FROM planned_work WHERE works_order = $1', [p.worksOrder])
+        : null;
+      if (existing) {
+        await query(
+          `UPDATE planned_work
+             SET item_number=$1, wo_number=$2, start_date=$3, quantity=$4,
+                 source_required_by=$5, source_ordered_qty=$6, commitment_value=$7,
+                 updated_at=NOW(), updated_by=$8
+           WHERE id=$9`,
+          [p.itemNumber, p.custRef, p.startDate, p.quantity, p.commitmentDate, p.quantity,
+           p.commitmentValue, req.user.id, existing.id]
+        );
+        updated++;
+      } else {
+        const id = uuidv4();
+        await query(
+          `INSERT INTO planned_work
+             (id, item_number, wo_number, works_order, start_date, quantity, estimated_minutes, department,
+              source_required_by, source_po_line, source_ordered_qty, commitment_value, created_by, updated_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13)`,
+          [id, p.itemNumber, p.custRef, p.worksOrder, p.startDate, p.quantity, null, null,
+           p.commitmentDate, null, p.quantity, p.commitmentValue, req.user.id]
+        );
+        added++;
+      }
+    }
+    res.json({ added, updated });
+  } catch (err) {
+    console.error('POST /planner/mob-import error:', err.message);
+    res.status(500).json({ error: 'Could not import the MOB rows.' });
   }
 });
 
