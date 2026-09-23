@@ -4194,6 +4194,17 @@ function paintDeptWallboard(dept) {
           'aria-label': 'Send message to ' + t.operatorName,
           onclick: () => openSendMessageModal(t.operatorId, t.operatorName),
         }));
+        // Managers+ can cancel (discard) a stray timer from the board -- e.g. the
+        // operator went on leave with it running, or the job was finished by
+        // someone else. Discards the timer (no completed row), with an audited
+        // reason. Uses the existing /timers/:id/cancel endpoint.
+        if (hasRole('manager')) {
+          btnRow.appendChild(el('button', {
+            className: 'wb-cancel-btn', textContent: '\u2715 Cancel job',
+            'aria-label': 'Cancel the timer for ' + t.operatorName,
+            onclick: () => openWallboardCancelModal(t, dept),
+          }));
+        }
         tile.appendChild(btnRow);
       }
 
@@ -4217,6 +4228,38 @@ function paintDeptWallboard(dept) {
     });
 
     startDeptWallboardTick(dept, pageKey);
+}
+
+// Manager+ action from the Wall Board: cancel (discard) a running or paused timer
+// that has been left stray (operator on leave, job finished by someone else). A
+// reason is required and audited on the server. No completed row is written.
+function openWallboardCancelModal(t, dept) {
+  const reason = el('textarea', {
+    className: 'dev-comment-input', rows: '3',
+    placeholder: 'e.g. Operator on leave, job completed by A. Smith',
+    'aria-label': 'Reason for cancelling this timer',
+  });
+  const confirmBtn = el('button', { className: 'btn btn-sm dev-danger', textContent: 'Cancel job' });
+  confirmBtn.disabled = true;   // set via property: el() would apply a falsy boolean attr
+  reason.addEventListener('input', () => { confirmBtn.disabled = reason.value.trim() === ''; });
+  confirmBtn.addEventListener('click', async () => {
+    confirmBtn.disabled = true;
+    try {
+      await POST('/timers/' + t.id + '/cancel', { reason: reason.value.trim() });
+      toast('Cancelled ' + t.itemNumber + ' for ' + t.operatorName + '.', 'success');
+      closeModal();
+      await refreshDeptWallboard(dept);
+    } catch (err) { toast(err.message, 'error'); confirmBtn.disabled = false; }
+  });
+  const body = el('div', {},
+    el('div', { className: 'clear-warn', textContent: '⚠ This discards the running timer for ' + t.operatorName + ' (' + t.itemNumber + '). No completed time is recorded, and it cannot be undone.' }),
+    el('label', { className: 'dev-form-label', textContent: 'Reason (recorded in the audit log)' }),
+    reason,
+  );
+  openModal('Cancel running job', body, [
+    el('button', { className: 'btn btn-ghost', textContent: 'Close', onclick: () => closeModal() }),
+    confirmBtn,
+  ]);
 }
 
 function startDeptWallboardTick(dept, pageKey) {

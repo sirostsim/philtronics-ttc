@@ -2019,6 +2019,29 @@ button.topbar-brand:focus-visible {
   color: var(--accent);
 }
 
+/* Manager+ cancel (discard) a stray timer from the board. Destructive, so it
+   reads red on hover to set it apart from Pause/Message. */
+.wb-cancel-btn {
+  flex: 1;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  color: var(--text2);
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font-body);
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+  letter-spacing: .03em;
+}
+.wb-cancel-btn:hover {
+  background: rgba(239,68,68,.12);
+  border-color: var(--red);
+  color: #f87171;
+}
+.wb-cancel-btn:disabled { opacity: .5; cursor: not-allowed; }
+
 /* ─── Presence dot ───────────────────────────────────────────────────────────── */
 .wb-operator-row {
   display: flex;
