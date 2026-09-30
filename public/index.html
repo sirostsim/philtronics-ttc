@@ -360,6 +360,25 @@
   <!-- ── WALL BOARD ───────────────────────────────────────────────────────── -->
 
   <!-- ── WALL BOARD: Production ─────────────────────────────────────────── -->
+  <section id="page-all-wb" class="page" aria-label="Wall Board — All Departments" hidden>
+    <div class="page-content page-content-wide">
+      <div class="wallboard-header">
+        <div>
+          <h2 class="page-heading" style="margin-bottom:4px">Wall Board</h2>
+          <div class="dept-badge dept-all">All Departments</div>
+          <div id="wallboard-all-count" class="wallboard-subhead"></div>
+        </div>
+        <div class="wallboard-header-right">
+          <input id="wallboard-all-search" type="search" class="wb-search" placeholder="Search item, operator or W/O" aria-label="Filter all jobs" autocomplete="off">
+          <button id="wallboard-all-search-clear" class="wb-search-clear" type="button" aria-label="Clear search" hidden>&#10005;</button>
+          <div id="wallboard-all-updated" class="wallboard-updated"></div>
+          <button class="btn btn-ghost" onclick="refreshDeptWallboard('All Departments')" aria-label="Refresh">&#8635; Refresh</button>
+        </div>
+      </div>
+      <div id="wallboard-all-tiles" class="wallboard-tiles" role="list" aria-label="Active job timers — All Departments"></div>
+    </div>
+  </section>
+
   <section id="page-production-wb" class="page" aria-label="Wall Board — Production" hidden>
     <div class="page-content page-content-wide">
       <div class="wallboard-header">

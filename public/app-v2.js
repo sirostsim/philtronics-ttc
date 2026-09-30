@@ -187,7 +187,7 @@ document.getElementById('modal').addEventListener('click', e => {
    NAVIGATION
    ═══════════════════════════════════════════════════════════════════════════ */
 const DEPARTMENTS = ['Production', 'Stores', 'Test and Inspection', 'PCB'];
-const DEPT_SLUGS  = { 'Production': 'prod', 'Stores': 'stores', 'Test and Inspection': 'testinsp', 'PCB': 'pcb' };
+const DEPT_SLUGS  = { 'Production': 'prod', 'Stores': 'stores', 'Test and Inspection': 'testinsp', 'PCB': 'pcb', 'All Departments': 'all' };
 
 const PAGES = {
   home:           { id: 'pageHome',             icon: '🏠', label: 'Home',                    minRole: 'supervisor'  },
@@ -195,6 +195,7 @@ const PAGES = {
   mywork:         { id: 'pageMyWork',           icon: '🗂️', label: 'My Work',                minRole: 'operator'    },
   history:        { id: 'pageHistory',          icon: '🕘', label: 'History',                 minRole: 'operator'    },
   // Department wallboards — shown/hidden based on role + department
+  'wb-all':    { id: 'page-all-wb',          label: '📋 Wall Board — All Departments', minRole: 'manager',    dept: 'All Departments'     },
   'wb-prod':   { id: 'page-production-wb',   label: '📋 Wall Board — Production',    minRole: 'supervisor', dept: 'Production'          },
   'wb-stores': { id: 'page-stores-wb',        label: '📋 Wall Board — Stores',        minRole: 'supervisor', dept: 'Stores'              },
   'wb-testinsp':{ id: 'page-testinsp-wb',     label: '📋 Wall Board — Test & Insp',   minRole: 'supervisor', dept: 'Test and Inspection' },
@@ -4014,7 +4015,7 @@ async function refreshDeptWallboard(dept) {
   if (!container) return;
 
   try {
-    const deptParam = hasRole('manager') ? `&department=${encodeURIComponent(dept)}` : '';
+    const deptParam = (hasRole('manager') && dept !== 'All Departments') ? `&department=${encodeURIComponent(dept)}` : '';
     const [timers, onlineData] = await Promise.all([
       GET(`/timers?status=active&limit=200${deptParam}`),
       GET('/messages/online').catch(() => ({ online: [] })),
@@ -4035,6 +4036,7 @@ async function refreshDeptWallboard(dept) {
 function paintDeptWallboard(dept) {
   const { tilesId, countId, pageKey } = deptIds(dept);
   const slug = DEPT_SLUGS[dept] || 'prod';
+  const showDept = dept === 'All Departments';
   const container = document.getElementById(tilesId);
   const countEl   = document.getElementById(countId);
   if (!container) return;
@@ -4131,6 +4133,7 @@ function paintDeptWallboard(dept) {
       }
 
       tile.appendChild(el('div', { className: 'wb-item', textContent: t.itemNumber }));
+      if (showDept && t.department) tile.appendChild(el('div', { className: 'wb-dept dept-badge dept-' + (DEPT_SLUGS[t.department] || 'prod'), textContent: t.department }));
       // Rework badge — shown below item number on rework tiles
       if (isRework) {
         const rwBadge = el('div', { className: 'wb-rework-badge', textContent: '\uD83D\uDD04 RE-WORK' });
@@ -4316,7 +4319,7 @@ async function refreshDeptWallboardCompact(dept) {
   const updatedEl = document.getElementById(updatedId);
   if (!container) return;
   try {
-    const deptParam = hasRole('manager') ? `&department=${encodeURIComponent(dept)}` : '';
+    const deptParam = (hasRole('manager') && dept !== 'All Departments') ? `&department=${encodeURIComponent(dept)}` : '';
     const [timers, onlineData] = await Promise.all([
       GET(`/timers?status=active&limit=200${deptParam}`),
       GET('/messages/online').catch(() => ({ online: [] })),
