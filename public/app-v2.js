@@ -196,6 +196,7 @@ const PAGES = {
   history:        { id: 'pageHistory',          icon: '🕘', label: 'History',                 minRole: 'operator'    },
   // Department wallboards — shown/hidden based on role + department
   'wb-all':    { id: 'page-all-wb',          label: '📋 Wall Board — All Departments', minRole: 'manager',    dept: 'All Departments'     },
+  'wbc-all':   { id: 'page-all-wbc',         label: '📺 Compact — All Departments',  minRole: 'manager',    dept: 'All Departments'     },
   'wb-prod':   { id: 'page-production-wb',   label: '📋 Wall Board — Production',    minRole: 'supervisor', dept: 'Production'          },
   'wb-stores': { id: 'page-stores-wb',        label: '📋 Wall Board — Stores',        minRole: 'supervisor', dept: 'Stores'              },
   'wb-testinsp':{ id: 'page-testinsp-wb',     label: '📋 Wall Board — Test & Insp',   minRole: 'supervisor', dept: 'Test and Inspection' },
@@ -4314,6 +4315,7 @@ async function loadDeptWallboardCompact(dept) {
 
 async function refreshDeptWallboardCompact(dept) {
   const { tilesId, countId, updatedId, pageKey } = deptCIds(dept);
+  const showDept = dept === 'All Departments';
   const container = document.getElementById(tilesId);
   const countEl   = document.getElementById(countId);
   const updatedEl = document.getElementById(updatedId);
@@ -4380,6 +4382,7 @@ async function refreshDeptWallboardCompact(dept) {
       opRow.appendChild(el('span', { textContent: t.operatorName }));
       tile.appendChild(opRow);
       tile.appendChild(el('div', { className: 'wbc-item', textContent: t.itemNumber }));
+      if (showDept && t.department) tile.appendChild(el('div', { className: 'wbc-dept dept-badge dept-' + (DEPT_SLUGS[t.department] || 'prod'), textContent: t.department }));
       if (t.isPaused)                      tile.appendChild(el('div', { className: 'wbc-paused-tag', textContent: '\u23f8' }));
       if (t.handRaised)                    tile.appendChild(el('div', { className: 'wbc-hand-tag',   textContent: '\u270b' }));
       if (t.timerCategory === 'rework')    tile.appendChild(el('div', { className: 'wbc-rework-tag', textContent: '\uD83D\uDD04' }));

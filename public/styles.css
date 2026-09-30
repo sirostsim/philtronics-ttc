@@ -2683,6 +2683,7 @@ button.topbar-brand:focus-visible {
 .dept-pcb       { background: rgba(236,110,36,.15);  color: #fb923c; border: 1px solid rgba(236,110,36,.3); }
 .dept-all       { background: rgba(240,180,41,.15);  color: #f0b429; border: 1px solid rgba(240,180,41,.3); }
 .wb-dept        { margin-top: 4px; }
+.wbc-dept       { margin-top: 3px; }
 
 /* ─── Collapsible nav group ─────────────────────────────────────────────── */
 .nav-group-header {
