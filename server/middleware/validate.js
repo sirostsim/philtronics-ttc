@@ -38,10 +38,10 @@ const itemNumberSchema = Joi.string()
   .trim()
   .min(1)
   .max(40)
-  .pattern(/^[A-Za-z0-9\-_]+$/)
+  .pattern(/^[A-Za-z0-9\-_\/]+$/)
   .required()
   .messages({
-    'string.pattern.base': 'Item Number may only contain letters, numbers, hyphens and underscores.',
+    'string.pattern.base': 'Item Number may only contain letters, numbers, hyphens, underscores and slashes.',
   });
 
 const schemas = {

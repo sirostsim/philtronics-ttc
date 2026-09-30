@@ -849,8 +849,8 @@ document.getElementById('btnStart').addEventListener('click', async () => {
     document.getElementById('itemNumberInput').focus();
     return;
   }
-  if (!/^[A-Za-z0-9\-_]{1,40}$/.test(itemNumber)) {
-    setError('startError', 'Item Number may only contain letters, numbers, hyphens and underscores (max 40).');
+  if (!/^[A-Za-z0-9\-_\/]{1,40}$/.test(itemNumber)) {
+    setError('startError', 'Item Number may only contain letters, numbers, hyphens, underscores and slashes (max 40).');
     return;
   }
 
@@ -2725,7 +2725,7 @@ const scanner = (() => {
 
           if (targetMode === 'item') {
             // Item number: strict alphanumeric + hyphen/underscore, max 40
-            if (/^[A-Za-z0-9\-_]{1,40}$/.test(text)) {
+            if (/^[A-Za-z0-9\-_\/]{1,40}$/.test(text)) {
               onScanSuccess(text);
             } else {
               setStatus(`Read "${text}" — not a valid item number. Try again.`, 'error');

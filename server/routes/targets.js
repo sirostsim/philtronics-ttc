@@ -54,7 +54,7 @@ router.post('/', async (req, res) => {
     if (!itemNumber || typeof itemNumber !== 'string') {
       return res.status(400).json({ error: 'Item Number is required.' });
     }
-    if (!/^[A-Za-z0-9\-_]{1,40}$/.test(itemNumber.trim())) {
+    if (!/^[A-Za-z0-9\-_\/]{1,40}$/.test(itemNumber.trim())) {
       return res.status(400).json({ error: 'Item Number contains invalid characters.' });
     }
     const h = parseInt(hours, 10);
