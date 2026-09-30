@@ -5,11 +5,13 @@
 'use strict';
 
 require('dotenv').config();
-const { pool } = require('../db');
+const { pool, waitForConnection } = require('../db');
 const fs   = require('fs');
 const path = require('path');
 
 async function runMigrations() {
+  // Ride out a transient database blip at boot instead of crashing the deploy.
+  await waitForConnection();
   const client = await pool.connect();
   try {
     // Ensure migrations table exists first

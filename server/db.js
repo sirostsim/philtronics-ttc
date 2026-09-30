@@ -62,4 +62,29 @@ async function getClient() {
   return pool.connect();
 }
 
-module.exports = { query, queryOne, getClient, pool };
+/**
+ * waitForConnection() -- wait for Postgres to accept connections, retrying with
+ * exponential backoff. Called at boot (before migrations/seed) so a transient
+ * database blip does not crash the process and fail the Railway healthcheck.
+ * Throws once the attempts are exhausted so a genuine outage still surfaces.
+ */
+async function waitForConnection({ retries = 10, baseDelayMs = 1000, maxDelayMs = 5000 } = {}) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const client = await pool.connect();
+      try { await client.query('SELECT 1'); } finally { client.release(); }
+      if (attempt > 1) console.log(`Database reachable after ${attempt} attempt(s).`);
+      return;
+    } catch (err) {
+      if (attempt >= retries) {
+        console.error(`Database not reachable after ${attempt} attempt(s): ${err.message}`);
+        throw err;
+      }
+      const delay = Math.min(maxDelayMs, baseDelayMs * Math.pow(2, attempt - 1));
+      console.warn(`Database not ready (attempt ${attempt}/${retries}): ${err.message}. Retrying in ${delay}ms...`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+}
+
+module.exports = { query, queryOne, getClient, pool, waitForConnection };

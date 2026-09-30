@@ -9,7 +9,7 @@ dockerfilePath = "Dockerfile"
 startCommand = "sh -c 'node seed.js && node server.js'"
 
 healthcheckPath = "/"
-healthcheckTimeout = 30
+healthcheckTimeout = 120
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
 
