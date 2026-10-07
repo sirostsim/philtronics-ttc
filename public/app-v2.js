@@ -3317,7 +3317,15 @@ async function openPauseReasonPicker() {
       const go     = el('button', { className: 'btn btn-primary btn-sm', textContent: 'Pause' });
       go.disabled = true;
       input.addEventListener('input', () => { go.disabled = input.value.trim().length === 0; });
-      input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && input.value.trim()) { e.preventDefault(); go.click(); } });
+      // Enter submits the pause directly (not via the button, whose disabled state
+      // can lag on some tablet keyboards) and is swallowed so it can never fall
+      // through and close the modal without pausing.
+      input.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault(); e.stopPropagation();
+        const note = input.value.trim();
+        if (note) submitPause(r, note);
+      });
       go.addEventListener('click', () => submitPause(r, input.value.trim()));
       editor.appendChild(input); editor.appendChild(go);
       row.addEventListener('click', () => {
