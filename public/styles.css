@@ -3509,3 +3509,5 @@ body.planner-fs-open { overflow:hidden; }
 .rfq-import-stats { display:flex; gap:18px; flex-wrap:wrap; font-size:14px; color:var(--text2); }
 .rfq-import-stats b { color:var(--text); font-size:20px; font-variant-numeric:tabular-nums; margin-right:4px; }
 .rfq-import-warn { background:rgba(240,180,41,.1); border:1px solid rgba(240,180,41,.3); color:var(--accent); border-radius:8px; padding:10px 12px; font-size:12.5px; display:flex; flex-direction:column; gap:4px; }
+.rfq-empty { border:1px dashed var(--border); border-radius:14px; padding:40px 20px; text-align:center; color:var(--text2); font-size:14px; }
+.rfq-empty-title { font-size:17px; font-weight:700; color:var(--text); margin-bottom:8px; }
