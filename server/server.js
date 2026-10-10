@@ -75,6 +75,8 @@ app.use('/api/planner',  require('./routes/planner'));
 app.use('/api/my-work',  require('./routes/my-work'));
 app.use('/api/order-book', require('./routes/order-book'));
 app.use('/api/push-pull', require('./routes/push-pull'));
+app.use('/api/customers', require('./routes/customers'));
+app.use('/api/rfq',       require('./routes/rfq'));
 app.use('/api/time-checks', require('./routes/timechecks'));
 app.use('/api/availability', require('./routes/availability'));
 app.use('/api/admin/reasons', require('./routes/admin-reasons'));
