@@ -515,14 +515,6 @@
     <div class="page-content">
       <h2 class="page-heading">Dashboard</h2>
 
-      <div class="dash-tabs" role="tablist" aria-label="Dashboard sections">
-        <button id="tabDashPerf" class="dash-tab active" role="tab" aria-selected="true">Performance</button>
-        <button id="tabDashRfq"  class="dash-tab" role="tab" aria-selected="false">&#129534; RFQ / Quotes</button>
-      </div>
-
-      <div id="dashRfqView" hidden><div id="rfqModule"></div></div>
-
-      <div id="dashPerfView">
       <div class="stat-cards" id="statCards" role="region" aria-label="Summary statistics"></div>
 
       <div class="filter-bar">
@@ -561,7 +553,14 @@
         <p class="section-desc">Set a target completion time per item number. Targets are shown on the Wall Board and timer cards.</p>
         <div id="targetTimesList" class="target-times-list"></div>
       </div>
-      </div><!-- /dashPerfView -->
+    </div>
+  </section>
+
+  <!-- ── RFQ / QUOTES (CRM) ───────────────────────────────────────────────── -->
+  <section id="pageRfq" class="page" aria-label="RFQ / Quotes" hidden>
+    <div class="page-content">
+      <h2 class="page-heading">RFQ / Quotes</h2>
+      <div id="rfqModule"></div>
     </div>
   </section>
 

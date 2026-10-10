@@ -208,6 +208,7 @@ const PAGES = {
   planner:        { id: 'pagePlanner',          icon: '📅', label: 'Planner',                 minRole: 'supervisor'  },
   pushpull:       { id: 'pagePushPull',         icon: '🔀', label: 'Push/Pull',               minRole: 'manager'     },
   dashboard:      { id: 'pageDashboard',        icon: '📊', label: 'Dashboard',               minRole: 'manager'     },
+  rfq:            { id: 'pageRfq',               icon: '🧾', label: 'RFQ / Quotes',            minRole: 'manager'     },
   targets:        { id: 'pageTargets',          icon: '🎯', label: 'Target Times',            minRole: 'manager'     },
   reports:        { id: 'pageReports',          icon: '📄', label: 'Reports',                 minRole: 'manager'     },
   charts:         { id: 'pageCharts',           icon: '📈', label: 'Charts',                  minRole: 'manager'     },
@@ -229,7 +230,7 @@ function buildNav() {
   list.innerHTML = '';
 
   // Non-wallboard pages — render as normal nav items
-  const topPages    = ['home','timer','mywork','history','planner','pushpull','dashboard','targets','reports','charts','devrequests','admin'];
+  const topPages    = ['home','timer','mywork','history','planner','pushpull','dashboard','rfq','targets','reports','charts','devrequests','admin'];
   const wbPageKeys  = Object.keys(PAGES).filter(k => k.startsWith('wb-') || k.startsWith('wbc-'));
   const visibleWbs  = wbPageKeys.filter(k => canSeePage(PAGES[k]));
 
@@ -324,6 +325,7 @@ function navigateTo(page) {
   else if (page === 'history')   loadHistoryPage();
   else if (page === 'mywork')    loadMyWorkPage();
   else if (page === 'dashboard') loadDashboard();
+  else if (page === 'rfq')       loadRfqPage();
   else if (page === 'planner')   loadPlannerPage();
   else if (page === 'pushpull')  loadPushPullPage();
   else if (page === 'targets')   loadTargetsPage();
@@ -1211,7 +1213,6 @@ async function searchHistory() {
    DASHBOARD
    ═══════════════════════════════════════════════════════════════════════════ */
 async function loadDashboard() {
-  wireDashTabs();
   try {
     const stats = await GET('/export/stats');
     renderStatCards(stats);
@@ -1222,25 +1223,8 @@ async function loadDashboard() {
   loadTargetTimes();
 }
 
-// Dashboard sub-navigation: Performance (the existing view) and RFQ / Quotes
-// (the CRM module). RFQ is lazy-loaded on first open.
-function wireDashTabs() {
-  const tP = document.getElementById('tabDashPerf');
-  const tR = document.getElementById('tabDashRfq');
-  if (!tP || !tR || tP._wired) return;
-  tP._wired = true;
-  const perf = document.getElementById('dashPerfView');
-  const rfq  = document.getElementById('dashRfqView');
-  const show = which => {
-    const isRfq = which === 'rfq';
-    perf.hidden = isRfq; rfq.hidden = !isRfq;
-    tP.classList.toggle('active', !isRfq); tP.setAttribute('aria-selected', String(!isRfq));
-    tR.classList.toggle('active', isRfq);  tR.setAttribute('aria-selected', String(isRfq));
-    if (isRfq && !_rfq.loaded) { _rfq.loaded = true; loadRfqModule(); }
-  };
-  tP.addEventListener('click', () => show('perf'));
-  tR.addEventListener('click', () => show('rfq'));
-}
+// RFQ / Quotes is its own top-level page; the module renders into #rfqModule.
+function loadRfqPage() { loadRfqModule(); }
 
 document.getElementById('btnDashSearch').addEventListener('click', async () => {
   const from     = document.getElementById('dashFrom').value;
@@ -6568,7 +6552,14 @@ async function rfqRenderList() {
   try {
     const rows = await GET('/rfq' + (qs.toString() ? '?' + qs : ''));
     wrap.innerHTML = '';
-    if (!rows.length) { wrap.appendChild(el('div', { className: 'empty-state', style: 'padding:24px', textContent: 'No RFQs found.' })); return; }
+    if (!rows.length) {
+      const hasFilter = _rfq.filters.status || _rfq.filters.customer || _rfq.filters.priority || _rfq.filters.q;
+      if (hasFilter) wrap.appendChild(el('div', { className: 'empty-state', style: 'padding:24px', textContent: 'No RFQs match these filters.' }));
+      else wrap.appendChild(el('div', { className: 'rfq-empty' },
+        el('div', { className: 'rfq-empty-title', textContent: 'No RFQs yet' }),
+        el('div', { textContent: 'Click ⬆ Import to load the SharePoint QuoteActions export, or + New RFQ to add one by hand.' })));
+      return;
+    }
     const tbl = el('table', { className: 'dash-table rfq-table' });
     tbl.appendChild(el('thead', {}, el('tr', {}, ...['Ref', 'Customer', 'Part', 'Status', 'Pri', 'Required', 'Quoted', 'Owner'].map(h => el('th', { textContent: h })))));
     const tb = el('tbody', {});
