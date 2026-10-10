@@ -101,7 +101,7 @@ operator -> supervisor -> manager -> administrator -> superuser
   img-src. NOTE: Chart.js from cdnjs is currently blocked by script-src (charts
   page may not load) — a known outstanding issue; fix is adding
   https://cdnjs.cloudflare.com to script-src.
-- Migrations are additive and run on boot. Latest migration number is 031
+- Migrations are additive and run on boot. Latest migration number is 033
   (016 settings, 017 timer_quantity_runs, 018 dev_requests, 019 user_avatars,
   020 planned_work, 021 customer_orders, 022 planned_work source_required_by,
   023 planned_work source_po_line, 024 planned_work ordered_qty,
@@ -110,8 +110,18 @@ operator -> supervisor -> manager -> administrator -> superuser
   028 demand_snapshots — Push/Pull weekly snapshots of both KLA sheets,
   029 planned_work works_order — OUR internal works order, display-only,
   030 planned_work_assignees — many-to-many operative assignment for My Work,
-  031 planned_work commitment_value — GBP value for MOB-pasted planner jobs).
+  031 planned_work commitment_value — GBP value for MOB-pasted planner jobs,
+  032 crm_customers - CRM/RFQ customers + customer_aliases,
+  033 crm_rfqs - CRM/RFQ rfqs + rfq_assignees + rfq_events + rfq_attachments).
   008_add_pcb_department.sql is a deliberate no-op placeholder (SELECT 1).
+- CRM / RFQ module (Phase 1, see docs/crm-rfq-spec.md + docs/crm-rfq-phase1-plan.md):
+  internal Request-For-Quote management replacing the SharePoint "QuoteActions"
+  list. Multi-customer, four-status workflow (open / awaiting_response /
+  completed / declined), an activity feed (rfq_events, internal vs customer
+  visibility), build/inspection/test time in MINUTES, quoted value + quote ref
+  (pricing stays in Sage). Manager+, surfaced within the Dashboard. Later phases:
+  quote PDF + email, then an external customer portal with a hard internal/
+  external split. Migrations 032-033 are the data layer (this PR).
 - Push/Pull (routes/push-pull.js, lib/xlsx-demand.js, page 'pushpull', manager+):
   archives each Tuesday's KLA order-book + priority-requirements upload as a
   snapshot and reports the week-over-week demand push/pull. .xlsx is parsed
