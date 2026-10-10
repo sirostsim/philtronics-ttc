@@ -162,6 +162,75 @@ const schemas = {
     orderBookB64: Joi.string().base64().max(16000000).required(),
     priorityB64:  Joi.string().base64().max(16000000).required(),
   }),
+
+  // ── CRM / RFQ ───────────────────────────────────────────────────────────────
+  // contactEmail is a loose string, not Joi.email(): the historical data (and a
+  // phoned-in request) may carry a name or a messy value, not a clean address.
+  customerCreate: Joi.object({
+    name:  Joi.string().trim().min(1).max(120).required(),
+    code:  Joi.string().trim().max(40).allow('', null),
+    notes: Joi.string().trim().max(1000).allow('', null),
+  }),
+
+  rfqCreate: Joi.object({
+    customerId:             Joi.string().trim().max(64).required(),
+    partNumber:             Joi.string().trim().max(100).allow('', null),
+    partName:               Joi.string().trim().max(200).allow('', null),
+    revision:               Joi.string().trim().max(40).allow('', null),
+    coNumber:               Joi.string().trim().max(40).allow('', null),
+    quoteType:              Joi.string().valid('new', 'up_rev').allow(null),
+    priority:               Joi.string().valid('A', 'B', 'C').allow(null),
+    dateRequiredBy:         Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).allow(null),
+    freeIssue:              Joi.boolean().allow(null),
+    potentialUnitsAnnual:   Joi.number().integer().min(0).allow(null),
+    potentialRevenueAnnual: Joi.number().min(0).allow(null),
+    requestComments:        Joi.string().trim().max(4000).allow('', null),
+    contactEmail:           Joi.string().trim().max(200).allow('', null),
+    buildMinutes:           Joi.number().integer().min(0).max(100000).allow(null),
+    inspectionMinutes:      Joi.number().integer().min(0).max(100000).allow(null),
+    testMinutes:            Joi.number().integer().min(0).max(100000).allow(null),
+    quotedValue:            Joi.number().min(0).allow(null),
+    quoteRef:               Joi.string().trim().max(60).allow('', null),
+    quotedAt:               Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).allow(null),
+    status:                 Joi.string().valid('open', 'awaiting_response', 'completed', 'declined').default('open'),
+    assignees:              Joi.array().max(20).items(Joi.object({
+                              userId: Joi.string().trim().max(64).allow(null),
+                              name:   Joi.string().trim().max(120).allow('', null),
+                            })).default([]),
+  }),
+
+  rfqUpdate: Joi.object({
+    customerId:             Joi.string().trim().max(64),
+    partNumber:             Joi.string().trim().max(100).allow('', null),
+    partName:               Joi.string().trim().max(200).allow('', null),
+    revision:               Joi.string().trim().max(40).allow('', null),
+    coNumber:               Joi.string().trim().max(40).allow('', null),
+    quoteType:              Joi.string().valid('new', 'up_rev').allow(null),
+    priority:               Joi.string().valid('A', 'B', 'C').allow(null),
+    dateRequiredBy:         Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).allow(null),
+    freeIssue:              Joi.boolean().allow(null),
+    potentialUnitsAnnual:   Joi.number().integer().min(0).allow(null),
+    potentialRevenueAnnual: Joi.number().min(0).allow(null),
+    requestComments:        Joi.string().trim().max(4000).allow('', null),
+    contactEmail:           Joi.string().trim().max(200).allow('', null),
+    buildMinutes:           Joi.number().integer().min(0).max(100000).allow(null),
+    inspectionMinutes:      Joi.number().integer().min(0).max(100000).allow(null),
+    testMinutes:            Joi.number().integer().min(0).max(100000).allow(null),
+    quotedValue:            Joi.number().min(0).allow(null),
+    quoteRef:               Joi.string().trim().max(60).allow('', null),
+    quotedAt:               Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).allow(null),
+    status:                 Joi.string().valid('open', 'awaiting_response', 'completed', 'declined'),
+    assignees:              Joi.array().max(20).items(Joi.object({
+                              userId: Joi.string().trim().max(64).allow(null),
+                              name:   Joi.string().trim().max(120).allow('', null),
+                            })),
+  }).min(1),
+
+  rfqEvent: Joi.object({
+    type:       Joi.string().valid('comment', 'status_change', 'assignment', 'quote_issued', 'customer_message', 'other').default('comment'),
+    body:       Joi.string().trim().max(4000).allow('', null),
+    visibility: Joi.string().valid('internal', 'customer').default('internal'),
+  }),
 };
 
 module.exports = { validate, schemas };
