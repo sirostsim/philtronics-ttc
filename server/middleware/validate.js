@@ -231,6 +231,13 @@ const schemas = {
     body:       Joi.string().trim().max(4000).allow('', null),
     visibility: Joi.string().valid('internal', 'customer').default('internal'),
   }),
+
+  // RFQ import: the SharePoint QuoteActions export as CSV text or an .xlsx base64.
+  rfqImport: Joi.object({
+    csvText: Joi.string().max(16000000),
+    xlsxB64: Joi.string().base64().max(16000000),
+    dryRun:  Joi.boolean().default(true),
+  }).or('csvText', 'xlsxB64'),
 };
 
 module.exports = { validate, schemas };

@@ -19,6 +19,7 @@ const PORT = process.env.PORT || 3000;
 app.use('/api/avatars', express.json({ limit: '6mb' }));
 app.use('/api/order-book', express.json({ limit: '4mb' })); // full order-book upload can exceed 64kb
 app.use('/api/push-pull', express.json({ limit: '12mb' })); // two base64 .xlsx files in one POST
+app.use('/api/rfq/import', express.json({ limit: '16mb' })); // RFQ import: CSV text or base64 .xlsx
 app.use(express.json({ limit: '64kb' }));
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());

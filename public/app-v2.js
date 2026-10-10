@@ -1211,6 +1211,7 @@ async function searchHistory() {
    DASHBOARD
    ═══════════════════════════════════════════════════════════════════════════ */
 async function loadDashboard() {
+  wireDashTabs();
   try {
     const stats = await GET('/export/stats');
     renderStatCards(stats);
@@ -1219,6 +1220,26 @@ async function loadDashboard() {
     document.getElementById('dashTable').textContent = err.message;
   }
   loadTargetTimes();
+}
+
+// Dashboard sub-navigation: Performance (the existing view) and RFQ / Quotes
+// (the CRM module). RFQ is lazy-loaded on first open.
+function wireDashTabs() {
+  const tP = document.getElementById('tabDashPerf');
+  const tR = document.getElementById('tabDashRfq');
+  if (!tP || !tR || tP._wired) return;
+  tP._wired = true;
+  const perf = document.getElementById('dashPerfView');
+  const rfq  = document.getElementById('dashRfqView');
+  const show = which => {
+    const isRfq = which === 'rfq';
+    perf.hidden = isRfq; rfq.hidden = !isRfq;
+    tP.classList.toggle('active', !isRfq); tP.setAttribute('aria-selected', String(!isRfq));
+    tR.classList.toggle('active', isRfq);  tR.setAttribute('aria-selected', String(isRfq));
+    if (isRfq && !_rfq.loaded) { _rfq.loaded = true; loadRfqModule(); }
+  };
+  tP.addEventListener('click', () => show('perf'));
+  tR.addEventListener('click', () => show('rfq'));
 }
 
 document.getElementById('btnDashSearch').addEventListener('click', async () => {
@@ -6499,6 +6520,204 @@ function parseOrderBookText(text) {
     });
   }
   return { rows, skippedBlank, dateFormat: dayFirst ? 'DD/MM/YYYY' : 'MM/DD/YYYY' };
+}
+
+// ── RFQ / QUOTES MODULE (CRM, inside the Dashboard) ───────────────────────────
+const _rfq = { loaded: false, customers: [], filters: {} };
+const RFQ_STATUSES = [['open', 'Open'], ['awaiting_response', 'Awaiting Response'], ['completed', 'Completed'], ['declined', 'Declined']];
+const RFQ_STATUS_LABEL = Object.fromEntries(RFQ_STATUSES);
+function rfqMoney(v) { return v == null ? '' : '£' + Number(v).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function rfqMins(m) { if (m == null) return ''; const h = Math.floor(m / 60), mm = m % 60; return h ? (mm ? h + 'h ' + mm + 'm' : h + 'h') : mm + 'm'; }
+function rfqDate(iso) { if (!iso) return ''; const p = String(iso).slice(0, 10).split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : String(iso); }
+function rfqStatusChip(s) { return el('span', { className: 'rfq-chip rfq-' + s, textContent: RFQ_STATUS_LABEL[s] || s }); }
+
+async function loadRfqModule() {
+  const root = document.getElementById('rfqModule'); if (!root) return;
+  root.innerHTML = ''; root.appendChild(el('div', { className: 'empty-state', style: 'padding:20px', textContent: 'Loading…' }));
+  try { _rfq.customers = await GET('/customers'); } catch (_) { _rfq.customers = []; }
+  rfqRenderList();
+}
+
+function rfqToolbar() {
+  const bar = el('div', { className: 'rfq-toolbar' });
+  const statusSel = el('select', { className: 'rfq-filter', onchange: e => { _rfq.filters.status = e.target.value; rfqRenderList(); } },
+    el('option', { value: '', textContent: 'All statuses' }), ...RFQ_STATUSES.map(([v, l]) => el('option', { value: v, textContent: l })));
+  statusSel.value = _rfq.filters.status || '';
+  const custSel = el('select', { className: 'rfq-filter', onchange: e => { _rfq.filters.customer = e.target.value; rfqRenderList(); } },
+    el('option', { value: '', textContent: 'All customers' }), ..._rfq.customers.map(c => el('option', { value: c.id, textContent: c.name })));
+  custSel.value = _rfq.filters.customer || '';
+  const prioSel = el('select', { className: 'rfq-filter', onchange: e => { _rfq.filters.priority = e.target.value; rfqRenderList(); } },
+    el('option', { value: '', textContent: 'All priorities' }), ...['A', 'B', 'C'].map(p => el('option', { value: p, textContent: 'Priority ' + p })));
+  prioSel.value = _rfq.filters.priority || '';
+  const search = el('input', { type: 'text', className: 'rfq-search', placeholder: 'Search part / number', value: _rfq.filters.q || '' });
+  let t; search.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { _rfq.filters.q = search.value.trim(); rfqRenderList(); }, 300); });
+  bar.appendChild(el('div', { className: 'rfq-filters' }, statusSel, custSel, prioSel, search));
+  bar.appendChild(el('div', { className: 'rfq-actions' },
+    el('button', { className: 'btn btn-sm btn-ghost', textContent: '⬆ Import', onclick: rfqOpenImport }),
+    el('button', { className: 'btn btn-sm btn-primary', textContent: '+ New RFQ', onclick: () => rfqOpenForm(null) })));
+  return bar;
+}
+
+async function rfqRenderList() {
+  const root = document.getElementById('rfqModule'); if (!root) return;
+  root.innerHTML = ''; root.appendChild(rfqToolbar());
+  const wrap = el('div', { className: 'rfq-list-wrap' }); root.appendChild(wrap);
+  wrap.appendChild(el('div', { className: 'empty-state', style: 'padding:16px', textContent: 'Loading…' }));
+  const qs = new URLSearchParams();
+  for (const k of ['status', 'customer', 'priority', 'q']) if (_rfq.filters[k]) qs.set(k, _rfq.filters[k]);
+  try {
+    const rows = await GET('/rfq' + (qs.toString() ? '?' + qs : ''));
+    wrap.innerHTML = '';
+    if (!rows.length) { wrap.appendChild(el('div', { className: 'empty-state', style: 'padding:24px', textContent: 'No RFQs found.' })); return; }
+    const tbl = el('table', { className: 'dash-table rfq-table' });
+    tbl.appendChild(el('thead', {}, el('tr', {}, ...['Ref', 'Customer', 'Part', 'Status', 'Pri', 'Required', 'Quoted', 'Owner'].map(h => el('th', { textContent: h })))));
+    const tb = el('tbody', {});
+    for (const r of rows) {
+      const owner = (r.assignees || []).map(a => a.name).filter(Boolean).join(', ');
+      tb.appendChild(el('tr', { className: 'rfq-row', onclick: () => rfqOpenDetail(r.id) },
+        el('td', { className: 'rfq-ref', textContent: r.rfqNumber || r.quoteRef || 'imported' }),
+        el('td', { textContent: r.customerName || '' }),
+        el('td', { className: 'rfq-part' }, el('span', { textContent: r.partNumber || '' }), r.revision ? el('span', { className: 'rfq-rev', textContent: ' ' + r.revision }) : null),
+        el('td', {}, rfqStatusChip(r.status)),
+        el('td', { textContent: r.priority || '' }),
+        el('td', { textContent: rfqDate(r.dateRequiredBy) }),
+        el('td', { className: 'rfq-num', textContent: rfqMoney(r.quotedValue) }),
+        el('td', { className: 'rfq-owner', textContent: owner })));
+    }
+    tbl.appendChild(tb); wrap.appendChild(tbl);
+    wrap.appendChild(el('div', { className: 'rfq-count', textContent: rows.length + ' RFQ' + (rows.length !== 1 ? 's' : '') }));
+  } catch (err) { wrap.innerHTML = ''; wrap.appendChild(el('div', { className: 'error-msg', style: 'padding:16px', textContent: err.message })); }
+}
+
+async function rfqOpenDetail(id) {
+  const root = document.getElementById('rfqModule'); if (!root) return;
+  root.innerHTML = ''; root.appendChild(el('div', { className: 'empty-state', style: 'padding:20px', textContent: 'Loading…' }));
+  let r;
+  try { r = await GET('/rfq/' + id); } catch (err) { root.innerHTML = ''; root.appendChild(el('div', { className: 'error-msg', style: 'padding:16px', textContent: err.message })); return; }
+  root.innerHTML = '';
+  root.appendChild(el('div', { className: 'rfq-detail-head' },
+    el('button', { className: 'btn btn-sm btn-ghost', textContent: '‹ Back', onclick: rfqRenderList }),
+    el('div', { className: 'rfq-detail-title' }, el('span', { className: 'rfq-detail-part', textContent: r.partNumber || '(no part)' }), r.revision ? el('span', { className: 'rfq-rev', textContent: ' ' + r.revision }) : null),
+    rfqStatusChip(r.status),
+    el('button', { className: 'btn btn-sm btn-ghost', style: 'margin-left:auto', textContent: 'Edit', onclick: () => rfqOpenForm(r) })));
+  root.appendChild(el('div', { className: 'rfq-detail-sub', textContent: (r.customerName || '') + ' · ' + (r.rfqNumber || r.quoteRef || 'imported') + (r.quoteType ? ' · ' + (r.quoteType === 'up_rev' ? 'Up revision' : 'New quotation') : '') }));
+  const sa = el('div', { className: 'rfq-status-actions' });
+  for (const [v, l] of RFQ_STATUSES) {
+    const b = el('button', { className: 'btn btn-sm ' + (r.status === v ? 'btn-primary' : 'btn-ghost'), textContent: l });
+    b.addEventListener('click', async () => { if (r.status === v) return; try { await PATCH('/rfq/' + id, { status: v }); toast('Status: ' + l, 'success'); rfqOpenDetail(id); } catch (e) { toast(e.message, 'error'); } });
+    sa.appendChild(b);
+  }
+  root.appendChild(sa);
+  const field = (lab, val) => el('div', { className: 'rfq-field' }, el('div', { className: 'rfq-field-lab', textContent: lab }), el('div', { className: 'rfq-field-val', textContent: (val == null || val === '') ? '–' : String(val) }));
+  root.appendChild(el('div', { className: 'rfq-field-grid' },
+    field('Customer', r.customerName), field('Priority', r.priority ? ('Priority ' + r.priority) : ''), field('Required by', rfqDate(r.dateRequiredBy)),
+    field('CO number', r.coNumber), field('Free issue', r.freeIssue == null ? '' : (r.freeIssue ? 'Yes' : 'No')), field('Contact', r.contactEmail),
+    field('Build', rfqMins(r.buildMinutes)), field('Inspection', rfqMins(r.inspectionMinutes)), field('Test', rfqMins(r.testMinutes)),
+    field('Quoted value', rfqMoney(r.quotedValue)), field('Quote ref', r.quoteRef), field('Quoted', rfqDate(r.quotedAt))));
+  if (r.requestComments) root.appendChild(el('div', { className: 'rfq-comments' }, el('div', { className: 'rfq-field-lab', textContent: 'Request notes' }), el('div', { textContent: r.requestComments })));
+  if ((r.assignees || []).length) root.appendChild(el('div', { className: 'rfq-assignees' }, el('span', { className: 'rfq-field-lab', textContent: 'Owners: ' }), el('span', { textContent: r.assignees.map(a => a.name).filter(Boolean).join(', ') })));
+  const feed = el('div', { className: 'rfq-feed' });
+  feed.appendChild(el('h4', { className: 'rfq-feed-title', textContent: 'Activity' }));
+  for (const e of (r.events || [])) {
+    feed.appendChild(el('div', { className: 'rfq-event' + (e.visibility === 'customer' ? ' rfq-event-cust' : '') },
+      el('div', { className: 'rfq-event-meta' }, el('span', { textContent: e.authorName || '' }), el('span', { className: 'rfq-event-date', textContent: ' ' + rfqDate(e.createdAt) }), e.visibility === 'customer' ? el('span', { className: 'rfq-vis-badge', textContent: 'customer' }) : null),
+      el('div', { className: 'rfq-event-body', textContent: e.body || '' })));
+  }
+  if (!(r.events || []).length) feed.appendChild(el('div', { className: 'empty-state', style: 'padding:8px', textContent: 'No activity yet.' }));
+  const note = el('textarea', { className: 'dev-comment-input', rows: '2', placeholder: 'Add a note…' });
+  const visSel = el('select', { className: 'rfq-filter' }, el('option', { value: 'internal', textContent: 'Internal' }), el('option', { value: 'customer', textContent: 'Customer-facing' }));
+  const addBtn = el('button', { className: 'btn btn-sm btn-primary', textContent: 'Add' });
+  addBtn.addEventListener('click', async () => { const body = note.value.trim(); if (!body) return; addBtn.disabled = true; try { await POST('/rfq/' + id + '/events', { type: 'comment', body, visibility: visSel.value }); note.value = ''; rfqOpenDetail(id); } catch (e) { toast(e.message, 'error'); addBtn.disabled = false; } });
+  feed.appendChild(el('div', { className: 'rfq-add-note' }, note, el('div', { className: 'rfq-add-note-row' }, visSel, addBtn)));
+  root.appendChild(feed);
+}
+
+function rfqOpenForm(existing) {
+  const isEdit = !!existing;
+  const custSel = el('select', {}, el('option', { value: '', textContent: '(choose customer)' }), ..._rfq.customers.map(c => el('option', { value: c.id, textContent: c.name })));
+  if (isEdit && existing.customerId) custSel.value = existing.customerId;
+  const inp = (val, ph, type) => el('input', { type: type || 'text', value: val != null ? String(val) : '', placeholder: ph || '' });
+  const part = inp(existing ? existing.partNumber : '', 'Part number');
+  const name = inp(existing ? existing.partName : '', 'Part name');
+  const rev = inp(existing ? existing.revision : '', 'Revision');
+  const co = inp(existing ? existing.coNumber : '', 'CO number');
+  const qt = el('select', {}, el('option', { value: '', textContent: '(type)' }), el('option', { value: 'new', textContent: 'New quotation' }), el('option', { value: 'up_rev', textContent: 'Up revision' })); if (existing && existing.quoteType) qt.value = existing.quoteType;
+  const prio = el('select', {}, el('option', { value: '', textContent: '(priority)' }), ...['A', 'B', 'C'].map(p => el('option', { value: p, textContent: 'Priority ' + p }))); if (existing && existing.priority) prio.value = existing.priority;
+  const req = inp(existing && existing.dateRequiredBy ? existing.dateRequiredBy.slice(0, 10) : '', '', 'date');
+  const freeSel = el('select', {}, el('option', { value: '', textContent: '(free issue?)' }), el('option', { value: 'yes', textContent: 'Yes' }), el('option', { value: 'no', textContent: 'No' })); if (existing && existing.freeIssue != null) freeSel.value = existing.freeIssue ? 'yes' : 'no';
+  const contact = inp(existing ? existing.contactEmail : '', 'Contact email');
+  const comments = el('textarea', { className: 'dev-comment-input', rows: '2', placeholder: 'Request notes' }); if (existing && existing.requestComments) comments.value = existing.requestComments;
+  const buildH = inp(existing && existing.buildMinutes != null ? (existing.buildMinutes / 60) : '', 'Build hrs', 'number');
+  const inspH = inp(existing && existing.inspectionMinutes != null ? (existing.inspectionMinutes / 60) : '', 'Insp hrs', 'number');
+  const testH = inp(existing && existing.testMinutes != null ? (existing.testMinutes / 60) : '', 'Test hrs', 'number');
+  const qval = inp(existing && existing.quotedValue != null ? existing.quotedValue : '', 'Quoted value', 'number');
+  const qref = inp(existing ? existing.quoteRef : '', 'Quote ref');
+  const lab = (t, node) => el('div', { className: 'rfq-form-row' }, el('label', { className: 'dev-form-label', textContent: t }), node);
+  const body = el('div', { className: 'rfq-form' },
+    lab('Customer', custSel), lab('Part number', part), lab('Part name', name), lab('Revision', rev), lab('CO number', co),
+    lab('Quote type', qt), lab('Priority', prio), lab('Required by', req), lab('Free issue', freeSel), lab('Contact email', contact),
+    lab('Request notes', comments),
+    el('div', { className: 'rfq-form-internal' }, el('div', { className: 'rfq-field-lab', textContent: 'Internal build-up' }),
+      lab('Build hrs', buildH), lab('Inspection hrs', inspH), lab('Test hrs', testH), lab('Quoted value', qval), lab('Quote ref', qref)));
+  const save = el('button', { className: 'btn btn-primary', textContent: isEdit ? 'Save' : 'Create RFQ' });
+  save.addEventListener('click', async () => {
+    const h2m = v => v === '' ? null : Math.round(parseFloat(v) * 60);
+    const payload = {
+      customerId: custSel.value,
+      partNumber: part.value.trim() || null, partName: name.value.trim() || null, revision: rev.value.trim() || null, coNumber: co.value.trim() || null,
+      quoteType: qt.value || null, priority: prio.value || null, dateRequiredBy: req.value || null,
+      freeIssue: freeSel.value === '' ? null : (freeSel.value === 'yes'), contactEmail: contact.value.trim() || null, requestComments: comments.value.trim() || null,
+      buildMinutes: h2m(buildH.value), inspectionMinutes: h2m(inspH.value), testMinutes: h2m(testH.value),
+      quotedValue: qval.value === '' ? null : parseFloat(qval.value), quoteRef: qref.value.trim() || null,
+    };
+    if (!payload.customerId) { toast('Choose a customer.', 'error'); return; }
+    save.disabled = true;
+    try {
+      if (isEdit) { await PATCH('/rfq/' + existing.id, payload); toast('RFQ updated', 'success'); closeModal(); rfqOpenDetail(existing.id); }
+      else { const created = await POST('/rfq', payload); toast('RFQ ' + (created.rfqNumber || '') + ' created', 'success'); closeModal(); rfqOpenDetail(created.id); }
+    } catch (e) { toast(e.message, 'error'); save.disabled = false; }
+  });
+  openModal(isEdit ? 'Edit RFQ' : 'New RFQ', body, [el('button', { className: 'btn btn-ghost', textContent: 'Cancel', onclick: () => closeModal() }), save]);
+}
+
+function rfqOpenImport() {
+  const file = el('input', { type: 'file', accept: '.csv,.xlsx' });
+  const note = el('div', { className: 'rfq-import-note', textContent: 'Choose the SharePoint QuoteActions export (CSV or .xlsx).' });
+  const previewBox = el('div', { className: 'rfq-import-preview' });
+  const importBtn = el('button', { className: 'btn btn-primary', textContent: 'Import' }); importBtn.disabled = true;
+  let payload = null;
+  async function readFile(f) {
+    if (/\.xlsx$/i.test(f.name)) {
+      const b64 = await new Promise((res, rej) => { const rd = new FileReader(); rd.onload = () => res(String(rd.result).split(',')[1] || ''); rd.onerror = () => rej(new Error('Could not read ' + f.name)); rd.readAsDataURL(f); });
+      return { xlsxB64: b64 };
+    }
+    return { csvText: await f.text() };
+  }
+  file.addEventListener('change', async () => {
+    const f = file.files && file.files[0]; if (!f) return;
+    note.textContent = 'Reading…'; previewBox.innerHTML = ''; importBtn.disabled = true;
+    try {
+      payload = await readFile(f);
+      const res = await POST('/rfq/import', { ...payload, dryRun: true });
+      const p = res.preview; previewBox.innerHTML = '';
+      previewBox.appendChild(el('div', { className: 'rfq-import-stats' },
+        el('div', {}, el('b', { textContent: String(p.uniqueRecords) }), ' records'),
+        el('div', {}, el('b', { textContent: String(p.new) }), ' new'),
+        el('div', {}, el('b', { textContent: String(p.updated) }), ' updated'),
+        el('div', {}, el('b', { textContent: String(p.customers) }), ' customers')));
+      const warns = [];
+      if (!p.usingItemId) warns.push('No Item ID column: matched on a composite key.' + (p.collapsedByKey ? ' ' + p.collapsedByKey + ' row(s) collapsed as duplicates.' : ''));
+      if (p.unknownCustomers.length) warns.push('New customers to be created: ' + p.unknownCustomers.join(', '));
+      if (warns.length) previewBox.appendChild(el('div', { className: 'rfq-import-warn' }, ...warns.map(w => el('div', { textContent: '⚠ ' + w }))));
+      note.textContent = 'Preview ready. Review, then Import.'; importBtn.disabled = false;
+    } catch (e) { note.textContent = e.message; }
+  });
+  importBtn.addEventListener('click', async () => {
+    if (!payload) return; importBtn.disabled = true; note.textContent = 'Importing…';
+    try { const res = await POST('/rfq/import', { ...payload, dryRun: false }); toast('Imported: ' + res.inserted + ' new, ' + res.updated + ' updated', 'success'); closeModal(); _rfq.loaded = true; loadRfqModule(); }
+    catch (e) { note.textContent = e.message; importBtn.disabled = false; }
+  });
+  openModal('Import RFQs', el('div', { className: 'rfq-import' }, file, note, previewBox), [el('button', { className: 'btn btn-ghost', textContent: 'Close', onclick: () => closeModal() }), importBtn]);
 }
 
 // ── PUSH / PULL PAGE ──────────────────────────────────────────────────────────

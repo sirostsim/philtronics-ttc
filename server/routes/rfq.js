@@ -13,6 +13,7 @@ const { v4: uuidv4 } = require('uuid');
 const { query, queryOne, getClient } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { validate, schemas } = require('../middleware/validate');
+const { parseCsv, mapRows } = require('../lib/rfq-import');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('manager'));
@@ -312,6 +313,129 @@ router.post('/:id/events', validate(schemas.rfqEvent), async (req, res) => {
   } catch (err) {
     console.error('POST /rfq/:id/events error:', err.message);
     res.status(500).json({ error: 'Could not add the entry.' });
+  }
+});
+
+// ── POST /api/rfq/import ── the 661 + repeatable incremental import ────────────
+// Body: { csvText | xlsxB64, dryRun }. dryRun (default true) returns a preview and
+// writes nothing; dryRun:false applies in one transaction. Idempotent on
+// external_source_id (SharePoint Item ID, else a composite-key hash). Imported
+// RFQs are source-owned: a re-import replaces their assignees + events.
+router.post('/import', validate(schemas.rfqImport), async (req, res) => {
+  let rowObjects;
+  try {
+    if (req.body.xlsxB64) {
+      const { readSheet } = require('../lib/xlsx-demand');
+      rowObjects = readSheet(Buffer.from(req.body.xlsxB64, 'base64')).rows;
+    } else {
+      rowObjects = parseCsv(req.body.csvText || '').rows;
+    }
+  } catch (e) {
+    return res.status(400).json({ error: 'Could not read the file.' });
+  }
+  const parsed = mapRows(rowObjects);
+  if (!parsed.total) return res.status(400).json({ error: 'No rows found. Expected the QuoteActions export (Customer / QuoteTitle columns).' });
+
+  // De-duplicate within the file by external_source_id (last wins).
+  const byKey = new Map();
+  for (const r of parsed.rows) byKey.set(r.externalSourceId, r);
+  const uniqueRows = [...byKey.values()];
+
+  try {
+    const keys = uniqueRows.map(r => r.externalSourceId);
+    const existing = keys.length ? await query('SELECT external_source_id FROM rfqs WHERE external_source_id = ANY($1)', [keys]) : [];
+    const existingSet = new Set(existing.map(r => r.external_source_id));
+    const newCount = uniqueRows.filter(r => !existingSet.has(r.externalSourceId)).length;
+
+    const preview = {
+      rowsInFile: parsed.total,
+      uniqueRecords: uniqueRows.length,
+      collapsedByKey: parsed.total - uniqueRows.length,
+      new: newCount,
+      updated: uniqueRows.length - newCount,
+      customers: Object.keys(parsed.customers).length,
+      unknownCustomers: parsed.unknownCustomers,
+      warningCount: parsed.warnings.length,
+      usingItemId: keys.length ? keys[0].startsWith('sp:') : false,
+      sample: uniqueRows.slice(0, 8).map(r => ({
+        part: r.partNumber, customer: r.customerCanonical || r.customerRaw,
+        status: r.status, quotedValue: r.quotedValue, buildMinutes: r.buildMinutes,
+      })),
+    };
+    if (req.body.dryRun !== false) return res.json({ dryRun: true, preview });
+  } catch (err) {
+    console.error('POST /rfq/import preview error:', err.message);
+    return res.status(500).json({ error: 'Could not read existing records.' });
+  }
+
+  // Commit.
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+    // Ensure customers + aliases.
+    const wanted = {};
+    for (const r of uniqueRows) { const name = r.customerCanonical || r.customerRaw || 'Unknown'; (wanted[name] = wanted[name] || new Set()).add(r.customerRaw.toLowerCase()); }
+    const idByName = {};
+    for (const name in wanted) {
+      let row = (await client.query('SELECT id FROM customers WHERE LOWER(name) = LOWER($1)', [name])).rows[0];
+      if (!row) { const cid = uuidv4(); await client.query('INSERT INTO customers (id, name, created_by) VALUES ($1,$2,$3)', [cid, name, req.user.id]); row = { id: cid }; }
+      idByName[name] = row.id;
+      for (const alias of wanted[name]) {
+        await client.query('INSERT INTO customer_aliases (id, customer_id, alias) VALUES ($1,$2,$3) ON CONFLICT (alias) DO NOTHING', [uuidv4(), row.id, alias]);
+      }
+    }
+    // Match imported assignee names to Work Time users where possible.
+    const users = (await client.query('SELECT id, full_name FROM users')).rows;
+    const userByName = {}; for (const u of users) userByName[String(u.full_name).trim().toLowerCase()] = u.id;
+
+    let inserted = 0, updated = 0;
+    for (const r of uniqueRows) {
+      const customerId = idByName[r.customerCanonical || r.customerRaw || 'Unknown'];
+      const vals = [customerId, r.partNumber, r.partName || null, r.revision, r.coNumber, r.quoteType, r.priority,
+        r.dateRequiredBy, r.freeIssue, r.potentialUnitsAnnual, r.potentialRevenueAnnual, r.requestComments, r.contactEmail,
+        r.status, r.buildMinutes, r.inspectionMinutes, r.testMinutes, r.quotedValue, r.quoteRef, r.quotedAt,
+        r.sourceCreatedAt, r.firstActionAt, r.completedAt];
+      const ex = (await client.query('SELECT id FROM rfqs WHERE external_source_id = $1', [r.externalSourceId])).rows[0];
+      let rfqId;
+      if (ex) {
+        rfqId = ex.id;
+        await client.query(
+          `UPDATE rfqs SET customer_id=$1, part_number=$2, part_name=$3, revision=$4, co_number=$5, quote_type=$6, priority=$7,
+             date_required_by=$8, free_issue=$9, potential_units_annual=$10, potential_revenue_annual=$11, request_comments=$12,
+             contact_email=$13, status=$14, build_minutes=$15, inspection_minutes=$16, test_minutes=$17, quoted_value=$18,
+             quote_ref=$19, quoted_at=$20, source_created_at=$21, first_action_at=$22, completed_at=$23, updated_by=$24, updated_at=NOW()
+           WHERE id=$25`, [...vals, req.user.id, rfqId]);
+        await client.query('DELETE FROM rfq_assignees WHERE rfq_id=$1', [rfqId]);
+        await client.query('DELETE FROM rfq_events WHERE rfq_id=$1', [rfqId]);
+        updated++;
+      } else {
+        rfqId = uuidv4();
+        await client.query(
+          `INSERT INTO rfqs (id, external_source_id, customer_id, part_number, part_name, revision, co_number, quote_type, priority,
+             date_required_by, free_issue, potential_units_annual, potential_revenue_annual, request_comments, contact_email, status,
+             build_minutes, inspection_minutes, test_minutes, quoted_value, quote_ref, quoted_at, source_created_at, first_action_at,
+             completed_at, created_by, updated_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$26)`,
+          [rfqId, r.externalSourceId, ...vals, req.user.id]);
+        inserted++;
+      }
+      for (const nm of r.assignees) {
+        await client.query('INSERT INTO rfq_assignees (id, rfq_id, user_id, name) VALUES ($1,$2,$3,$4)',
+          [uuidv4(), rfqId, userByName[nm.toLowerCase()] || null, nm]);
+      }
+      for (const e of r.events) {
+        await client.query('INSERT INTO rfq_events (id, rfq_id, type, body, visibility, author_name, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+          [uuidv4(), rfqId, 'comment', e.body, 'internal', e.authorName || null, e.at || r.sourceCreatedAt || new Date().toISOString()]);
+      }
+    }
+    await client.query('COMMIT');
+    res.json({ ok: true, inserted, updated, customers: Object.keys(wanted).length });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('POST /rfq/import commit error:', err.message);
+    res.status(500).json({ error: 'Could not import the records.' });
+  } finally {
+    client.release();
   }
 });
 
