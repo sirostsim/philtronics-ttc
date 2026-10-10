@@ -126,15 +126,21 @@ router.get('/', async (req, res) => {
 router.get('/report', async (req, res) => {
   try {
     const params = []; let where = '';
-    if (req.query.customer) { params.push(req.query.customer); where = 'WHERE customer_id = $1'; }
+    if (req.query.customer) { params.push(req.query.customer); where = 'WHERE r.customer_id = $1'; }
     const rows = await query(
-      `SELECT status, priority, source_created_at, created_at, first_action_at, completed_at
-         FROM rfqs ${where}`, params);
+      `SELECT r.status, r.priority, r.source_created_at, r.created_at, r.first_action_at, r.completed_at,
+              r.quoted_value, c.name AS customer_name
+         FROM rfqs r JOIN customers c ON c.id = r.customer_id ${where}`, params);
     const statusCounts = {};
-    let compSum = 0, compN = 0, ttfaSum = 0, ttfaN = 0;
+    let compSum = 0, compN = 0, ttfaSum = 0, ttfaN = 0, totalValue = 0;
     const byPriority = {};
+    const byCustomer = {};
     for (const r of rows) {
       statusCounts[r.status] = (statusCounts[r.status] || 0) + 1;
+      if (r.quoted_value != null) totalValue += Number(r.quoted_value);
+      const cn = r.customer_name || 'Unknown';
+      (byCustomer[cn] = byCustomer[cn] || { count: 0, value: 0 });
+      byCustomer[cn].count++; if (r.quoted_value != null) byCustomer[cn].value += Number(r.quoted_value);
       const created = r.source_created_at || r.created_at;
       if (r.completed_at && created) {
         const d = daysBetween(created, r.completed_at);
@@ -153,9 +159,14 @@ router.get('/report', async (req, res) => {
     res.json({
       total: rows.length,
       statusCounts,
+      openCount: statusCounts.open || 0,
+      completedCount: statusCounts.completed || 0,
+      totalQuotedValue: Math.round(totalValue),
       avgDaysToComplete: compN ? round1(compSum / compN) : null,
       avgHoursToFirstAction: ttfaN ? round1(ttfaSum / ttfaN) : null,
-      byPriorityAvgDays: Object.fromEntries(Object.entries(byPriority).map(([p, v]) => [p, round1(v.sum / v.n)])),
+      byPriority: Object.fromEntries(Object.entries(byPriority).map(([p, v]) => [p, { count: v.n, avgDays: round1(v.sum / v.n) }])),
+      byCustomer: Object.entries(byCustomer).map(([name, v]) => ({ name, count: v.count, value: Math.round(v.value) }))
+        .sort((a, b) => b.count - a.count).slice(0, 12),
     });
   } catch (err) {
     console.error('GET /rfq/report error:', err.message);

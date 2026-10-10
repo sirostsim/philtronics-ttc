@@ -119,9 +119,21 @@ operator -> supervisor -> manager -> administrator -> superuser
   list. Multi-customer, four-status workflow (open / awaiting_response /
   completed / declined), an activity feed (rfq_events, internal vs customer
   visibility), build/inspection/test time in MINUTES, quoted value + quote ref
-  (pricing stays in Sage). Manager+, surfaced within the Dashboard. Later phases:
-  quote PDF + email, then an external customer portal with a hard internal/
-  external split. Migrations 032-033 are the data layer (this PR).
+  (pricing stays in Sage). Manager+, its own sidebar page 'rfq' (pageRfq).
+  - Server: routes/rfq.js (CRUD + activity events + GET /rfq/report summary +
+    POST /rfq/import), routes/customers.js, lib/rfq-import.js (db-free parse +
+    QuoteActions->RFQ mapping + customer canonicalisation + dedupe on the
+    SharePoint Item ID else a composite-key hash). Migrations 032-033.
+  - Import: POST /api/rfq/import, dryRun preview then commit, idempotent on
+    external_source_id; imported RFQs are source-owned (re-import replaces their
+    assignees + events). Uses the 16mb parser mounted for /api/rfq/import.
+  - Frontend RFQ module (public/app-v2.js): list/detail/new-edit/import, plus a
+    printable RFQ/Quote Summary report reusing REPORT_CSS (window.open + Blob,
+    like the Order Book Summary).
+  - Numbering: native RFQs get RFQ-YYYY-NNNN; imported historical rows keep
+    rfq_number NULL (their quote_ref / external id is the reference).
+  - Later phases: quote PDF + email, then an external customer portal with a
+    hard internal/external split.
 - Push/Pull (routes/push-pull.js, lib/xlsx-demand.js, page 'pushpull', manager+):
   archives each Tuesday's KLA order-book + priority-requirements upload as a
   snapshot and reports the week-over-week demand push/pull. .xlsx is parsed
