@@ -117,9 +117,9 @@ deterministic and repeatable.
 | customer_id | TEXT NOT NULL REFERENCES customers(id) ON DELETE CASCADE | |
 | alias | TEXT NOT NULL UNIQUE | lower-cased source name, e.g. "bridmet limited" |
 
-Seed examples: `spts`, `spts.`, `kla` -> SPTS (KLA); `bridmet`, `bridmet
-limited` -> Bridmet; `rototherm` -> Rototherm. Unknown names during import
-create a new customer and are flagged in the import report for review.
+The full seed mapping for the 24 historical source names (20 canonical
+customers) is in **Appendix A**. Unknown names in a later import create a new
+customer and are flagged in the import report for review.
 
 ### 4.3 `rfqs` (033)
 One part-quote request (one part per RFQ, matching the form).
@@ -276,15 +276,20 @@ On re-import, existing rows (same `external_source_id`) are updated in place;
 new ones are inserted. Records created natively in Work Time (no source id) are
 never touched by an import.
 
-> ACTION: ask for a re-export that includes the list Item ID, to make
-> incremental import reliable.
+CONFIRMED: the SharePoint list schema export shows the list has a `Counter` (ID)
+field, so a stable per-item key exists. The only requirement is that the export
+we import **includes the ID column** (Export to Excel with ID, or the XMLDATA
+`ows_ID`). We use it as `external_source_id`.
 
 ---
 
 ## 7. Internal UI (Phase 1)
 
-New SPA page(s), following the existing pattern (PAGES map, topPages, dispatcher,
-`<section>` in index.html, loader), using `el()`, `GET/POST/PATCH`, `openModal`.
+**Placement (CONFIRMED):** the RFQ/CRM module is surfaced as a **menu item within
+the Dashboard** (the existing manager+ landing screen, `pageDashboard`), not as a
+new top-level nav entry. The Dashboard gains lightweight sub-navigation; RFQ is
+one section. Built with the usual helpers (`el()`, `GET/POST/PATCH`, `openModal`).
+The views below are the sections reached from there.
 
 - **RFQ list / board** - table of RFQs; filter by status, customer, priority,
   assignee; search by part number; sort by date required / created. Status chips.
@@ -298,12 +303,12 @@ New SPA page(s), following the existing pattern (PAGES map, topPages, dispatcher
   priority and customer; counts by status; (pipeline value later). Printable,
   like the existing Order Book Summary.
 
-### Internal access (decision)
-Proposed for Phase 1: the RFQ module is visible to **manager and above**. Note:
-the people who work RFQs today (estimating/sales staff) may not all be managers.
-If so, we add a dedicated **capability** (mirroring the `planner` /
-`canPlanWrite` pattern: a non-hierarchical flag) so named staff can work RFQs
-without full manager rights. Flagged as a decision before build.
+### Internal access (CONFIRMED)
+Phase 1: the RFQ module is visible to **manager and above** (same gate as the
+Dashboard it lives in). If, in practice, estimating/sales staff who work RFQs are
+not managers, we can later add a dedicated non-hierarchical capability (mirroring
+the `planner` / `canPlanWrite` pattern) without changing the hierarchy. Not
+needed for V1.
 
 ---
 
@@ -396,17 +401,22 @@ SharePoint list.
 
 ---
 
-## 13. Open decisions / actions before Phase 1 build
+## 13. Decisions and open actions before Phase 1 build
 
-1. **Internal access level:** manager+ for v1, or a dedicated RFQ/sales
-   capability for named non-manager staff?
-2. **Re-export with the SharePoint Item ID** column, for reliable incremental
-   import (else we use the composite-key fallback).
-3. **Customer canonicalisation list:** confirm the alias -> canonical mapping for
-   the ~24 names (I will propose a mapping from the data for sign-off).
-4. **RFQ numbering scheme:** confirm `RFQ-YYYY-NNNN` (or keep/derive from any
-   existing reference).
-5. Email provider (Phase 2) and whether the external portal timing stays Phase 3.
+Resolved:
+- **Internal access:** manager and above for V1. (Section 7.)
+- **Placement:** a menu item within the Dashboard, not a new top-level page.
+- **Re-import key:** the list has a `Counter` (ID) field; we use it as
+  `external_source_id`. Just include the ID column in the export. (Section 6.3.)
+- **Customer canonicalisation:** drafted (Appendix A), pending a quick sign-off on
+  a few display names.
+
+Still open:
+1. **A few canonical display names** in Appendix A (Mono, PerkinElmer spelling,
+   SoilEssentials, SNC, Carbont) - confirm the correct trading names.
+2. **RFQ numbering scheme:** confirm `RFQ-YYYY-NNNN` (or derive from an existing
+   reference such as the quote number).
+3. **Email provider** (Phase 2) and whether the external portal stays Phase 3.
 
 ---
 
@@ -421,3 +431,38 @@ SharePoint list.
   and a preview step.
 - **Sage integration** (Phase 4) is the largest future unknown; kept out of the
   critical path.
+
+---
+
+## Appendix A - Customer canonicalisation mapping
+
+Drafted from the 661-record export: 24 source names collapse to **20 canonical
+customers**. Aliases are matched case-insensitively (stored lower-cased in
+`customer_aliases`). Display names marked (confirm) are pending sign-off; the
+alias matching is unaffected by the final display name.
+
+| Canonical customer | Source aliases | Records |
+|---|---|---|
+| SPTS (KLA) | SPTS, Spts | 606 |
+| Mono (confirm) | MONO | 18 |
+| Fike | Fike | 8 |
+| Bridmet | Bridmet, BRIDMET LIMITED, BRIDMET | 8 |
+| Rototherm | Rototherm, ROTOTHERM | 4 |
+| SNC (confirm) | SNC | 2 |
+| IQ Endoscopes | IQ Endoscopes | 2 |
+| Control Technologies UK | CONTROL TECHNOLOGIES UK | 1 |
+| Inspired Gaming (UK) | INSPIRED GAMING (UK) LIMITED | 1 |
+| Drone Evolution | Drone Evolution | 1 |
+| Militec | Militec | 1 |
+| CareSafe | CareSafe | 1 |
+| PerkinElmer (confirm) | PERKIN ELMER | 1 |
+| Carbont (confirm) | Carbont | 1 |
+| Soil Essentials (confirm) | Soil Essentials Ltd | 1 |
+| EFT | EFT | 1 |
+| Undalogic | Undalogic | 1 |
+| ANM Electronics | ANM Electronics | 1 |
+| Tekever | Tekever | 1 |
+| Steel Rock Technologies | STEEL ROCK TECHNOLOGIES | 1 |
+
+Merges: SPTS + Spts; Bridmet + BRIDMET LIMITED + BRIDMET; Rototherm + ROTOTHERM.
+All 661 records reconcile against this mapping.
