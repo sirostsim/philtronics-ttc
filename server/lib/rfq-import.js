@@ -74,7 +74,15 @@ function fielder(row) {
 }
 
 const numOf = s => { const n = parseFloat(String(s == null ? '' : s).replace(/[^0-9.\-]/g, '')); return isNaN(n) ? null : n; };
-const hoursToMinutes = s => { const n = numOf(s); return n == null ? null : Math.round(n * 60); };
+const INT4_MAX = 2147483647;
+// Hours -> minutes, guarding against junk cells (e.g. a number pasted into a time
+// field): anything over 100,000 hours is not a real quote time, and we must not
+// let it overflow the INTEGER column and fail the whole import.
+const hoursToMinutes = s => { const n = numOf(s); return (n == null || !isFinite(n) || n < 0 || n > 100000) ? null : Math.round(n * 60); };
+// Fit an INTEGER column, else null (drop implausible/overflowing values).
+const intOrNull = v => (v == null || !isFinite(v) || Math.abs(v) > INT4_MAX) ? null : Math.round(v);
+// Fit NUMERIC(14,2) (12 integer digits), else null.
+const money2 = v => (v == null || !isFinite(v) || Math.abs(v) >= 1e12) ? null : v;
 
 // DD/MM/YYYY [HH:MM] (2- or 4-digit year) -> ISO. withTime keeps the time part.
 function parseUkDate(s, withTime) {
@@ -170,15 +178,15 @@ function mapRow(row) {
     priority: mapPriority(get('priority')),
     dateRequiredBy: parseUkDate(get('daterequiredby'), false),
     freeIssue: mapFreeIssue(get('free issue')),
-    potentialUnitsAnnual: numOf(get('potential units')) != null ? Math.round(numOf(get('potential units'))) : null,
-    potentialRevenueAnnual: numOf(get('potential revenue')),
+    potentialUnitsAnnual: intOrNull(numOf(get('potential units'))),
+    potentialRevenueAnnual: money2(numOf(get('potential revenue'))),
     requestComments: get('requestcomments') || null,
     contactEmail: get('requestedby') || null,
     status: mapStatus(get('actionstatus')),
     buildMinutes: hoursToMinutes(get('build time')),
     inspectionMinutes: hoursToMinutes(get('inspection time')),
     testMinutes: hoursToMinutes(get('test time')),
-    quotedValue: numOf(get('sage sales cost')),
+    quotedValue: money2(numOf(get('sage sales cost'))),
     quoteRef: extractQuoteRef(actionComments),
     quotedAt: parseUkDate(get('completed date'), false),
     sourceCreatedAt,
