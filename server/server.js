@@ -36,7 +36,17 @@ app.use((req, res, next) => {
   next();
 });
 
+// Hard internal/external split: a customer-portal session may never reach an
+// internal API route. Belt-and-braces on top of each route's own auth.
+const { rejectPortal } = require('./middleware/portal-auth');
+app.use((req, res, next) => {
+  if (!req.path.startsWith('/api/')) return next();
+  if (req.path.startsWith('/api/portal')) return next();   // portal has its own auth
+  return rejectPortal(req, res, next);
+});
+
 // ─── API routes ───────────────────────────────────────────────────────────────
+app.use('/api/portal',   require('./routes/portal'));
 app.use('/api/auth',     require('./routes/auth'));
 app.use('/api/config',   require('./routes/config'));
 app.use('/api/settings', require('./routes/settings'));

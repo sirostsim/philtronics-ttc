@@ -247,6 +247,21 @@ const schemas = {
     xlsxB64: Joi.string().base64().max(16000000),
     dryRun:  Joi.boolean().default(true),
   }).or('csvText', 'xlsxB64'),
+
+  // ── Customer portal ───────────────────────────────────────────────────────
+  customerInvite: Joi.object({
+    email:    Joi.string().trim().email({ tlds: false }).max(200).required(),
+    fullName: Joi.string().trim().max(120).allow('', null),
+  }),
+  portalAcceptInvite: Joi.object({
+    token:    Joi.string().trim().max(200).required(),
+    password: Joi.string().min(8).max(200).required(),
+    fullName: Joi.string().trim().max(120).allow('', null),
+  }),
+  portalLogin: Joi.object({
+    email:    Joi.string().trim().email({ tlds: false }).max(200).required(),
+    password: Joi.string().max(200).required(),
+  }),
 };
 
 module.exports = { validate, schemas };
