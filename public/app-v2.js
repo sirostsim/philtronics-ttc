@@ -6537,6 +6537,7 @@ function rfqToolbar() {
   let t; search.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { _rfq.filters.q = search.value.trim(); rfqRenderList(); }, 300); });
   bar.appendChild(el('div', { className: 'rfq-filters' }, statusSel, custSel, prioSel, search));
   bar.appendChild(el('div', { className: 'rfq-actions' },
+    el('button', { className: 'btn btn-sm btn-ghost', textContent: '📊 Report', onclick: rfqOpenReport }),
     el('button', { className: 'btn btn-sm btn-ghost', textContent: '⬆ Import', onclick: rfqOpenImport }),
     el('button', { className: 'btn btn-sm btn-primary', textContent: '+ New RFQ', onclick: () => rfqOpenForm(null) })));
   return bar;
@@ -6709,6 +6710,63 @@ function rfqOpenImport() {
     catch (e) { note.textContent = e.message; importBtn.disabled = false; }
   });
   openModal('Import RFQs', el('div', { className: 'rfq-import' }, file, note, previewBox), [el('button', { className: 'btn btn-ghost', textContent: 'Close', onclick: () => closeModal() }), importBtn]);
+}
+
+// Open the RFQ / Quote Summary as a self-contained printable report (new tab),
+// reusing the shared REPORT_CSS so it matches the Order Book / Planning reports.
+function rfqOpenReport() {
+  (async () => {
+    try {
+      const customer = _rfq.filters.customer || '';
+      const rep = await GET('/rfq/report' + (customer ? ('?customer=' + encodeURIComponent(customer)) : ''));
+      const custName = customer ? (((_rfq.customers || []).find(c => c.id === customer) || {}).name || 'Customer') : 'All customers';
+      const url = URL.createObjectURL(new Blob([buildRfqReportHtml(rep, custName)], { type: 'text/html' }));
+      const w = window.open(url, '_blank');
+      if (!w) toast('Allow pop-ups for this site to open the report.', 'error');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) { toast(e.message, 'error'); }
+  })();
+}
+
+function buildRfqReportHtml(rep, custName) {
+  const money = n => '£' + Number(n || 0).toLocaleString('en-GB');
+  const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const today = new Date().toLocaleDateString('en-GB');
+  const sc = rep.statusCounts || {}; const total = rep.total || 0;
+  const completed = rep.completedCount || 0, open = (sc.open || 0) + (sc.awaiting_response || 0), declined = sc.declined || 0;
+  const pct = n => total ? Math.round(n / total * 100) : 0;
+  const kpi = (lab, num, cap, cls) => '<div class="kpi ' + (cls || '') + '"><div class="lab">' + lab + '</div><div class="num">' + num + '</div><div class="cap">' + (cap || '') + '</div></div>';
+  const kpis = '<div class="kpis">' +
+    kpi('Total RFQs', total, 'all time') +
+    kpi('Open', sc.open || 0, 'in progress', 'wait') +
+    kpi('Completed', completed, 'quoted', 'good') +
+    kpi('Avg turnaround', rep.avgDaysToComplete != null ? rep.avgDaysToComplete + 'd' : '–', 'request to quote') +
+    kpi('Quoted value', money(rep.totalQuotedValue), 'total') + '</div>';
+  const bar = '<div class="dist"><div class="dist-head"><div class="t">Status</div><div class="r">' + total + ' RFQs</div></div>' +
+    '<div class="bar"><span class="s-ok" style="width:' + pct(completed) + '%"></span><span class="s-wait" style="width:' + pct(open) + '%"></span><span class="s-late" style="width:' + pct(declined) + '%"></span></div>' +
+    '<div class="legend"><span><i style="background:var(--ok)"></i>Completed <b>' + completed + '</b></span><span><i style="background:var(--wait)"></i>Open/Awaiting <b>' + open + '</b></span><span><i style="background:var(--late)"></i>Declined <b>' + declined + '</b></span></div></div>';
+  const prioRows = ['A', 'B', 'C', 'none'].filter(p => rep.byPriority && rep.byPriority[p])
+    .map(p => '<tr><td>' + (p === 'none' ? '(unset)' : 'Priority ' + p) + '</td><td class="num">' + rep.byPriority[p].count + '</td><td class="num">' + rep.byPriority[p].avgDays + 'd</td></tr>').join('');
+  const prioTable = '<div class="sec"><h2>Turnaround by priority</h2><div class="rule"></div></div>' +
+    '<table class="rpt"><thead><tr><th>Priority</th><th class="num">Completed</th><th class="num">Avg days</th></tr></thead><tbody>' +
+    (prioRows || '<tr><td colspan="3">No completed RFQs.</td></tr>') + '</tbody></table>';
+  const custRows = (rep.byCustomer || []).map(c => '<tr><td>' + esc(c.name) + '</td><td class="num">' + c.count + '</td><td class="num">' + money(c.value) + '</td></tr>').join('');
+  const custTable = '<div class="sec" style="margin-top:22px"><h2>By customer</h2><div class="rule"></div></div>' +
+    '<table class="rpt"><thead><tr><th>Customer</th><th class="num">RFQs</th><th class="num">Quoted value</th></tr></thead><tbody>' +
+    (custRows || '<tr><td colspan="3">No data.</td></tr>') + '</tbody></table>';
+  const ttfa = rep.avgHoursToFirstAction != null ? '<div class="pp-note">Average time to first action: <b>' + rep.avgHoursToFirstAction + ' hours</b>.</div>' : '';
+  return '<!doctype html><html><head><meta charset="utf-8"><title>RFQ / Quote Summary</title><style>' + REPORT_CSS +
+    'table.rpt{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:8px}' +
+    'table.rpt th,table.rpt td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--hair2)}' +
+    'table.rpt thead th{color:var(--muted);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;border-bottom:1px solid var(--hair)}' +
+    'table.rpt td.num,table.rpt th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}' +
+    '.noprint{position:fixed;top:14px;right:16px;padding:8px 14px;border:1px solid var(--hair);background:#fff;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700}' +
+    '@media print{.noprint{display:none}body{padding:0}.sheet{box-shadow:none;border:0}}' +
+    '</style></head><body><button class="noprint" onclick="window.print()">Print / Save PDF</button><div class="sheet">' +
+    '<div class="mast"><div class="mast-left"><div class="brand"><div class="mark"></div><div><div class="name">PHILTRONICS</div><div class="sub">Work Time</div></div></div>' +
+    '<div><h1 class="title">RFQ / Quote Summary</h1><div class="for">For: <b>' + esc(custName) + '</b></div></div></div>' +
+    '<div class="meta">Generated<br><b>' + today + '</b></div></div>' +
+    kpis + bar + ttfa + prioTable + custTable + '</div></body></html>';
 }
 
 // ── PUSH / PULL PAGE ──────────────────────────────────────────────────────────
