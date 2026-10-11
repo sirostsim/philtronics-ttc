@@ -262,6 +262,24 @@ const schemas = {
     email:    Joi.string().trim().email({ tlds: false }).max(200).required(),
     password: Joi.string().max(200).required(),
   }),
+  // Customer-submitted RFQ: ONLY customer-provided fields. No internal fields
+  // (build time, quoted value, status, customerId) - those are set server-side.
+  portalRfqCreate: Joi.object({
+    partNumber:             Joi.string().trim().max(100).required(),
+    partName:               Joi.string().trim().max(200).allow('', null),
+    revision:               Joi.string().trim().max(40).allow('', null),
+    coNumber:               Joi.string().trim().max(40).allow('', null),
+    quoteType:              Joi.string().valid('new', 'up_rev').allow(null),
+    priority:               Joi.string().valid('A', 'B', 'C').allow(null),
+    dateRequiredBy:         Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).allow(null),
+    freeIssue:              Joi.boolean().allow(null),
+    potentialUnitsAnnual:   Joi.number().integer().min(0).max(2147483647).allow(null),
+    potentialRevenueAnnual: Joi.number().min(0).allow(null),
+    requestComments:        Joi.string().trim().max(4000).allow('', null),
+  }),
+  portalRfqMessage: Joi.object({
+    body: Joi.string().trim().min(1).max(4000).required(),
+  }),
 };
 
 module.exports = { validate, schemas };
