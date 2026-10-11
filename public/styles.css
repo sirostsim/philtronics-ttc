@@ -3501,7 +3501,18 @@ body.planner-fs-open { overflow:hidden; }
 .rfq-form { display:flex; flex-direction:column; gap:10px; }
 .rfq-form-row { display:flex; flex-direction:column; gap:4px; }
 .rfq-form-row label { margin:0; }
-.rfq-form-row input, .rfq-form-row select { width:100%; }
+.rfq-form-row input, .rfq-form-row select, .rfq-form-row textarea { width:100%; }
+/* Selects are not covered by the input[type=...] rule, so style them to match
+   the dark text inputs (with a visible chevron on the dark background). */
+.rfq-form-row select {
+  background:var(--bg3); border:1px solid var(--border); border-radius:var(--radius); color:var(--text);
+  font-size:17px; font-family:inherit; padding:14px 40px 14px 16px; outline:none; cursor:pointer;
+  -webkit-appearance:none; appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' stroke='%239aa0b8' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 14px center;
+}
+.rfq-form-row select:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(240,180,41,.18); }
+.rfq-form-row select option { background:var(--bg3); color:var(--text); }
 .rfq-form-internal { border-top:1px solid var(--border); margin-top:6px; padding-top:10px; display:flex; flex-direction:column; gap:10px; }
 
 .rfq-import { display:flex; flex-direction:column; gap:12px; }
