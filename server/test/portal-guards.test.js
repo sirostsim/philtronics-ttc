@@ -96,5 +96,30 @@ function mockRes() {
   }
   console.log('ok  - requirePortal: no cookie -> 401');
 
+  // The portal RFQ serializer must NEVER leak internal fields, whatever is on the row.
+  const { portalRfq } = require('../routes/portal')._test;
+  {
+    const internalRow = {
+      id: 'r1', rfq_number: 'RFQ-2026-0001', customer_id: 'c1', part_number: 'P1', status: 'open',
+      build_minutes: 1200, inspection_minutes: 60, test_minutes: 30, sage_ref: 'SAGE-9',
+      quoted_value: 9999.99, quote_ref: 'QN1', request_comments: 'please quote',
+    };
+    const out = portalRfq(internalRow);
+    const json = JSON.stringify(out);
+    const forbiddenKeys = ['build_minutes', 'buildMinutes', 'inspection_minutes', 'inspectionMinutes',
+      'test_minutes', 'testMinutes', 'sage_ref', 'sageRef', 'assignees', 'customer_id', 'customerId', 'updated_by'];
+    for (const k of forbiddenKeys) assert.ok(!(k in out), 'serializer must not expose key: ' + k);
+    assert.ok(!json.includes('1200') && !json.includes('SAGE-9'), 'serializer must not leak internal values');
+    assert.strictEqual(out.quote, null, 'quote hidden while not completed');
+  }
+  console.log('ok  - portalRfq serializer: no internal fields, quote hidden until completed');
+
+  {
+    const out = portalRfq({ id: 'r2', customer_id: 'c1', status: 'completed', quoted_value: 9962.02, quote_ref: 'QN1149', quoted_at: '2026-01-08' });
+    assert.ok(out.quote && out.quote.value === 9962.02 && out.quote.reference === 'QN1149', 'quote shown once completed');
+    assert.ok(!('build_minutes' in out) && !('sage_ref' in out), 'still no internal fields when completed');
+  }
+  console.log('ok  - portalRfq serializer: quote shown once completed, still no internal fields');
+
   console.log('\nALL PORTAL GUARD TESTS PASSED');
 })().catch(err => { console.error('\nTEST FAILURE:', err.message, '\n', err.stack); process.exit(1); });
