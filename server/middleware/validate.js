@@ -232,6 +232,15 @@ const schemas = {
     visibility: Joi.string().valid('internal', 'customer').default('internal'),
   }),
 
+  // Issue a quote: records it against the RFQ and (later) publishes it to the
+  // customer. Marks the RFQ completed and logs a customer-visible quote_issued event.
+  rfqIssueQuote: Joi.object({
+    quoteRef:    Joi.string().trim().min(1).max(60).required(),
+    quotedValue: Joi.number().min(0).required(),
+    quotedAt:    Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).optional().allow(null),
+    leadTime:    Joi.string().trim().max(120).optional().allow('', null),
+  }),
+
   // RFQ import: the SharePoint QuoteActions export as CSV text or an .xlsx base64.
   rfqImport: Joi.object({
     csvText: Joi.string().max(16000000),
