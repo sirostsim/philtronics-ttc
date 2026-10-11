@@ -327,6 +327,42 @@ router.post('/:id/events', validate(schemas.rfqEvent), async (req, res) => {
   }
 });
 
+// ── POST /api/rfq/:id/issue-quote ── record + publish a quote ──────────────────
+// Stamps quote_ref / quoted_value / quoted_at, marks the RFQ completed, and logs a
+// customer-visible quote_issued event. That event (visibility='customer') is what
+// the customer portal will later surface; internal costing stays internal.
+router.post('/:id/issue-quote', validate(schemas.rfqIssueQuote), async (req, res) => {
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+    const rfq = (await client.query('SELECT id FROM rfqs WHERE id = $1 FOR UPDATE', [req.params.id])).rows[0];
+    if (!rfq) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'RFQ not found.' }); }
+    const { quoteRef, quotedValue, quotedAt, leadTime } = req.body;
+    const when = quotedAt || new Date().toISOString().slice(0, 10);
+    await client.query(
+      `UPDATE rfqs SET quote_ref = $1, quoted_value = $2, quoted_at = $3, status = 'completed',
+         completed_at = COALESCE(completed_at, NOW()), first_action_at = COALESCE(first_action_at, NOW()),
+         updated_by = $4, updated_at = NOW()
+       WHERE id = $5`,
+      [quoteRef, quotedValue, when, req.user.id, req.params.id]);
+    const valueStr = '£' + Number(quotedValue).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const body = 'Quote ' + quoteRef + ' issued: ' + valueStr + (leadTime ? '. Lead time: ' + leadTime : '') + '.';
+    await client.query(
+      'INSERT INTO rfq_events (id, rfq_id, type, body, visibility, author_id) VALUES ($1,$2,$3,$4,$5,$6)',
+      [uuidv4(), req.params.id, 'quote_issued', body, 'customer', req.user.id]);
+    await client.query('COMMIT');
+    const joined = await queryOne(
+      `SELECT r.*, c.name AS customer_name FROM rfqs r JOIN customers c ON c.id = r.customer_id WHERE r.id = $1`, [req.params.id]);
+    res.json(fmtRfq(joined));
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('POST /rfq/:id/issue-quote error:', err.message);
+    res.status(500).json({ error: 'Could not issue the quote.' });
+  } finally {
+    client.release();
+  }
+});
+
 // ── POST /api/rfq/import ── the 661 + repeatable incremental import ────────────
 // Body: { csvText | xlsxB64, dryRun }. dryRun (default true) returns a preview and
 // writes nothing; dryRun:false applies in one transaction. Idempotent on

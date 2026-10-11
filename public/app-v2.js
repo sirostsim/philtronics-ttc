@@ -6591,7 +6591,8 @@ async function rfqOpenDetail(id) {
     el('button', { className: 'btn btn-sm btn-ghost', textContent: '‹ Back', onclick: rfqRenderList }),
     el('div', { className: 'rfq-detail-title' }, el('span', { className: 'rfq-detail-part', textContent: r.partNumber || '(no part)' }), r.revision ? el('span', { className: 'rfq-rev', textContent: ' ' + r.revision }) : null),
     rfqStatusChip(r.status),
-    el('button', { className: 'btn btn-sm btn-ghost', style: 'margin-left:auto', textContent: 'Edit', onclick: () => rfqOpenForm(r) })));
+    el('button', { className: 'btn btn-sm btn-primary', style: 'margin-left:auto', textContent: '🧾 Issue quote', onclick: () => rfqOpenIssueQuote(r) }),
+    el('button', { className: 'btn btn-sm btn-ghost', textContent: 'Edit', onclick: () => rfqOpenForm(r) })));
   root.appendChild(el('div', { className: 'rfq-detail-sub', textContent: (r.customerName || '') + ' · ' + (r.rfqNumber || r.quoteRef || 'imported') + (r.quoteType ? ' · ' + (r.quoteType === 'up_rev' ? 'Up revision' : 'New quotation') : '') }));
   const sa = el('div', { className: 'rfq-status-actions' });
   for (const [v, l] of RFQ_STATUSES) {
@@ -6670,6 +6671,31 @@ function rfqOpenForm(existing) {
     } catch (e) { toast(e.message, 'error'); save.disabled = false; }
   });
   openModal(isEdit ? 'Edit RFQ' : 'New RFQ', body, [el('button', { className: 'btn btn-ghost', textContent: 'Cancel', onclick: () => closeModal() }), save]);
+}
+
+// Issue (record + publish) a quote: stamps value/ref/date, marks the RFQ
+// completed, and logs a customer-visible quote event.
+function rfqOpenIssueQuote(r) {
+  const val = el('input', { type: 'number', value: r.quotedValue != null ? String(r.quotedValue) : '', placeholder: 'Quoted value' });
+  const ref = el('input', { type: 'text', value: r.quoteRef || '', placeholder: 'e.g. QN1149' });
+  const date = el('input', { type: 'date', value: r.quotedAt ? r.quotedAt.slice(0, 10) : new Date().toISOString().slice(0, 10) });
+  const lead = el('input', { type: 'text', placeholder: 'e.g. 4 weeks' });
+  const lab = (t, node) => el('div', { className: 'rfq-form-row' }, el('label', { className: 'dev-form-label', textContent: t }), node);
+  const body = el('div', { className: 'rfq-form' },
+    el('div', { className: 'rfq-import-note', textContent: 'Records the quote against this RFQ, marks it Completed, and (once the customer portal is live) publishes it to the customer. Internal costing stays internal.' }),
+    lab('Quoted value', val), lab('Quote reference', ref), lab('Quote date', date), lab('Lead time (optional)', lead));
+  const save = el('button', { className: 'btn btn-primary', textContent: 'Issue quote' });
+  save.addEventListener('click', async () => {
+    const quotedValue = val.value === '' ? null : parseFloat(val.value);
+    if (quotedValue == null || isNaN(quotedValue)) { toast('Enter a quoted value.', 'error'); return; }
+    if (!ref.value.trim()) { toast('Enter a quote reference.', 'error'); return; }
+    save.disabled = true;
+    try {
+      await POST('/rfq/' + r.id + '/issue-quote', { quoteRef: ref.value.trim(), quotedValue, quotedAt: date.value || null, leadTime: lead.value.trim() || null });
+      toast('Quote issued', 'success'); closeModal(); rfqOpenDetail(r.id);
+    } catch (e) { toast(e.message, 'error'); save.disabled = false; }
+  });
+  openModal('Issue quote', body, [el('button', { className: 'btn btn-ghost', textContent: 'Cancel', onclick: () => closeModal() }), save]);
 }
 
 function rfqOpenImport() {
