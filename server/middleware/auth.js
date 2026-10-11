@@ -39,6 +39,12 @@ async function requireAuth(req, res, next) {
     return res.status(401).json({ error: 'Session expired. Please log in again.' });
   }
 
+  // A customer-portal token must never authenticate against the internal app.
+  if (payload.typ === 'portal') {
+    res.clearCookie('token');
+    return res.status(401).json({ error: 'Not authenticated.' });
+  }
+
   try {
     const user = await queryOne(
       'SELECT * FROM users WHERE id = $1 AND is_active = TRUE', [payload.sub]

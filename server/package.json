@@ -7,7 +7,8 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "migrate": "node migrations/runner.js",
-    "seed": "node seed.js"
+    "seed": "node seed.js",
+    "test": "node test/portal-guards.test.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
