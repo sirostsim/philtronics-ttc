@@ -190,6 +190,19 @@ operator -> supervisor -> manager -> administrator -> superuser
   receives it. avatarEl(user, size) renders photo-or-initials and falls back to
   initials on image load error.
 
+## Email (transactional) setup
+
+- server/lib/email.js sends transactional email via the Resend HTTP API (no SMTP,
+  no new dependency - uses Node 20 global fetch). For the CRM portal (invites,
+  notifications); see docs/crm-portal-plan.md.
+- Env vars on the Railway APP service (never committed): RESEND_API_KEY,
+  EMAIL_FROM (e.g. "Philtronics Work Time <noreply@yourdomain>"), optional
+  EMAIL_REPLY_TO.
+- Degrades gracefully: with no RESEND_API_KEY it logs instead of sending and
+  returns { sent:false }, and a provider/network failure never throws (returns
+  { sent:false, reason }) so callers can warn rather than crash. Helpers:
+  sendEmail({to,subject,html,text}), layout({title,bodyHtml,cta}), emailEnabled().
+
 ## Domain rules worth knowing
 
 - Productivity uses the FULL, undivided timer duration. Never divide it by
