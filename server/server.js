@@ -115,6 +115,14 @@ app.get('/api/items', requireAuth, async (req, res) => {
 const publicDir = path.join(__dirname, '..', 'public');
 app.use(express.static(publicDir));
 
+// Customer portal bundle (its own standalone page under /portal). Its API hangs
+// off /api/portal; here we only serve the static entry page for the portal's two
+// browser URLs - the login page and the invite-accept link. Static assets
+// (portal.js/portal.css) are served by express.static above.
+app.get(['/portal', '/portal/accept'], (req, res) => {
+  res.sendFile(path.join(publicDir, 'portal', 'index.html'));
+});
+
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api')) return res.status(404).json({ error: 'Not found.' });
   res.sendFile(path.join(publicDir, 'index.html'));
