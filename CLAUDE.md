@@ -101,7 +101,7 @@ operator -> supervisor -> manager -> administrator -> superuser
   img-src. NOTE: Chart.js from cdnjs is currently blocked by script-src (charts
   page may not load) — a known outstanding issue; fix is adding
   https://cdnjs.cloudflare.com to script-src.
-- Migrations are additive and run on boot. Latest migration number is 033
+- Migrations are additive and run on boot. Latest migration number is 034
   (016 settings, 017 timer_quantity_runs, 018 dev_requests, 019 user_avatars,
   020 planned_work, 021 customer_orders, 022 planned_work source_required_by,
   023 planned_work source_po_line, 024 planned_work ordered_qty,
@@ -112,7 +112,8 @@ operator -> supervisor -> manager -> administrator -> superuser
   030 planned_work_assignees — many-to-many operative assignment for My Work,
   031 planned_work commitment_value — GBP value for MOB-pasted planner jobs,
   032 crm_customers - CRM/RFQ customers + customer_aliases,
-  033 crm_rfqs - CRM/RFQ rfqs + rfq_assignees + rfq_events + rfq_attachments).
+  033 crm_rfqs - CRM/RFQ rfqs + rfq_assignees + rfq_events + rfq_attachments,
+  034 portal_users - external customer-portal accounts + portal_invites).
   008_add_pcb_department.sql is a deliberate no-op placeholder (SELECT 1).
 - CRM / RFQ module (Phase 1, see docs/crm-rfq-spec.md + docs/crm-rfq-phase1-plan.md):
   internal Request-For-Quote management replacing the SharePoint "QuoteActions"
@@ -134,6 +135,24 @@ operator -> supervisor -> manager -> administrator -> superuser
     rfq_number NULL (their quote_ref / external id is the reference).
   - Later phases: quote PDF + email, then an external customer portal with a
     hard internal/external split.
+- CRM customer portal (external, see docs/crm-portal-plan.md). HARD internal/
+  external split: separate portal_users table (migration 034, NOT in `users`,
+  not in ROLE_HIERARCHY), a separate 'ptoken' cookie + JWT with typ:'portal'
+  (middleware/portal-auth.js), and a belt-and-braces guard in server.js that
+  rejects a portal session on any /api/* route except /api/portal/*. All portal
+  endpoints live under /api/portal (routes/portal.js): auth (accept-invite /
+  login / logout / me) + per-customer-scoped RFQ routes, every query fenced to
+  req.portalUser.customerId. The ONLY way RFQ data leaves to a customer is the
+  portalRfq() allow-list serializer - it emits customer-safe fields only and
+  NEVER build/inspection/test minutes, Sage refs, assignees or another
+  customer's data; the quote block appears only once status='completed'. Invites
+  are manager+ (routes/customers.js POST /:id/invites), store only a sha256 hash
+  of the token, email the link via lib/email.js, expire in 7 days. The portal is
+  its own minimal standalone bundle in public/portal/ (index.html + portal.js +
+  portal.css, NONE of the internal SPA), served at /portal and /portal/accept
+  (explicit routes in server.js BEFORE the SPA catch-all; static assets served
+  by express.static). Guard tests: server/test/portal-guards.test.js (npm test
+  in server/) cover the split, the token typ checks and the serializer.
 - Push/Pull (routes/push-pull.js, lib/xlsx-demand.js, page 'pushpull', manager+):
   archives each Tuesday's KLA order-book + priority-requirements upload as a
   snapshot and reports the week-over-week demand push/pull. .xlsx is parsed
