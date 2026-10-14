@@ -4085,7 +4085,7 @@ function paintDeptWallboard(dept) {
     function _tileScore(t) {
       const elapsedMs = _now - new Date(t.startedAt).getTime();
       const elapsedS  = elapsedMs / 1000 - (t.totalPausedSeconds || 0);
-      const pct       = t.targetSeconds ? elapsedS / t.targetSeconds : (elapsedS / noTargetOverdueSecs());
+      const pct       = t.targetSeconds ? elapsedS / t.targetSeconds : 0; // no target => on-track (green)
       if (t.handRaised)               return [1,  0];           // hand raised — top priority
       if (t.timerCategory==='rework' && !t.isPaused) return [2, -elapsedS]; // active rework
       if (pct >= overdueFrac() && !t.isPaused)  return [3, -elapsedS];   // active overdue
@@ -4113,15 +4113,12 @@ function paintDeptWallboard(dept) {
         tile.classList.add('tile-rework');
       }
 
-      if (!t.isPaused) {
-        if (t.targetSeconds) {
-          const pct = elapsed / t.targetSeconds;
-          if (pct >= overdueFrac()) tile.classList.add('tile-overdue');
-          else if (pct >= warnFrac()) tile.classList.add('tile-warning');
-        } else {
-          if (elapsed > noTargetOverdueSecs()) tile.classList.add('tile-overdue');
-          else if (elapsed > noTargetWarnSecs()) tile.classList.add('tile-warning');
-        }
+      // No target time means there is no meaningful threshold to escalate
+      // against, so the tile stays green. Only targeted jobs show amber/red.
+      if (!t.isPaused && t.targetSeconds) {
+        const pct = elapsed / t.targetSeconds;
+        if (pct >= overdueFrac()) tile.classList.add('tile-overdue');
+        else if (pct >= warnFrac()) tile.classList.add('tile-warning');
       }
 
       if (t.isPaused) {
@@ -4309,9 +4306,6 @@ function startDeptWallboardTick(dept, pageKey) {
           lbl.textContent = '\uD83C\uDFAF Target: ' + formatHM(tgt) + '  \u2014  ' + (rem > 0 ? formatHM(rem) + ' remaining' : formatHM(Math.abs(rem)) + ' overdue');
           lbl.className   = 'wb-target-label' + (rem <= 0 ? ' overdue' : '');
         }
-      } else {
-        if (elapsed > noTargetOverdueSecs()) tile.classList.add('tile-overdue');
-        else if (elapsed > noTargetWarnSecs()) tile.classList.add('tile-warning');
       }
     });
   }, 1000);
@@ -4355,7 +4349,7 @@ async function refreshDeptWallboardCompact(dept) {
     function _tileScore(t) {
       const elapsedMs = _now - new Date(t.startedAt).getTime();
       const elapsedS  = elapsedMs / 1000 - (t.totalPausedSeconds || 0);
-      const pct       = t.targetSeconds ? elapsedS / t.targetSeconds : (elapsedS / noTargetOverdueSecs());
+      const pct       = t.targetSeconds ? elapsedS / t.targetSeconds : 0; // no target => on-track (green)
       if (t.handRaised)               return [1,  0];           // hand raised — top priority
       if (t.timerCategory==='rework' && !t.isPaused) return [2, -elapsedS]; // active rework
       if (pct >= overdueFrac() && !t.isPaused)  return [3, -elapsedS];   // active overdue
@@ -4376,15 +4370,12 @@ async function refreshDeptWallboardCompact(dept) {
       const localEl = Math.max(0, Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000)) - (t.totalPausedSeconds || 0);
       const elapsed = sNet !== null ? sNet : localEl;
       const tile    = el('div', { className: 'wbc-tile' + (t.isPaused ? ' tile-paused' : '') + (t.handRaised ? ' tile-hand-raised' : '') + (t.timerCategory === 'rework' ? ' tile-rework' : '') });
-      if (!t.isPaused) {
-        if (t.targetSeconds) {
-          const pct = elapsed / t.targetSeconds;
-          if (pct >= overdueFrac()) tile.classList.add('tile-overdue');
-          else if (pct >= warnFrac()) tile.classList.add('tile-warning');
-        } else {
-          if (elapsed > noTargetOverdueSecs()) tile.classList.add('tile-overdue');
-          else if (elapsed > noTargetWarnSecs()) tile.classList.add('tile-warning');
-        }
+      // No target time means there is no meaningful threshold to escalate
+      // against, so the tile stays green. Only targeted jobs show amber/red.
+      if (!t.isPaused && t.targetSeconds) {
+        const pct = elapsed / t.targetSeconds;
+        if (pct >= overdueFrac()) tile.classList.add('tile-overdue');
+        else if (pct >= warnFrac()) tile.classList.add('tile-warning');
       }
       const opRow = el('div', { className: 'wb-operator-row' });
       opRow.appendChild(el('span', {
@@ -4434,9 +4425,6 @@ function startDeptWallboardCompactTick(dept, pageKey, tilesId) {
         const pct = elapsed / tgt;
         if (pct >= overdueFrac()) tile.classList.add('tile-overdue');
         else if (pct >= warnFrac()) tile.classList.add('tile-warning');
-      } else {
-        if (elapsed > noTargetOverdueSecs()) tile.classList.add('tile-overdue');
-        else if (elapsed > noTargetWarnSecs()) tile.classList.add('tile-warning');
       }
     });
   }, 1000);
