@@ -94,7 +94,8 @@
       "Bash(node --check server/routes/portal.js)",
       "Bash(git reset *)",
       "Bash(git stash *)",
-      "Bash(node -e 'const fs=require\\(\"fs\"\\);let s=fs.readFileSync\\(\"public/portal/portal.css\",\"utf8\"\\);s=s.replace\\(/\\\\r\\\\n/g,\"\\\\n\"\\).replace\\(/\\\\n/g,\"\\\\r\\\\n\"\\);fs.writeFileSync\\(\"public/portal/portal.css\",s,\"utf8\"\\);const lf=\\(s.match\\(/\\(?<!\\\\r\\)\\\\n/g\\)||[]\\).length;console.log\\(\"portal.css loneLF=\"+lf\\);')"
+      "Bash(node -e 'const fs=require\\(\"fs\"\\);let s=fs.readFileSync\\(\"public/portal/portal.css\",\"utf8\"\\);s=s.replace\\(/\\\\r\\\\n/g,\"\\\\n\"\\).replace\\(/\\\\n/g,\"\\\\r\\\\n\"\\);fs.writeFileSync\\(\"public/portal/portal.css\",s,\"utf8\"\\);const lf=\\(s.match\\(/\\(?<!\\\\r\\)\\\\n/g\\)||[]\\).length;console.log\\(\"portal.css loneLF=\"+lf\\);')",
+      "Bash(gh auth *)"
     ]
   }
 }

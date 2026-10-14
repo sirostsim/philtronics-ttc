@@ -3732,7 +3732,7 @@ function renderHomeActiveJobs(timers) {
     const elA = now - new Date(a.startedAt).getTime(), elB = now - new Date(b.startedAt).getTime();
     function homeScore(t, elMs) {
       const elS = elMs / 1000 - (t.totalPausedSeconds || 0);
-      const pct = t.targetSeconds ? elS / t.targetSeconds : elS / noTargetOverdueSecs();
+      const pct = t.targetSeconds ? elS / t.targetSeconds : 0; // no target => on-track (green)
       if (t.handRaised)                             return [1,  0];
       if (t.timerCategory==='rework' && !t.isPaused)return [2, -elS];
       if (pct >= overdueFrac() && !t.isPaused)        return [3, -elS];
@@ -3751,8 +3751,8 @@ function renderHomeActiveJobs(timers) {
     const refMs   = t.isPaused && t.pausedAt ? new Date(t.pausedAt).getTime() : now;
     const localEl = Math.max(0, Math.floor((refMs - new Date(t.startedAt).getTime()) / 1000)) - (t.totalPausedSeconds || 0);
     const elapsed = t.netElapsedSeconds != null ? t.netElapsedSeconds : localEl;
-    const isOver  = t.targetSeconds ? elapsed >= t.targetSeconds : elapsed > noTargetOverdueSecs();
-    const isWarn  = !isOver && (t.targetSeconds ? elapsed / t.targetSeconds >= warnFrac() : elapsed > noTargetWarnSecs());
+    const isOver  = !!t.targetSeconds && elapsed >= t.targetSeconds; // no target => never over (green)
+    const isWarn  = !isOver && !!t.targetSeconds && elapsed / t.targetSeconds >= warnFrac();
     const row = el('div', { className: 'home-active-row' + (isOver ? ' over' : isWarn ? ' warn' : '') + (t.handRaised ? ' hand-raised' : '') });
     row.appendChild(el('span', { className: 'home-active-dot' + (isOver ? ' dot-red' : isWarn ? ' dot-amber' : ' dot-green') }));
     const info = el('div', { className: 'home-active-info' });
