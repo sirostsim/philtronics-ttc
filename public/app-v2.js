@@ -6537,6 +6537,7 @@ function rfqToolbar() {
   let t; search.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { _rfq.filters.q = search.value.trim(); rfqRenderList(); }, 300); });
   bar.appendChild(el('div', { className: 'rfq-filters' }, statusSel, custSel, prioSel, search));
   bar.appendChild(el('div', { className: 'rfq-actions' },
+    el('button', { className: 'btn btn-sm btn-ghost', textContent: '👥 Contacts', onclick: () => rfqOpenContacts(_rfq.filters.customer || null) }),
     el('button', { className: 'btn btn-sm btn-ghost', textContent: '📊 Report', onclick: rfqOpenReport }),
     el('button', { className: 'btn btn-sm btn-ghost', textContent: '⬆ Import', onclick: rfqOpenImport }),
     el('button', { className: 'btn btn-sm btn-primary', textContent: '+ New RFQ', onclick: () => rfqOpenForm(null) })));
@@ -6696,6 +6697,110 @@ function rfqOpenIssueQuote(r) {
     } catch (e) { toast(e.message, 'error'); save.disabled = false; }
   });
   openModal('Issue quote', body, [el('button', { className: 'btn btn-ghost', textContent: 'Cancel', onclick: () => closeModal() }), save]);
+}
+
+/* ── Portal contacts (admin-side invite management) ──────────────────────────
+   Manages which customer contacts can reach the external portal. Backed by
+   /api/customers/:id/invites (manager+). We create an invite (emails a link and
+   returns the raw link once so it can be copied), list a customer's invites with
+   their status, and revoke a pending one. An accepted invite means the contact
+   has a live portal account; revoking the invite record does not disable that
+   account (that is a later, deliberate admin action, not wired here). */
+function rfqInviteStatusChip(s) {
+  const label = { pending: 'Pending', accepted: 'Active', expired: 'Expired' }[s] || s;
+  return el('span', { className: 'rfq-invite-chip rfq-invite-' + s, textContent: label });
+}
+
+function rfqOpenContacts(preselectId) {
+  const custSel = el('select', {},
+    el('option', { value: '', textContent: '(choose a customer)' }),
+    ..._rfq.customers.map(c => el('option', { value: c.id, textContent: c.name })));
+  if (preselectId) custSel.value = preselectId;
+
+  const listBox = el('div', { className: 'rfq-contacts-list' });
+  const resultBox = el('div', { className: 'rfq-invite-result' });
+
+  // Invite form
+  const emailIn = el('input', { type: 'email', placeholder: 'contact@customer.com' });
+  const nameIn = el('input', { type: 'text', placeholder: 'Contact name (optional)' });
+  const sendBtn = el('button', { className: 'btn btn-sm btn-primary', textContent: 'Send invite' });
+  const inviteForm = el('div', { className: 'rfq-invite-form' },
+    el('div', { className: 'rfq-form-row' }, el('label', { className: 'dev-form-label', textContent: 'Email' }), emailIn),
+    el('div', { className: 'rfq-form-row' }, el('label', { className: 'dev-form-label', textContent: 'Name' }), nameIn),
+    el('div', { className: 'rfq-invite-form-actions' }, sendBtn));
+
+  const body = el('div', { className: 'rfq-contacts' },
+    el('div', { className: 'rfq-import-note', textContent: 'Invite customer contacts to the external portal, where they can raise and track their own RFQs. They see only their own organisation’s RFQs and only the parts we choose to share.' }),
+    el('div', { className: 'rfq-form-row' }, el('label', { className: 'dev-form-label', textContent: 'Customer' }), custSel),
+    listBox,
+    el('hr', { className: 'rfq-contacts-hr' }),
+    el('div', { className: 'rfq-contacts-subhead', textContent: 'Invite a new contact' }),
+    inviteForm,
+    resultBox);
+
+  function setFormEnabled(on) { sendBtn.disabled = !on; emailIn.disabled = !on; nameIn.disabled = !on; }
+
+  async function loadList() {
+    resultBox.innerHTML = '';
+    const cid = custSel.value;
+    listBox.innerHTML = '';
+    if (!cid) { setFormEnabled(false); listBox.appendChild(el('div', { className: 'rfq-contacts-empty', textContent: 'Choose a customer to manage its portal contacts.' })); return; }
+    setFormEnabled(true);
+    listBox.appendChild(el('div', { className: 'rfq-contacts-empty', textContent: 'Loading…' }));
+    try {
+      const rows = await GET('/customers/' + cid + '/invites');
+      listBox.innerHTML = '';
+      if (!rows.length) { listBox.appendChild(el('div', { className: 'rfq-contacts-empty', textContent: 'No portal contacts yet for this customer.' })); return; }
+      const tbl = el('table', { className: 'dash-table rfq-contacts-table' });
+      tbl.appendChild(el('thead', {}, el('tr', {}, ...['Email', 'Name', 'Status', 'Invited', ''].map(h => el('th', { textContent: h })))));
+      const tb = el('tbody', {});
+      for (const inv of rows) {
+        let action = null;
+        if (inv.status !== 'accepted') {
+          const rev = el('button', { className: 'btn btn-xs btn-ghost rfq-invite-revoke', textContent: 'Revoke' });
+          rev.addEventListener('click', async () => {
+            if (!window.confirm('Revoke the invite for ' + inv.email + '? The link will stop working.')) return;
+            rev.disabled = true;
+            try { await DELETE('/customers/' + cid + '/invites/' + inv.id); toast('Invite revoked', 'success'); loadList(); }
+            catch (e) { toast(e.message, 'error'); rev.disabled = false; }
+          });
+          action = rev;
+        }
+        tb.appendChild(el('tr', {},
+          el('td', { textContent: inv.email }),
+          el('td', { textContent: inv.fullName || '' }),
+          el('td', {}, rfqInviteStatusChip(inv.status)),
+          el('td', { textContent: rfqDate(inv.createdAt) }),
+          el('td', { className: 'rfq-contacts-action' }, action)));
+      }
+      tbl.appendChild(tb); listBox.appendChild(tbl);
+    } catch (e) { listBox.innerHTML = ''; listBox.appendChild(el('div', { className: 'error-msg', textContent: e.message })); }
+  }
+
+  sendBtn.addEventListener('click', async () => {
+    const cid = custSel.value;
+    const email = emailIn.value.trim();
+    if (!cid) { toast('Choose a customer first.', 'error'); return; }
+    if (!email) { toast('Enter the contact’s email.', 'error'); return; }
+    sendBtn.disabled = true;
+    resultBox.innerHTML = '';
+    try {
+      const res = await POST('/customers/' + cid + '/invites', { email, fullName: nameIn.value.trim() || undefined });
+      emailIn.value = ''; nameIn.value = '';
+      const copyBtn = el('button', { className: 'btn btn-xs btn-ghost', textContent: 'Copy link' });
+      copyBtn.addEventListener('click', () => {
+        navigator.clipboard.writeText(res.inviteUrl).then(() => toast('Link copied', 'success'), () => toast('Could not copy', 'error'));
+      });
+      resultBox.appendChild(el('div', { className: 'rfq-invite-ok' },
+        el('div', { textContent: res.emailed ? ('Invite emailed to ' + res.email + '.') : ('Invite created for ' + res.email + '. Email is not configured, so share this link manually:') }),
+        el('div', { className: 'rfq-invite-link' }, el('code', { textContent: res.inviteUrl }), copyBtn)));
+      loadList();
+    } catch (e) { toast(e.message, 'error'); sendBtn.disabled = false; }
+  });
+
+  custSel.addEventListener('change', loadList);
+  openModal('Portal contacts', body, [el('button', { className: 'btn btn-ghost', textContent: 'Close', onclick: () => closeModal() })]);
+  loadList();
 }
 
 function rfqOpenImport() {
