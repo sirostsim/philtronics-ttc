@@ -48,6 +48,19 @@ router.post('/auth/accept-invite', validate(schemas.portalAcceptInvite), async (
     await client.query('COMMIT');
     res.cookie(PORTAL_COOKIE, signPortalToken(pu), PORTAL_COOKIE_OPTS);
     res.json({ id: pu.id, email: pu.email, fullName: pu.full_name || null });
+    // Confirmation email (fire-and-forget; never blocks or fails the response).
+    try {
+      const { sendEmail, layout, publicBase } = require('../lib/email');
+      sendEmail({
+        to: email,
+        subject: 'Your Philtronics portal account is ready',
+        html: layout({
+          title: 'Account ready',
+          bodyHtml: '<p>Your Philtronics customer portal account is set up. You can sign in any time to raise and track your requests for quotation.</p>',
+          cta: { url: publicBase(req) + '/portal', label: 'Go to the portal' },
+        }),
+      }).catch(() => {});
+    } catch (_) {}
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch (_) {}
     console.error('POST /portal/auth/accept-invite error:', err.message);
@@ -184,6 +197,25 @@ router.post('/rfqs', requirePortal, validate(schemas.portalRfqCreate), async (re
     await client.query('COMMIT');
     const r = await queryOne('SELECT * FROM rfqs WHERE id = $1', [id]);
     res.status(201).json(portalRfq(r));
+    // Notify the internal team (fire-and-forget) if an internal address is set.
+    try {
+      const internalTo = (process.env.EMAIL_INTERNAL_TO || '').split(',').map(s => s.trim()).filter(Boolean);
+      if (internalTo.length) {
+        const cust = await queryOne('SELECT name FROM customers WHERE id = $1', [req.portalUser.customerId]);
+        const { sendEmail, layout, publicBase, escapeHtml } = require('../lib/email');
+        sendEmail({
+          to: internalTo,
+          subject: 'New portal RFQ: ' + rfqNumber,
+          html: layout({
+            title: 'New RFQ from a customer',
+            bodyHtml: '<p><strong>' + escapeHtml((cust && cust.name) || 'A customer') + '</strong> submitted <strong>' + escapeHtml(rfqNumber)
+              + '</strong> via the portal' + (b.partNumber ? ' for part ' + escapeHtml(b.partNumber) : '') + (b.partName ? ' (' + escapeHtml(b.partName) + ')' : '') + '.</p>'
+              + '<p>Open the RFQ module in Work Time to review and action it.</p>',
+            cta: { url: publicBase(req) + '/', label: 'Open Work Time' },
+          }),
+        }).catch(() => {});
+      }
+    } catch (_) {}
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch (_) {}
     console.error('POST /portal/rfqs error:', err.message);

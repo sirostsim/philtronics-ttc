@@ -80,4 +80,14 @@ async function sendEmail({ to, subject, html, text }) {
   }
 }
 
-module.exports = { sendEmail, emailEnabled, layout, escapeHtml, toText };
+// Resolve the public base URL for links in emails. Prefers PUBLIC_BASE_URL;
+// otherwise uses the forwarded protocol (Railway sets x-forwarded-proto) so links
+// come out https without globally enabling trust-proxy.
+function publicBase(req) {
+  if (process.env.PUBLIC_BASE_URL) return process.env.PUBLIC_BASE_URL.replace(/\/+$/, '');
+  const proto = String((req && req.headers && req.headers['x-forwarded-proto']) || (req && req.protocol) || 'https').split(',')[0].trim();
+  const host = (req && req.get && req.get('host')) || (req && req.headers && req.headers.host) || '';
+  return proto + '://' + host;
+}
+
+module.exports = { sendEmail, emailEnabled, layout, escapeHtml, toText, publicBase };

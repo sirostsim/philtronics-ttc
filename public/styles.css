@@ -3543,3 +3543,4 @@ body.planner-fs-open { overflow:hidden; }
 .rfq-invite-ok { background:rgba(34,197,94,.08); border:1px solid rgba(34,197,94,.3); border-radius:8px; padding:10px 12px; font-size:13px; display:flex; flex-direction:column; gap:8px; }
 .rfq-invite-link { display:flex; align-items:center; gap:8px; }
 .rfq-invite-link code { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; background:var(--bg3); border:1px solid var(--border); border-radius:6px; padding:5px 8px; font-size:12px; }
+.rfq-invite-actions { display:inline-flex; gap:6px; }

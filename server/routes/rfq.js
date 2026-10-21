@@ -354,6 +354,27 @@ router.post('/:id/issue-quote', validate(schemas.rfqIssueQuote), async (req, res
     const joined = await queryOne(
       `SELECT r.*, c.name AS customer_name FROM rfqs r JOIN customers c ON c.id = r.customer_id WHERE r.id = $1`, [req.params.id]);
     res.json(fmtRfq(joined));
+    // Notify the customer's portal contacts that a quote is ready (fire-and-forget).
+    try {
+      const contacts = await query('SELECT email FROM portal_users WHERE customer_id = $1 AND is_active = TRUE', [joined.customer_id]);
+      const to = contacts.map(c => c.email).filter(Boolean);
+      if (to.length) {
+        const { sendEmail, layout, publicBase, escapeHtml } = require('../lib/email');
+        const valueStr = '£' + Number(quotedValue).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const ref = joined.rfq_number || quoteRef;
+        sendEmail({
+          to,
+          subject: 'Your Philtronics quote is ready' + (ref ? ' (' + ref + ')' : ''),
+          html: layout({
+            title: 'Your quote is ready',
+            bodyHtml: '<p>We have issued a quote for your request' + (joined.part_name ? ' (' + escapeHtml(joined.part_name) + ')' : '') + '.</p>'
+              + '<p><strong>Quote ' + escapeHtml(quoteRef) + '</strong>: ' + valueStr + (leadTime ? '<br>Lead time: ' + escapeHtml(leadTime) : '') + '</p>'
+              + '<p>Sign in to the portal to view the full details and accept or decline.</p>',
+            cta: { url: publicBase(req) + '/portal', label: 'View your quote' },
+          }),
+        }).catch(() => {});
+      }
+    } catch (_) {}
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch (_) {}
     console.error('POST /rfq/:id/issue-quote error:', err.message);

@@ -13,10 +13,24 @@ const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const { query, queryOne } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { sendEmail, layout, escapeHtml, publicBase } = require('../lib/email');
 const { validate, schemas } = require('../middleware/validate');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('manager'));
+
+// Compose + send the portal invite email (shared by create + resend).
+async function sendInviteEmail(email, customerName, inviteUrl) {
+  return sendEmail({
+    to: email,
+    subject: 'Your Philtronics customer portal invite',
+    html: layout({
+      title: 'Customer portal invite',
+      bodyHtml: '<p>Philtronics has invited you to the ' + escapeHtml(customerName) + ' customer portal, where you can raise and track requests for quotation.</p><p>This link expires in 7 days.</p>',
+      cta: { url: inviteUrl, label: 'Set your password' },
+    }),
+  });
+}
 
 function fmt(r) {
   return {
@@ -75,18 +89,8 @@ router.post('/:id/invites', validate(schemas.customerInvite), async (req, res) =
     await query(
       'INSERT INTO portal_invites (id, customer_id, email, full_name, token_hash, expires_at, invited_by) VALUES ($1,$2,$3,$4,$5,$6,$7)',
       [id, cust.id, email, (req.body.fullName || '').trim() || null, tokenHash, expires, req.user.id]);
-    const base = process.env.PUBLIC_BASE_URL || (req.protocol + '://' + req.get('host'));
-    const inviteUrl = base + '/portal/accept?token=' + token;
-    const { sendEmail, layout } = require('../lib/email');
-    const sent = await sendEmail({
-      to: email,
-      subject: 'Your Philtronics customer portal invite',
-      html: layout({
-        title: 'Customer portal invite',
-        bodyHtml: '<p>Philtronics has invited you to the ' + cust.name + ' customer portal, where you can raise and track requests for quotation.</p><p>This link expires in 7 days.</p>',
-        cta: { url: inviteUrl, label: 'Set your password' },
-      }),
-    });
+    const inviteUrl = publicBase(req) + '/portal/accept?token=' + token;
+    const sent = await sendInviteEmail(email, cust.name, inviteUrl);
     res.status(201).json({ id, email, inviteUrl, emailed: sent.sent });
   } catch (err) {
     console.error('POST /customers/:id/invites error:', err.message);
@@ -119,6 +123,29 @@ router.delete('/:id/invites/:inviteId', async (req, res) => {
   } catch (err) {
     console.error('DELETE /customers/:id/invites error:', err.message);
     res.status(500).json({ error: 'Could not revoke the invite.' });
+  }
+});
+
+// POST /api/customers/:id/invites/:inviteId/resend - re-issue a pending invite.
+// Only a hash of the token is stored, so resend mints a fresh token + new 7-day
+// expiry and emails the new link (the previous link stops working).
+router.post('/:id/invites/:inviteId/resend', async (req, res) => {
+  try {
+    const inv = await queryOne(
+      'SELECT i.id, i.email, i.accepted_at, c.name AS customer_name FROM portal_invites i JOIN customers c ON c.id = i.customer_id WHERE i.id = $1 AND i.customer_id = $2',
+      [req.params.inviteId, req.params.id]);
+    if (!inv) return res.status(404).json({ error: 'Invite not found.' });
+    if (inv.accepted_at) return res.status(400).json({ error: 'This contact has already set up their account.' });
+    const token = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const expires = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+    await query('UPDATE portal_invites SET token_hash = $1, expires_at = $2 WHERE id = $3', [tokenHash, expires, inv.id]);
+    const inviteUrl = publicBase(req) + '/portal/accept?token=' + token;
+    const sent = await sendInviteEmail(inv.email, inv.customer_name, inviteUrl);
+    res.json({ id: inv.id, email: inv.email, inviteUrl, emailed: sent.sent });
+  } catch (err) {
+    console.error('POST /customers/:id/invites/:inviteId/resend error:', err.message);
+    res.status(500).json({ error: 'Could not resend the invite.' });
   }
 });
 

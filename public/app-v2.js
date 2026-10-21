@@ -6745,6 +6745,20 @@ function rfqOpenContacts(preselectId) {
       for (const inv of rows) {
         let action = null;
         if (inv.status !== 'accepted') {
+          const resend = el('button', { className: 'btn btn-xs btn-ghost', textContent: 'Resend' });
+          resend.addEventListener('click', async () => {
+            resend.disabled = true;
+            try {
+              const res = await POST('/customers/' + cid + '/invites/' + inv.id + '/resend', {});
+              resultBox.innerHTML = '';
+              const copyBtn = el('button', { className: 'btn btn-xs btn-ghost', textContent: 'Copy link' });
+              copyBtn.addEventListener('click', () => { navigator.clipboard.writeText(res.inviteUrl).then(() => toast('Link copied', 'success'), () => toast('Could not copy', 'error')); });
+              resultBox.appendChild(el('div', { className: 'rfq-invite-ok' },
+                el('div', { textContent: res.emailed ? ('New invite emailed to ' + res.email + '.') : ('New invite link created for ' + res.email + '. Email is not configured, so share this link manually:') }),
+                el('div', { className: 'rfq-invite-link' }, el('code', { textContent: res.inviteUrl }), copyBtn)));
+              toast('Invite resent', 'success'); loadList();
+            } catch (e) { toast(e.message, 'error'); resend.disabled = false; }
+          });
           const rev = el('button', { className: 'btn btn-xs btn-ghost rfq-invite-revoke', textContent: 'Revoke' });
           rev.addEventListener('click', async () => {
             if (!window.confirm('Revoke the invite for ' + inv.email + '? The link will stop working.')) return;
@@ -6752,7 +6766,7 @@ function rfqOpenContacts(preselectId) {
             try { await DELETE('/customers/' + cid + '/invites/' + inv.id); toast('Invite revoked', 'success'); loadList(); }
             catch (e) { toast(e.message, 'error'); rev.disabled = false; }
           });
-          action = rev;
+          action = el('span', { className: 'rfq-invite-actions' }, resend, rev);
         }
         tb.appendChild(el('tr', {},
           el('td', { textContent: inv.email }),
