@@ -12,6 +12,36 @@ Public API tokens and OAuth sessions.
 Railway's guidance to every customer: **assume every secret stored in Railway is
 compromised and rotate it.**
 
+## Completion record (23 October 2026)
+
+Rotation completed and verified (app back up, sign-in with the new superuser
+password, avatar loads from R2, portal invite email sends via Resend).
+
+- **Database:** `DATABASE_URL` was confirmed to use the internal host
+  (`postgres.railway.internal`); the app only ever used the internal URL. The
+  Postgres service also had a public TCP proxy (`trolley.proxy.rlwy.net ->
+  5432`), so the DB was internet-reachable on the same (exposed) password.
+  Actions: removed the public TCP proxy (Postgres service -> Settings ->
+  Networking) so the DB is now private-only; then regenerated the Postgres
+  password (Database -> Config -> Connection -> Regenerate). No 2FA re-enrolment
+  judged necessary (no evidence of access; proxy now closed).
+- **`DATABASE_URL` on the app was a pasted literal**, so the regenerate broke the
+  app until it was updated. Changed it to the reference `${{ Postgres.DATABASE_URL }}`
+  so future rotations sync automatically. GOTCHA: when replacing the value,
+  clear the field completely first - pasting next to the old value concatenates
+  two connection strings and Postgres then reports `database "...railway
+  postgresql://..." does not exist`.
+- **`JWT_SECRET`:** rotated (new 64-byte random). Logged everyone out, as
+  expected.
+- **`SU_PASSWORD`:** rotated; the live superuser hash updated on redeploy via
+  `seedSuperuser()`. New password stored in the password manager.
+- **R2 keys + `RESEND_API_KEY` are SHARED** with a second Railway project and had
+  already been rotated there the day before. Railway shared variables are
+  project-scoped, so there is no cross-project sharing: the already-rotated
+  values were copied into this project's variables by hand. On any future
+  rotation of these, update both projects.
+- All changes were staged and applied in a single redeploy.
+
 ## Code-side audit (done 22 Oct 2026)
 
 Verified before rotating - nothing to fix in the app:
